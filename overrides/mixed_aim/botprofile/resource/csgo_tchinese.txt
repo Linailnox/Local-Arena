@@ -1,4 +1,4 @@
-﻿"lang"
+"lang"
 {
 "Language" "tchinese"
 "Tokens"
@@ -2489,7 +2489,6 @@
 		"ItemHistory_Action_TournamentDrop"								"獲得一個掉落的紀念包"
 		"ItemHistory_Action_TemplateItemGrant"							"獲得"
 		"ItemHistory_Action_Market_Add"									"透過社群市集取得"
-
 		"ItemHistory_Transaction_Delete"								"您刪除了"
 		"ItemHistory_Transaction_Craft"									"合成了"
 		"ItemHistory_Transaction_UnlockCrate"							"解鎖一個箱子"
@@ -46023,6 +46022,7 @@
 		"inv_session_prop_updated"			"已更新！"
 		"inv_session_prop_quest_reward"		"獎勵！"
 		"inv_session_prop_xpshopredeem"		"新！"
+		"inv_session_prop_marketlisting"	"<img src='file://{images}/icons/ui/coupon.svg' class='item-tile__onmarket'/> 市集待售"
 		"inv_equipped_item"					"已為<b>{s:team}</b>裝備 <b>{s:name}</b>"
 		"inv_equipped_item_noteam"			"已裝備 <b>{s:name}</b>"
 		"inv_unequipped_item"				"未裝備 <b>{s:name}</b>"
@@ -48912,7 +48912,7 @@
 		"laptop_app_version"						"v 1.1.0.2000"
 
 		"dealer_offer_attachment_title"							"{s:item-name}"
-		"dealer_offer_attachment_wear"						"{s:item-rarity}"
+		"dealer_offer_attachment_wear"							"{s:item-rarity}"
 		"dealer_offer_attachment_remaining_title"				"報價 #{d:offer-total}"
 		"dealer_offer_attachment_remaining"						"報價 #{d:offer-total}"
 		"dealer_offer_received_count"							"<b>{s:offer-count}</b>報價"
@@ -48927,8 +48927,6 @@
 		"user_btn_purchase_desc_purchase"		"按住以購買此物品。購買後終端機將作廢。"
 		"user_btn_purchase_desc_continue"		"按住以完全拒絕此報價並查看下一個報價。"
 		"user_btn_purchase_desc_end"		"拒絕最後報價並將這台終端機作廢。"
-		"user_btn_purchase_title"			"<b>{s:offer-count}報價</b> - 建議回應"
-		"user_btn_purchase_final_title"		"<b>最後報價</b> - 建議回應"
 		"user_btn_decline_desc"				"拒絕此報價並查看另一個報價"
 		"user_btn_accept"		"接受報價：<b>{s:price}</b>"
 		"user_btn_accept_final"	"接受最後報價：<b>{s:price}</b>"
@@ -48983,7 +48981,6 @@
 		"laptop_pan_tooltip" 			"按住「Shift」鍵並拖動以平移鏡頭"
 		"laptop_pricing_tooltip"		"價格為全球通用價格，且會根據對此收藏中各項目的需求自動調整。"
 
-
 		"dealer_message_start_0"  	"這東西是各處承包商用的版本。<!--.25-->配備齊全，而且沒有記錄。"
 		"dealer_message_start_1"  	"我在買賣一些來自灰市的貨，沒有紀錄！<!--.25-->別擔心：這些貨已經很久沒有流通了，沒人在查，很安全。<!--.25-->而且我告訴你，現在還能用，指哪它就打哪。"
 		"dealer_message_start_2"  	"阿拉丹海關今早凍結了我的貨櫃，我想了個藉口，說這些是醫療器材，然後賣個慘說可憐的……誰誰誰快不行了，看看能不能讓他們通融放行。<!--.25-->結果沒用，最後還是得掏出我那一箱的現金。<!--.25-->在我把這些透析儀轉給那些孤兒前，現在就先來看看這些「醫療器材」吧。"
@@ -48991,7 +48988,6 @@
 		"dealer_message_start_4"  	"今天進了一批乾淨的貨。<!--.25-->據我所知，在你之前，沒有人碰過它們呢。"
 		"dealer_message_start_5"  	"很乾淨的貨，沒有序號，槍機完美無瑕。<!--.25-->可能有個軍事法庭會把這批貨叫證據。<!--.25-->我們倆都知道，這些工藝可都是很棒的。"
 		"dealer_message_start_6"  	"這批罕見貨物是最近從一個閱兵單位那找來的。<!--.25-->他們很會踢正步，但這些槍都沒用過。"
-		"dealer_message_start_7"  	"真棒，你來啦。<!--.25-->我的其他客戶總是喜歡問我貨是從哪來的，我最討厭有人問這些了。<!--.25-->你一向都只想知道貨是不是最好的。<!--.25-->你知道嗎：我這些貨真的是最棒的。"
 		"dealer_message_start_8"  	"德羅斯維克簽訂和平協議，我最愛和平了。<!--.25-->因為我找到了一名負債累累的將軍，他那裡有一個滿滿的軍火庫放著積灰塵。<!--.25-->這個嘛……<!--.25-->說回來，和平當然是件好事，畢竟有很多無辜百姓什麼的……<!--.25-->我扯遠了，你應該不在乎這些。"
 		"dealer_message_start_9"  	"我從灰市貿易轉移中搞來的這批貨有些罕見的寶貝。<!--.25-->這口徑比較特殊，不適合新手使用，你一定會喜歡。"
 		"dealer_message_start_10"  	"糗了。<!--.25-->我一定是不小心在運貨單上把箱子給標錯了。<!--.25-->嗯，幾十個箱子呢。<!--.25-->不如這樣吧，你在海關人員來調查之前，先幫我把這些貨給解決掉吧？"
@@ -49014,7 +49010,6 @@
 		"dealer_message_start_27"	"我最討厭和反叛軍合作了，充其量就是一堆死老百姓，換句話說就是一群菜鳥。<!--.25-->算了，反正他們現在音訊全無，我把這些裝備交給真正的高手好了。"
 		"dealer_message_start_28"	"南方長年戰區兩年一度的國會剛剛垮台。<!--.25-->一堆當地的軍火庫就跟剛被砸開的小豬撲滿沒兩樣。"
 		"dealer_message_start_29"	"港口檢查員上週五說這批貨物有異常之處。<!--.25-->禮拜一的時候他的女兒就湊齊資金去斯坦維克大學去讀書了，而這批貨物又是農具。<!--.25-->沒辦法，誰叫教育這麼重要呢？我們來看看這些農具吧。"
-
 
 		"dealer_message_resume_0"  	"<!--1-->你回來啦，很好。這筆交易仍然有效。"
 		"dealer_message_resume_1"  	"<!--1-->需要時間考慮嗎？沒問題。"
@@ -49078,7 +49073,6 @@
 		"dealer_message_next_offer_39"   "<!--1-->沒問題。我也不會買那一把。不過，現在這一把……"
 		"dealer_message_next_offer_40"   "<!--1-->要我走老遠去拿高級貨架上的？好吧，現在就去拿。"
 
-
 		"dealer_message_last_offer_0"	"<!--0-->好了，這是最後一次報價。要就買下，不要就算了。"
 		"dealer_message_last_offer_1"	"<!--0-->這是我給你的最後一次報價。"
 		"dealer_message_last_offer_2"	"<!--0-->最後一次報價。要就拿走，不買就算了，不要再浪費我的時間。"
@@ -49105,7 +49099,7 @@
 		"dealer_message_timerexpired_7"		"<!--.1-->我以為我在助你清除敵人。<!--.5-->原來你只是在浪費我的時間。"
 		"dealer_message_timerexpired_8"		"<!--.1-->交易結束。"	
 		"dealer_message_timerexpired_9"		"<!--.1-->時間到。"
-		"dealer_message_timerexpired_10"		"<!--.1-->好吧，我正式覺得無聊了。到此為止吧。"		
+		"dealer_message_timerexpired_10"	"<!--.1-->好吧，我正式覺得無聊了。到此為止吧。"		
 
 		"dealer_message_open_check_out_0"		"<!--.5-->這把簡直是直接刻上你的名字。所以我一看到就先想到你。這就成交吧。"
 		"dealer_message_open_check_out_1"		"<!--.5-->很不錯的決定。我會把它包好讓你帶回家。"
@@ -49114,8 +49108,8 @@
 		"dealer_message_open_check_out_4"		"<!--.5-->太好了。成交。"		
 		"dealer_message_open_check_out_5"		"<!--.5-->很好的選擇。"	
 		"dealer_message_open_check_out_6"		"<!--.5-->你做過最明智的選擇。賣給你囉。"		
-		"dealer_message_open_check_out_7"		"<!--.5-->很好。那就成交吧。"	
-		
+		"dealer_message_open_check_out_7"		"<!--.5-->很好。那就成交吧。"
+
 		"dealer_message_txn_xld_bailout_0"		"<!--.5-->不用急。你知道怎麼聯絡我。"
 		"dealer_message_txn_xld_bailout_1"		"<!--.5-->我就一直在這裡。"
 		"dealer_message_txn_xld_bailout_2"		"<!--.5-->這個可以再考慮一下。"
@@ -49183,11 +49177,10 @@
 		"dealer_message_addition_factory_new_1"	"<!--.25-->而且是全新出廠的。完好無損。"
 		"dealer_message_addition_factory_new_2"	"<!--.25-->直接從保管庫取出來的。全新出廠。"
 		"dealer_message_addition_factory_new_3"	"<!--.25-->這把是全新出廠。從未開過火。"
-
+		
 		"system_dealer_left_chat_0"				"軍火商已離開聊天。"
 		"system_dealer_join_chat_0"				"{s:collection}軍火交易報價。<!--1.25-->軍火商已連線"
 		"system_user_reject_offer_0"			"{s:user-name} 已拒絕報價。"
-		
 
 		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 		//Retakes
@@ -49423,8 +49416,8 @@
 		"quest_11015_var_desc:p{mission-points}"	 	"在<b>{s:gamemode}：{s:location}</b> 中贏得 1 回合。#|#在<b>{s:gamemode}：{s:location}</b> 中贏得回合。"
 		"quest_11015_var_ingame:p{mission-points}"		"贏得 1 回合#|#贏得多回合"
 
-// crow_mask_51588_comment
-// crow_mask_51589_comment
+// crow_mask_51633_comment
+// crow_mask_51634_comment
 }
 
 
