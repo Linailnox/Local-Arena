@@ -1,4 +1,4 @@
-﻿
+
 "lang"
 {
 "Language" "English"
@@ -2427,6 +2427,7 @@
 		"NewItemMethod_CommunityMarketPurchase"	"You Received from the Community Market:"
 
 		"ItemHistory_ActionWithTime"									"%s1 on %s2"
+		"ItemHistory_Action_GSCreate"									"Created"
 		"ItemHistory_Action_GenericAdd"									"Added"
 		"ItemHistory_Action_GenericRemove"								"Removed or modified"
 		"ItemHistory_Action_Traded"										"Traded"
@@ -2490,6 +2491,9 @@
 		"ItemHistory_Action_TournamentDrop"								"Earned a souvenir drop"
 		"ItemHistory_Action_TemplateItemGrant"							"Earned"
 		"ItemHistory_Action_Market_Add"									"Received from the Community Market"
+		"ItemHistory_Action_Market_Sealed"								"Created listing on the Steam Community Market"
+		"ItemHistory_Action_Market_Unsealed"							"Removed listing from the Community Market"
+		"ItemHistory_Action_Market_SoldSealed"							"Sold on the Steam Community Market"
 
 		"ItemHistory_Transaction_Delete"								"You deleted"
 		"ItemHistory_Transaction_Craft"									"Crafted"
@@ -2652,6 +2656,7 @@
 		"Attrib_NeverTradableButHasAfterDate1"		"This item is not tradable and is not marketable."
 		"Attrib_NeverTradableButHasAfterDate2"		"After use, items received will have a trade restriction until %s1"
 		"Attrib_TradeProtectedEscrowDate"			"⇆ This item is trade-protected and cannot be consumed, modified, or transferred until %s1"
+		"Attrib_TradeProtectedEscrowMarket"			"⇆ This item is listed on the Steam Community Market and cannot be consumed or modified while listed."
 		"Attrib_TradableAfterDate"					"Tradable After %s1"
 		"Attrib_TradableMarketableAfterDate"		"Tradable/Marketable After %s1"
 		"Attrib_MarketableWithRestrictions"			"Sellable Immediately on the Steam Community Market"
@@ -4497,6 +4502,10 @@
 		"CSGO_crate_community_36^volatile"		"Active Genesis Terminal"
 		"CSGO_crate_community_36_desc"			""
 		
+		"CSGO_crate_community_37"				"Sealed Dead Hand Terminal"
+		"CSGO_crate_community_37^volatile"		"Active Dead Hand Terminal"
+		"CSGO_crate_community_37_desc"			""
+		
 		"CSGO_crate_keychain_pack_kc_drboom_capsule"	    	"Dr Boom Charm Collection"
 		"CSGO_crate_keychain_pack_kc_drboom_capsule_desc"		"This collection contains a variety of Dr Boom charms."
 		"CSGO_crate_keychain_pack_kc_drboom_capsule_short"	    "Dr Boom Charms"
@@ -5710,6 +5719,9 @@
 		
 		"CSGO_set_timed_drops_achroma"			"The Achroma Collection"
 		"CSGO_set_timed_drops_achroma_desc"		""
+		
+		"CSGO_set_community_37"					"The Dead Hand Collection"
+		"CSGO_set_community_37_desc"			""
 		
 		/////////////////
 		// lootlist override strings
@@ -37346,6 +37358,130 @@ Blitz Mission: %action% scored."
 
 // END COMMUNITY_36
 
+// COMMUNITY_37 GLOVES
+		
+		"PaintKit_glove_driver_knit_argyle_green"						""
+		"PaintKit_glove_driver_knit_argyle_green_Tag"					"Hand Sweaters"
+		
+		"PaintKit_glove_driver_ostrich_purple"							""
+		"PaintKit_glove_driver_ostrich_purple_Tag"						"Plum Quill"
+		
+		"PaintKit_glove_driver_silk_dragon_white"						""
+		"PaintKit_glove_driver_silk_dragon_white_Tag"					"Wave Chaser"
+		
+		"PaintKit_glove_brocade_crane"									""
+		"PaintKit_glove_brocade_crane_Tag"								"Brocade Crane"
+		
+		"PaintKit_glove_driver_brocade_flower_red"						""
+		"PaintKit_glove_driver_brocade_flower_red_Tag"					"Brocade Flowers"
+		
+		"PaintKit_glove_driver_dragon_scale_red"						""
+		"PaintKit_glove_driver_dragon_scale_red_Tag"					"Dragon Fists"
+		
+		"PaintKit_glove_driver_embroidered_flowers_teal"				""
+		"PaintKit_glove_driver_embroidered_flowers_teal_Tag"			"Garden"
+		
+		"PaintKit_glove_driver_scallop_metallic_blue"					""
+		"PaintKit_glove_driver_scallop_metallic_blue_Tag"				"Seigaiha"
+		
+		"PaintKit_glove_sport_velvet_red"								""
+		"PaintKit_glove_sport_velvet_red_Tag"							"Occult"
+		
+		"PaintKit_glove_sport_beadwork_diamonds_purple"					""
+		"PaintKit_glove_sport_beadwork_diamonds_purple_Tag"				"Violet Beadwork"
+		
+		"PaintKit_glove_sport_camo_winter"								""
+		"PaintKit_glove_sport_camo_winter_Tag"							"Frosty"
+		
+		"PaintKit_glove_sport_flames_orange"							""
+		
+		"PaintKit_glove_sport_pinstripe_black"							""
+		"PaintKit_glove_sport_pinstripe_black_Tag"						"Creme Pinstripe"
+		
+		"PaintKit_glove_sport_racer_red"								""
+		"PaintKit_glove_sport_racer_red_Tag"							"Red Racer"
+		
+		"PaintKit_glove_sport_tech_gradient_bright"						""
+		"PaintKit_glove_sport_tech_gradient_bright_Tag"					"Ultra Violent"
+		
+		"PaintKit_glove_specialist_abstract_green"						""
+		"PaintKit_glove_specialist_abstract_green_Tag"					"Lime Polycam"
+		
+		"PaintKit_glove_specialist_graffiti_black"						""
+		"PaintKit_glove_specialist_graffiti_black_Tag"					"Blackbook"
+		
+		"PaintKit_glove_specialist_quilted_black"						""
+		"PaintKit_glove_specialist_quilted_black_Tag"					"Chocolate Chesterfield"
+		
+		"PaintKit_glove_specialist_quilted_white"						""
+		"PaintKit_glove_specialist_quilted_white_Tag"					"Pillow Punchers"
+		
+		"PaintKit_glove_specialist_sunburst_red"						""
+		"PaintKit_glove_specialist_sunburst_red_Tag"					"Sunburst"
+		
+		"PaintKit_glove_specialist_dragon_blue"							""
+		"PaintKit_glove_specialist_dragon_blue_Tag"						"Cloud Chaser"
+		
+		"PaintKit_glove_specialist_wave_blue"							""
+		"PaintKit_glove_specialist_wave_blue_Tag"						"Big Swell"
+		
+// END COMMUNITY_37 GLOVES
+
+// COMMUNITY_37 WEAPONS
+		
+		"PaintKit_glock_jdpeek"											"It has been custom painted using neon colors and metallic glitter paint.\n\n<i>It's a bit much for me, but I'm not the target audience... - Booth, Arms Dealer</i>"
+		"PaintKit_glock_jdpeek_Tag"										"Fully Tuned"
+					
+		"PaintKit_awp_queens_gambit"									"It has been custom painted using royal blue and gold. A queen has been hand painted in front of the butt stock.\n\n<i>Every shot is a royal decree of power and precision</i>"
+		"PaintKit_awp_queens_gambit_Tag"								"Queen's Gambit"
+					
+		"PaintKit_p90_deathgaze"										"It has been custom painted with a graffiti-style Medusa over a Carrara marble base.\n\n<i>Worship not the idols built on foundations of deception</i>"
+		"PaintKit_p90_deathgaze_Tag"									"Deathgaze"
+					
+		"PaintKit_p250_kintsugi"										"A striking orange bird and gold accents have been custom painted over an ivory-colored base.\n\n<i>Like those fancy dinner plates, this weapon's only used for special occasions</i>"
+		"PaintKit_p250_kintsugi_Tag"									"Kintsugi"
+					
+		"PaintKit_mp9_urban_sovereign"									"It has been custom painted with an urban material design and finished with gold graffiti.\n\n<i>Kings don't hide behind walls, they paint them</i>"
+		"PaintKit_mp9_urban_sovereign_Tag"								"Urban Sovereign"
+					
+		"PaintKit_mp7_amberline"										"It has been spray painted with diagonal orange and white bands.\n\n<i>A brand in-hand</i>"
+		"PaintKit_mp7_amberline_Tag"									"Amberline"
+					
+		"PaintKit_bizon_rmx"											"It has been custom painted with a purple gradient and a red and white design.\n\n<i>Light, fast, and dangerous... in theory</i>"
+		"PaintKit_bizon_rmx_Tag"										"RMX"
+					
+		"PaintKit_ak47_crane_flight"									"A crane and gold accents have been hand painted over a black and white base.\n\n<i>Preceding the blood moon</i>"
+		"PaintKit_ak47_crane_flight_Tag"								"Crane Flight"
+					
+		"PaintKit_deagle_firebreathing"									"It has been custom painted with purple and blue flames using pearlescent paint.\n\n<i>Contains exceptional qualities and abilities</i>"
+		"PaintKit_deagle_firebreathing_Tag"								"Firebreathing"
+					
+		"PaintKit_ump_fragment"											"It has been custom painted with a silver, black, and red design.\n\n<i>Gone fraggin'</i>"
+		"PaintKit_ump_fragment_Tag"										"Fragment"
+					
+		"PaintKit_sawedoff_fusion"										"It has been custom painted with a black and gold design. Additional details are revealed in different lighting conditions.\n\n<i>Eye've seen things...</i>"
+		"PaintKit_sawedoff_fusion_Tag"									"Fusion"
+					
+		"PaintKit_galil_galigator"										"An alligator and toxic symbols have been custom painted over a green and yellow base.\n\n<i>CHOMP! CHOMP! CHOMP!</i>"
+		"PaintKit_galil_galigator_Tag"									"Galigator"
+					
+		"PaintKit_fiveseven_polymer_dark"								"This custom paint job makes the weapon look like it is made of a transparent purple polymer.\n\n<i>Wrapped in a purple candy shell</i>"
+		"PaintKit_fiveseven_polymer_dark_Tag"							"Dark Polymer"
+					
+		"PaintKit_usps_silent_boy"										"It has been custom painted with black and blue geometric symbols and shurikens.\n\n<i>Exercise discretion while executing aggression</i>"
+		"PaintKit_usps_silent_boy_Tag"									"Silent Shot"
+					
+		"PaintKit_m4a4_zubastick_bw"									"Teeth and orange eyes have been hand painted on this M4A4.\n\n<i>Circa 1991</i>"
+		"PaintKit_m4a4_zubastick_bw_Tag"								"Zubastick"
+					
+		"PaintKit_m4a1s_electrum"										"It has been custom painted with a marbled green base and finished with gold and red accents.\n\n<i>They don't pay you enough to carry that, but I will - Valeria Jenner, Revolutionary</i>"
+		"PaintKit_m4a1s_electrum_Tag"									"Electrum"
+					
+		"PaintKit_m249_blocks_purple"									"It has been custom painted with a purple graphic geometric design.\n\n<i>Stack 'em</i>"
+		"PaintKit_m249_blocks_purple_Tag"								"Bock Blocks"
+		
+// END COMMUNITY_37 WEAPONS
+
 // OVERPASS_2024
 				
 		"PaintKit_hy_overpass_paintover_teal"				"A blue and black hydrographic graffiti pattern has been applied.\n\n<i>Signed, Doctor Romanov</i>"
@@ -39500,6 +39636,7 @@ Blitz Mission: %action% scored."
 		"SFUI_InvContextMenu_preview_musickit"       "Inspect - Preview Music"
 		"SFUI_InvContextMenu_decodable"     "Unlock Container"
 		"SFUI_InvContextMenu_sell"			"Sell On Community Market"
+		"SFUI_InvContextMenu_marketlisting"	"View Market Listing"
 		"SFUI_InvContextMenu_openloadout"   "View Loadout Slot"
 		"SFUI_InvContextMenu_inspectcase"	"Open..."
 		"SFUI_InvContextMenu_useitem"	    "Use Item"
@@ -42919,6 +43056,8 @@ CTs clinched the match with the most wins"
 		"SFUI_Settings_Network_Bandwidth_30mbps"   "3 Mbps"
 		"SFUI_Settings_Network_Bandwidth_40mbps"   "4 Mbps"
 		"SFUI_Settings_Network_Bandwidth_Max"	   "Unrestricted"
+
+		"SFUI_Settings_Volatile_Limit_Unlimited"	"Unlimited"
 
 		"SFUI_FeatureUnavailableDuringBeta"		"Unavailable During Beta"
 
@@ -48041,6 +48180,7 @@ Flashbang!"
 		"inv_context_remove_patch"			"Remove Patch"		
 		"inv_context_openloadout"			"View in Loadout"
 		"inv_context_sell"					"Sell On Community Market"
+		"inv_context_marketlisting"			"View Market Listing"
 		"inv_context_tradeup_add"			"Use With Trade Up Contract"
 		"inv_context_tradeup_remove"		"Remove From Trade Up Contract"
 		"inv_context_open_contract"			"Open Contract"
@@ -48098,6 +48238,7 @@ Flashbang!"
 		"inv_session_prop_updated"			"Updated!"
 		"inv_session_prop_quest_reward"		"Reward!"
 		"inv_session_prop_xpshopredeem"		"New!"
+		"inv_session_prop_marketlisting"	"<img src='file://{images}/icons/ui/coupon.svg' class='item-tile__onmarket'/> On Market"
 		"inv_equipped_item"					"Equipped <b>{s:name}</b> for <b>{s:team}</b>"
 		"inv_equipped_item_noteam"			"Equipped <b>{s:name}</b>"
 		"inv_unequipped_item"				"Unequipped <b>{s:name}</b>"
@@ -51064,7 +51205,7 @@ Flashbang!"
 		"laptop_app_version"						"v 1.1.0.2000"
 
 		"dealer_offer_attachment_title"							"{s:item-name}"
-		"dealer_offer_attachment_wear"						"{s:item-rarity}"
+		"dealer_offer_attachment_wear"							"{s:item-rarity}"
 		"dealer_offer_attachment_remaining_title"				"OFFER #{d:offer-total}"
 		"dealer_offer_attachment_remaining"						"Offer #{d:offer-total}"
 		"dealer_offer_received_count"							"<b>{s:offer-count}</b> Offer"
@@ -51079,8 +51220,8 @@ Flashbang!"
 		"user_btn_purchase_desc_purchase"		"Hold to purchase this item. After purchase, the Terminal is discarded."
 		"user_btn_purchase_desc_continue"		"Hold to permanently decline this offer and see the next one."
 		"user_btn_purchase_desc_end"		"Decline the final offer and discard this Terminal."
-		"user_btn_purchase_title"			"<b>{s:offer-count} Offer</b> - Suggested Responses"
-		"user_btn_purchase_final_title"		"<b>Final Offer</b> - Suggested Responses"
+		"user_btn_purchase_title"			"{s:offer-count} - Offer"
+		"user_btn_purchase_final_title"		"<b>Final Offer</b>"
 		"user_btn_decline_desc"				"Decline this offer and see another one"
 		"user_btn_accept"		"Accept Offer <b>{s:price}</b>"
 		"user_btn_accept_final"	"Accept Final Offer <b>{s:price}</b>"
@@ -51102,6 +51243,18 @@ Flashbang!"
 		"user_btn_pause"		"Pause Deal"
 		"user_btn_end"			"Decline Final Offer"
 
+		"user_message_limit_0"		"I can do up to <b>{s:limit-setting}</b>."
+		"user_message_limit_1"		"How about <b>{s:limit-setting}</b> as the ceiling."
+		"user_message_limit_2"		"Up to <b>{s:limit-setting}</b> works for me."
+		"user_message_limit_3"		"<b>{s:limit-setting}</b> cap is good."
+		"user_message_limit_unlimited_0"	"<b>No max</b>, I want to see it all."
+		"user_message_limit_unlimited_1"	"<b>Blank check</b>. Don't worry about the wallet."
+		"user_message_limit_unlimited_2"	"I'm here to buy. <b>Show me everything</b>."
+		"user_message_limit_unlimited_3"	"If it shoots, I'm interested.<b> No limits</b>."
+		"user_message_limit_unlimited_4"	"Sky's the limit"
+		"offer_limit_setting"		"Offer limit: {s:limit}"
+		"offer_limit_setting_interface"		"Offer limit: {s:limit} <img src='file://{images}/icons/ui/expand.svg' class='expand-icon'/>"
+
 		"dealer_offer_Unknown"							"-"
 		"dealer_offer_1"								"1st"
 		"dealer_offer_2"								"2nd"
@@ -51118,24 +51271,31 @@ Flashbang!"
 		"declined_offer_tooltip"	"Declined offer"
 		"future_offer_tooltip"		"Offer not yet revealed."
 		"laptop_expiration_tooltip"		"Time remaining until this Uplink Terminal and its offers expire."
+		"laptop_max_offer_tooltip"		"Set your Max Offer Limit. You will only receive offers under that limit. You can change it at any time."
 		"collection_xp_tooltip"			"Earn XP for viewing the offers in this collection. Open to see progress and redeem XP."
+		"terminal_offer_limit_tooltip"		"Update your max offer limit. The Arms Dealer will only show you offers up to that limit."
 		"popup_lootlist_title"			"Collection Catalog XP"
 		"popup_lootlist_desc"			"Earn XP for viewing the offers in this collection"
-		"popup_lootlist_progress"		"Seen {d:seen}/{d:total} offers"
+
+		"popup_lootlist_progress:f"      "Seen {total, plural, one{{d:seen}/{d:total} offer} other{{d:seen}/{d:total} offers}}"
 		"popup_lootlist_claim_xp"		"Get Bonus XP"
 		"popup_lootlist_claim_ww"		"Claiming XP..."
-		"popup_lootlist_claim_ok"		"✅ XP Claimed"
+		"popup_lootlist_claim_ok"		"✔ XP Claimed"
 		"popup_vpn_status_connected"	"Status: Connected to secure network"
 		"popup_vpn_status_disconnected"	"Status: Disconnected"
 		"popup_signal_full" 			"Full Signal"
 		"popup_signal_ok" 				"Strong Signal"
+		"popup_offer_limit_desc"		"Update your max offer limit for all future offers"
 		"laptop_battery_tooltip" 		"Battery Charge: {d:percent}%"
 		"laptop_original_seal_tooltip" 	"Any item purchased from this Uplink Terminal will come with an Original Owner Certificate, which is valid while you are the owner."
 		"laptop_zoom_tooltip" 			"Scroll mouse wheel to zoom in and out"
 		"laptop_pan_tooltip" 			"Hold 'Shift' key and drag to pan the camera"
 		"laptop_pricing_tooltip"		"Prices are global and adjusted automatically based on demand for each item in this collection."
 
-
+		"dealer_message_set_offer_limit_0"		"First things First. How much are you authorized to drop?"
+		"dealer_message_set_offer_limit_1"		"Lets get this out of the way.<!--.25--> What’s your limit?"
+		"dealer_message_set_offer_limit_2"		"Before we get started...<!--.25--> What’s the cap? How much are you authorized to drop?"
+		
 		"dealer_message_start_0"  	"This stuff's contractor issue across the board.<!--.25-->All the bells and whistles. None of the paperwork."
 		"dealer_message_start_1"  	"I'm moving gray channel stock, no paper.<!--.25-->Don't worry: they're cold. Out of circulation for years, no one's looking for them.<!--.25-->Plus they still shoot when you point them, if you're curious."
 		"dealer_message_start_2"  	"Customs in Ahradan froze my cargo this morning. I tried thawing it out with a sob story about medical equipment and some poor dying... whoever.<!--.25-->That didn't work. But the briefcase full of money did.<!--.25-->How about we take a look at these dialysis machines before I get them to the orphans."
@@ -51143,7 +51303,7 @@ Flashbang!"
 		"dealer_message_start_4"  	"The stuff I've got today is all clean.<!--.25-->As far as anyone knows, yours are the first hands they've passed through."
 		"dealer_message_start_5"  	"Sterile pieces, no serials, perfect action.<!--.25-->A war tribunal would call these evidence.<!--.25-->You and I know they're goddamn masterpieces."
 		"dealer_message_start_6"  	"This whole shipment is exotics recently liberated from a parade unit.<!--.25-->Marched around a lot. Never fired."
-		"dealer_message_start_7"  	"Good. It's you.<!--.25-->My other clients always want to know how I got what I'm selling. I hate that.<!--.25-->All you ever want to know is if it's the best stuff on the market.<!--.25-->Guess what: It is."
+		"dealer_message_start_7"  	"My other clients always want to know how I got what I'm selling. I hate that.<!--.25-->All you ever want to know is if it's the best stuff on the market.<!--.25-->Guess what: It is."
 		"dealer_message_start_8"  	"Peace agreement in Drosvik. I love peace.<!--.25-->Because I've got a general with a lot of debts and a fully stocked armory gathering dust.<!--.25-->I mean...<!--.25-->Also because peace is good, obviously. Innocent lives and...<!--.25-->What am I saying, you don't care."
 		"dealer_message_start_9"  	"This load's got exotics from a gray channel diversion.<!--.25-->Unusual calibers, not for amateurs. You'll love 'em."
 		"dealer_message_start_10"  	"This is embarrassing.<!--.25-->I must have accidentally mislabeled a crate on my shipping manifest.<!--.25-->Well. A few dozen crates.<!--.25-->How about you help me make this inventory disappear before the port authority looks into it."
@@ -51166,7 +51326,6 @@ Flashbang!"
 		"dealer_message_start_27"	"I hate working with insurgents. It's just a polite way of saying civilians, which is a nice way of saying goddamn amateurs.<!--.25-->Anyway, they've gone dark, so I'm giving some actual professionals a chance at this hardware."
 		"dealer_message_start_28"	"Perennial hot zone down south just had its bi-annual parliament collapse.<!--.25-->Bunch of local armories busted open like pinatas."
 		"dealer_message_start_29"	"Port authority inspector called this shipment irregular last Friday.<!--.25-->By Monday his daughter's got enough tuition money to attend Stamwick and the shipment is farm tools again.<!--.25-->What can I say, education's important. Let's look at some farm tools."
-
 
 		"dealer_message_resume_0"  	"<!--1-->You're back. Good. Deal's still on the table."
 		"dealer_message_resume_1"  	"<!--1-->Needed a minute to think about it? Not a problem."
@@ -51230,7 +51389,6 @@ Flashbang!"
 		"dealer_message_next_offer_39"   "<!--1-->Not a problem. I wouldn't have bought that either. Now this, on the other hand..."
 		"dealer_message_next_offer_40"   "<!--1-->Making me go all the way in the back for the premium shelf stuff, huh? Alright, you got it."
 
-
 		"dealer_message_last_offer_0"	"<!--0-->Alright, last and final offer. Take it or leave it."
 		"dealer_message_last_offer_1"	"<!--0-->Consider this my final offer."
 		"dealer_message_last_offer_2"	"<!--0-->Final offer. Take it or leave it, let's stop wasting my time."
@@ -51257,7 +51415,7 @@ Flashbang!"
 		"dealer_message_timerexpired_7"		"<!--.1-->And here I thought I was helping you waste people.<!--.5-->Turns out you're just wasting my time."
 		"dealer_message_timerexpired_8"		"<!--.1-->Deal's off."	
 		"dealer_message_timerexpired_9"		"<!--.1-->Time's up."
-		"dealer_message_timerexpired_10"		"<!--.1-->Alright, I'm officially bored. We're done here."		
+		"dealer_message_timerexpired_10"	"<!--.1-->Alright, I'm officially bored. We're done here."		
 
 		"dealer_message_open_check_out_0"		"<!--.5-->This one had your name all over it. That's why I thought of you first. Let's seal this deal."
 		"dealer_message_open_check_out_1"		"<!--.5-->An excellent decision. I'll make sure it's packed and ready."
@@ -51266,8 +51424,8 @@ Flashbang!"
 		"dealer_message_open_check_out_4"		"<!--.5-->Perfect. Let's do this."		
 		"dealer_message_open_check_out_5"		"<!--.5-->Good choice."	
 		"dealer_message_open_check_out_6"		"<!--.5-->Smartest choice you've ever made. Let's make it final."		
-		"dealer_message_open_check_out_7"		"<!--.5-->Good. Let's make it official."	
-		
+		"dealer_message_open_check_out_7"		"<!--.5-->Good. Let's make it official."
+
 		"dealer_message_txn_xld_bailout_0"		"<!--.5-->No rush. You know where to find me."
 		"dealer_message_txn_xld_bailout_1"		"<!--.5-->I'm not going anywhere."
 		"dealer_message_txn_xld_bailout_2"		"<!--.5-->I'll keep this one on the table for now."
@@ -51335,12 +51493,30 @@ Flashbang!"
 		"dealer_message_addition_factory_new_1"	"<!--.25-->And it's factory new. Pristine."
 		"dealer_message_addition_factory_new_2"	"<!--.25-->Straight from the vault. Factory new."
 		"dealer_message_addition_factory_new_3"	"<!--.25-->This one's factory new. Never fired."
+		
+		"dealer_message_limit_first_time_0"		"Good to know, I'll only show you offers up to {s:limit}.<!--.25--> Let's see what you need."
+		"dealer_message_limit_first_time_2"		"Only offer under {s:limit}, I'll keep that in mind.<!--.25--> Clock's ticking. Let's start."
+		"dealer_message_limit_first_time_3"		"Noted. Updated.<!--.25--> Here we go."
+		"dealer_message_limit_first_time_unlimited_0"		"No max, Excellent. I'll open the current catalog going forward.<!--.25--> Clock's ticking. Let's start."
+		"dealer_message_limit_first_time_unlimited_1"		"Roger. Uncapped. Now we’re getting serious.<!--.25--> Let's see what you need."
+
+		"dealer_message_limit_0"				"Good to know, I'll only show you offers up to {s:limit}."
+		"dealer_message_limit_1"				"Only offers under {s:limit}, I'll keep that in mind."
+		"dealer_message_limit_2"				"Adjusting the parameters. Only offers up to {s:limit}."
+		"dealer_message_limit_3"				"Offers up to {s:limit}. Noted. Updated."
+		"dealer_message_limit_4"				"I’ll only pull what fits the tag, up to {s:limit}"
+		"dealer_message_limit_5"				"{s:limit}, got the new cap"
+		"dealer_message_limit_6"				"Understood. Resetting the filter for offers up to {s:limit}."
+		"dealer_message_limit_unlimited_0"		"No max, Excellent. I'll open the current catalog going forward."
+		"dealer_message_limit_unlimited_1"		"Got it, uncapped. If any thing exotic comes up I won't hold back."
+		"dealer_message_limit_unlimited_2"		"Music to my ears. If something that fits the bill shows up I won't hesitate to show you"
+		"dealer_message_limit_unlimited_3"		"Roger. Uncapped. Now we’re getting serious."
 
 		"system_dealer_left_chat_0"				"The Dealer has left your chat."
 		"system_dealer_join_chat_0"				"{s:collection} Arms Deal Offers.<!--1.25-->Dealer Connected"
 		"system_user_reject_offer_0"			"{s:user-name} Declined Offer."
-		
 
+		"system_user_updated_offer_limit_0"			"Max Offer Limit updated to {s:limit}. You can update the setting at any time."
 		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 		//Retakes
 		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
