@@ -13,7 +13,7 @@ Aims to enhance your experience when playing against bots offline or with friend
 4. Allows bots to buy everything and overhauls their economy management
 5. Assigns each bot their own agent model, music kit and avatar
 6. Refines bot behavior, allowing them to spray, flick, spam smokes and anti-flash
-7. Makes bots smarter and more organized
+7. Makes bots smarter, more organized, and more alert to their surroundings
 8. Changes bot names to pro and random players. (the characteristics of each pro player are based on stats from [HLTV](https://www.hltv.org/))
 9. Removes the prefix from bot names
 10. Tweaks game rules to make them more friendly to bots
