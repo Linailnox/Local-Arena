@@ -158,6 +158,7 @@ Run `sv_standable_normal 0.7` in your game console
 [CS2-BotAI](https://github.com/ed0ard/CS2-BotAI) forked from [Austin](https://github.com/Austinbots)  
 [CS2-BotAI-for-Linux](https://github.com/Austinbots/CS2-BotAI)  
 [CS2-Bot-Buy](https://github.com/ed0ard/CS2-Bot-Buy)  
+[RoundDamageRecap](https://github.com/YuGeYu/LBTV-CS2-Bot-Enhancer/tree/main/addons/counterstrikesharp/plugins/RoundDamageRecap) by [YuGeYu](https://github.com/YuGeYu)  
 
 ## License
 GPL-3.0
