@@ -1462,7 +1462,7 @@
 		"Radio"			"Rádio"
 		"Hut"			"Cabana"
 		"Crows"			"Corvos"
-		"Squeaky"		"Guincho"
+		"Squeaky"		"Portinha"
 		"Yellow"		"Amarelo"
 		"Main"			"Principal"
 		"CTRed"			"Vermelho dos CTs"
@@ -1593,7 +1593,30 @@
 		"TMid"				"Meio dos Ts"
 		"Toilets"			"Banheiros"
 		"Candle"			"Vela"
-
+		//Cache
+		"OutsideA"			"Lado de fora do A"
+		"OutsideB"			"Lado de fora do B"
+		"AHalls"			"Miolo do A"
+		"BHalls"			"Miolo do B"
+		"SunRoom"			"Fora"
+		"Checkers"			"Xadrez"
+		"Headshot"			"Cabecinha"
+		"TreeRoom"			"Sala da árvore"
+		"CTLane"			"Rua dos CTs"
+		"Bear"				"Urso"
+		"BusStop"			"Ponto de ônibus"
+		"Corner"			"Escanteio"
+		"ABoost"			"Caixas do A"
+		"Highway"			"Rua"
+		"Sandbags"			"Cimento"
+		"Cubby"				"Beco"
+		"MidRoof"			"Telhado do meio"
+		"Lockers"			"Vestiário"
+		"AStairs"			"Escada do A"
+		"TTruck"			"Caminhão dos Ts"
+		"Useless"			"Torneira"
+		"TYard"				"Pátio dos Ts"
+		"Boost"				"Lona"
 		// coop_cementplant
 		"Gravelpit"		"Poço de cascalho"
 		"Forest"		"Floresta"
@@ -5847,6 +5870,36 @@
 		"musickit_jamesandthecoldgun_01_desc"			"A dupla galesa do rock James and the Cold Gun liberta uma energia pura e sem filtros, juntando a atitude clássica do punk ao calor do rock alternativo moderno para criar uma trilha sonora explosiva."
 		"coupon_jamesandthecoldgun_01"					"Trilha Sonora | James and the Cold Gun, Chewing Glass"
 		"coupon_jamesandthecoldgun_01_stattrak"			"Trilha Sonora StatTrak™ | James and the Cold Gun, Chewing Glass"
+		
+		"musickit_alrt_01"						"ALRT, DOPAMINE HIT"
+		"musickit_alrt_01_desc"					"O baixo vibrante das gravações de ALRT entregam o ápice do \"DOPAMINE HIT\", um soco de dopamina, mantendo você alerta e de prontidão para se sobressair quando mais for preciso."
+		"coupon_alrt_01"						"Trilha Sonora | ALRT, DOPAMINE HIT"
+		"coupon_alrt_01_stattrak"				"Trilha Sonora StatTrak™ | ALRT, DOPAMINE HIT"
+		
+		"musickit_altare_01"					"Altare, Change My Mind"
+		"musickit_altare_01_desc"				"O eufórico hino eletrônico de Altare, \"Change My Mind\", é perfeito para os seus melhores momentos, quando parece que ninguém pode entrar no seu caminho."
+		"coupon_altare_01"						"Trilha Sonora | Altare, Change My Mind"
+		"coupon_altare_01_stattrak"				"Trilha Sonora StatTrak™ | Altare, Change My Mind"
+		
+		"musickit_borne_01"						"borne, Give It To Me"
+		"musickit_borne_01_desc"				"O baixo afiado de borne no hino \"Give It To Me\" deixará os jogadores igualmente afiados contra os seus inimigos do Counter-Strike, e além."
+		"coupon_borne_01"						"Trilha Sonora | borne, Give It To Me"
+		"coupon_borne_01_stattrak"				"Trilha Sonora StatTrak™ | borne, Give It To Me"
+		
+		"musickit_pirapus_01"					"Pirapus, EVERYNITE"
+		"musickit_pirapus_01_desc"				"Os acordes agudos de baixo e percussão de Pirapus no hino \"EVERYNITE\" evocam a sensação de estar à beira da grandeza. Fazendo jus ao nome, \"TODANOITE\", você ficará alerta todas as noites."
+		"coupon_pirapus_01"						"Trilha Sonora | Pirapus, EVERYNITE"
+		"coupon_pirapus_01_stattrak"			"Trilha Sonora StatTrak™ | Pirapus, EVERYNITE"
+		
+		"musickit_repiet_01"					"Repiet & Julia Kleijn, On And On"
+		"musickit_repiet_01_desc"				"Esteja de prontidão para qualquer desafio com a música contagiante de Repiet e Julia Kleijn, \"On And On\". Passando por altos e baixos, as melodias definem o tom para qualquer ataque."
+		"coupon_repiet_01"						"Trilha Sonora | Repiet & Julia Kleijn, On And On"
+		"coupon_repiet_01_stattrak"				"Trilha Sonora StatTrak™ | Repiet & Julia Kleijn, On And On"
+		
+		"musickit_shockone_01"					"ShockOne, Voices"
+		"musickit_shockone_01_desc"				"Liberte-se com a alta energia da percussão e do baixo de ShockOne em \"Voices\". Perfeita para os momentos de clutch, esta trilha sonora traz acordes de baixo que carregarão você a diversos momentos de destaque."
+		"coupon_shockone_01"					"Trilha Sonora | ShockOne, Voices"
+		"coupon_shockone_01_stattrak"			"Trilha Sonora StatTrak™ | ShockOne, Voices"
 
 //////////////////
 
@@ -34063,6 +34116,8 @@
 		"store_nav_popular"		"NOVIDADES E POPULARES"
 		"store_linked_item_tooltip"		"Clique para ver ambas as versões deste item."
 		"store_nav_more"		"Veja mais"
+		"store_nav_shop_all"		"Ver tudo"
+		"store_nav_section_coupon_nightmode2" "Trilhas sonoras<br>NIGHTMODE II"
 
 		"StoreCheckout_NoItems"			"O seu carrinho de compras está vazio!"
 		"StoreCheckout_TooManyItems"	"Há itens demais no seu carrinho de compras!"
@@ -37489,7 +37544,10 @@
 		"SFUI_match_cancelled"			"Partida cancelada"
 		"SFUI_match_abort_match_network_event"	"Uma interrupção na rede resultou no cancelamento da partida.\nIsso não afetará a sua classificação."
 		"SFUI_match_abort_match_vac_live"	"O VAC Live detectou um trapaceiro e encerrou a partida.\nO seu Grupo de Habilidade não será afetado."
-		"SFUI_match_abort_match_abnormal_behavior"	"O VAC detectou jogabilidade irregular e cancelou a partida.\nO jogador sinalizado pelo VAC e o grupo dele sofreram uma suspensão."
+		
+		"SFUI_match_abort_match_abnormal_behavior"	"%s1 e eventuais membros do grupo receberam suspensões do VACNET."
+		"SFUI_match_abort_match_abnormal_behavior_pano"	"O VACNET detectou jogabilidade irregular e cancelou a partida."
+
 		"SFUI_match_vac_live_partied_with_cheater"	"Você não receberá progresso por esta partida pois um jogador do seu grupo foi banido."
 		"SFUI_match_abort_match_missing_player"	"  A partida será cancelada porque um jogador não se conectou."
 		"SFUI_match_abort_match_player_abandoned"	"  A partida será cancelada porque um jogador se desconectou."
@@ -47414,6 +47472,9 @@ Granada de luz!"
 		"quest_11015_var_desc:f"	 					"{mission-points, plural, one{Vença uma rodada no modo <b>{s:gamemode} ({s:location})</b>.} other{Vença rodadas em partidas do modo <b>{s:gamemode} ({s:location})</b>.}}"
 		"quest_11015_var_ingame:f"						"{mission-points, plural, one{Vença uma rodada.} other{Vença rodadas.}}"
 
+		"quest_11016_var_desc:f"	 					"Vença {mission-points, plural, one{uma rodada no modo <b>{s:gamemode} ({s:location})</b>.} other{rodadas em partidas do modo <b>{s:gamemode} ({s:location})</b>.}}"
+		"quest_11016_var_ingame:f"						"Vença {mission-points, plural, one{uma rodada} other{rodadas}}."
+
 // ---------------------------------------------------------------------------------------------
 // Join Friend Listen Servers
 // ---------------------------------------------------------------------------------------------
@@ -47423,8 +47484,8 @@ Granada de luz!"
 		"tooltip_short_viewaddon"			"Acessar mapa"
 		"tooltip_short_kick_player"			"Expulsar"
 
-// crow_mask_50454_comment
-// crow_mask_50455_comment
+// crow_mask_50516_comment
+// crow_mask_50517_comment
 }
 
 
