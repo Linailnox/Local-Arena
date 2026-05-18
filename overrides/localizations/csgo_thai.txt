@@ -1587,7 +1587,30 @@
 		"TMid"				"T กลาง"
 		"Toilets"			"ห้องน้ำ"
 		"Candle"			"เทียน"
-
+		//Cache
+		"OutsideA"			"A ด้านนอก"
+		"OutsideB"			"B ด้านนอก"
+		"AHalls"			"ห้องโถง A"
+		"BHalls"			"ห้องโถง B"
+		"SunRoom"			"ห้องดวงอาทิตย์"
+		"Checkers"			"หมากรุก"
+		"Headshot"			"เฮดช็อต"
+		"TreeRoom"			"ห้องต้นไม้"
+		"CTLane"			"เลน CT"
+		"Bear"				"หมี"
+		"BusStop"			"ป้ายรถบัส"
+		"Corner"			"มุม"
+		"ABoost"			"บูสต์ A"
+		"Highway"			"ไฮเวย์"
+		"Sandbags"			"กระสอบทราย"
+		"Cubby"				"คับบี้"
+		"MidRoof"			"หลังคากลาง"
+		"Lockers"			"ตู้ล็อกเกอร์"
+		"AStairs"			"บันได A"
+		"TTruck"			"รถบรรทุก T"
+		"Useless"			"ยูสเลส"
+		"TYard"				"ลาน T"
+		"Boost"				"บูสต์"
 		// coop_cementplant
 		"Gravelpit"		"หลุมกรวด"
 		"Forest"		"ป่า"
@@ -6037,8 +6060,8 @@
 		"musickit_jamesandthecoldgun_01_desc"			"James and the Cold Gun วงร็อกดูโอจากเวลส์ ปลดปล่อยพลังอันบริสุทธิ์ที่ไม่ผ่านการกรองใด ๆ ด้วยการผสมผสานทัศนคติแบบพังก์คลาสสิกเข้ากับความดุดันของอัลเทอร์เนทีฟร็อกยุคใหม่ เพื่อสร้างสรรค์ชุดอุปกรณ์เพลงที่ร้อนแรงและทรงพลัง"
 		"coupon_jamesandthecoldgun_01"					"ชุดอุปกรณ์เพลง | James and the Cold Gun, Chewing Glass"
 		"coupon_jamesandthecoldgun_01_stattrak"			"ชุดอุปกรณ์เพลง StatTrak™ | James and the Cold Gun, Chewing Glass"
-
-//////////////////
+		
+		//////////////////
 
 	"csgo_thousands_separator"			"," // Note: This only supports , and .
 
@@ -35092,7 +35115,6 @@
 		"store_nav_popular"		"ใหม่และ\nเป็นที่นิยม"
 		"store_linked_item_tooltip"		"คลิกเพื่อดูไอเท็มนี้ทั้งสองเวอร์ชัน"
 		"store_nav_more"		"ดูเพิ่มเติม"
-
 		"StoreCheckout_NoItems"			"รถเข็นของคุณว่างเปล่า!"
 		"StoreCheckout_TooManyItems"	"คุณมีไอเท็มอยู่ในรถเข็นของคุณมากเกินไป!"
 		"StoreCheckout_Loading"			"กำลังชำระเงิน..."
@@ -38538,7 +38560,7 @@
 		"SFUI_match_cancelled"			"แมตช์ถูกยกเลิก"
 		"SFUI_match_abort_match_network_event"	"เครือข่ายหยุดชะงักส่งผลให้แมตช์ถูกยกเลิก\nแมตช์นี้จะไม่ส่งผลต่อเรตติ้งทักษะของคุณ"
 		"SFUI_match_abort_match_vac_live"	"VAC Live ตรวจพบคนโกงและจบแมตช์\nแมตช์นี้จะไม่ส่งผลต่อการจัดแรงก์ทักษะของคุณ"
-		"SFUI_match_abort_match_abnormal_behavior"	"VAC ตรวจพบเกมเพลย์ที่ผิดปกติและได้ยกเลิกแมตช์แล้ว\nผู้เล่นจะถูกทำเครื่องหมายว่าผิดปกติโดย VAC และสมาชิกปาร์ตี้จะได้รับคูลดาวน์"
+		
 		"SFUI_match_vac_live_partied_with_cheater"	"แมตช์นี้จะไม่ได้รับรางวัลความคืบหน้าเนื่องจากผู้เล่นในปาร์ตี้ของคุณถูกแบน"
 		"SFUI_match_abort_match_missing_player"	"  แมตช์กำลังถูกยกเลิกเพราะไม่มีผู้เล่นเชื่อมต่อ"
 		"SFUI_match_abort_match_player_abandoned"	"  แมตช์ได้ถูกยกเลิกแล้ว เนื่องจากผู้เล่นถูกตัดการเชื่อมต่อ"
@@ -48501,6 +48523,9 @@
 		"quest_11015_var_desc:f"	 					"ชนะรอบในโหมด <b>{s:gamemode}: {s:location}</b>"
 		"quest_11015_var_ingame:f"						"ชนะรอบ"
 
+		"quest_11016_var_desc:f"	 					"ชนะรอบในโหมด <b>{s:gamemode}: {s:location}</b>"
+		"quest_11016_var_ingame:f"						"ชนะรอบ"
+
 // ---------------------------------------------------------------------------------------------
 // Join Friend Listen Servers
 // ---------------------------------------------------------------------------------------------
@@ -48510,8 +48535,8 @@
 		"tooltip_short_viewaddon"			"ดูแผนที่แบบกำหนดเอง"
 		"tooltip_short_kick_player"			"เตะ"
 
-// crow_mask_50454_comment
-// crow_mask_50455_comment
+// crow_mask_50516_comment
+// crow_mask_50517_comment
 }
 
 
