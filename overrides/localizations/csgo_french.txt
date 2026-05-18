@@ -1025,7 +1025,7 @@
 		"Cstrike_TitlesTXT_Accept_Radio"									"Accepte maintenant les messages radio"
 		"Cstrike_TitlesTXT_Affirmative"										"Affirmatif."
 		"Cstrike_TitlesTXT_Alias_Not_Avail"									"L'article « %s1 »\nn'est pas disponible pour votre équipe."
-		"Cstrike_TitlesTXT_All_Hostages_Rescued"							"L'otage a été secouru !"
+		"Cstrike_TitlesTXT_All_Hostages_Rescued"							"Sauvetage de l'otage réussi"
 		"Cstrike_TitlesTXT_All_Teams_Full"									"Toutes les équipes sont au complet !"
 		"Cstrike_TitlesTXT_All_VIP_Slots_Full"								"Les 5 emplacements VIP sont occupés.\nVeuillez réessayer plus tard."
 		"Cstrike_TitlesTXT_Already_Have_Kevlar"								"Vous avez déjà un gilet."
@@ -1170,19 +1170,19 @@
 		"Cstrike_TitlesTXT_Hold_this_position"								"Gardez la position."
 		"Cstrike_TitlesTXT_Hostage"											"Otage"
 		"Cstrike_TitlesTXT_Hostage_down"									"Otage à terre."
-		"Cstrike_TitlesTXT_Hostages_Not_Rescued"							"Les otages n'ont pas été secourus !"
+		"Cstrike_TitlesTXT_Hostages_Not_Rescued"							"Les otages attendent les secours !"
 		"Cstrike_TitlesTXT_Ignore_All_Messages"								"Ignore maintenant TOUS les messages"
 		"Cstrike_TitlesTXT_Ignore_Broadcast_Messages"						"Messages GÉNÉRAUX maintenant ignorés"
 		"Cstrike_TitlesTXT_Ignore_Broadcast_Team_Messages"					"Messages ÉQUIPE/GÉNÉRAUX maintenant ignorés"
 		"Cstrike_TitlesTXT_Ignore_Radio"									"Messages RADIO maintenant ignorés"
 		"Cstrike_TitlesTXT_In_position"										"Je suis en place."
-		"Cstrike_TitlesTXT_Injured_Hostage"									"Vous avez blessé un otage !"
+		"Cstrike_TitlesTXT_Injured_Hostage"									"Vous avez blessé l'otage !"
 
 		"Cstrike_TitlesTXT_Kevlar"											"Kevlar"
 		"Cstrike_TitlesTXT_Kevlar_Helmet"									"Kevlar + casque"
 		"Cstrike_TitlesTXT_Kevlar_Vest"										"Gilet en kevlar"
 		"Cstrike_TitlesTXT_Kevlar_Vest_Ballistic_Helmet"					"Gilet en kevlar + casque"
-		"Cstrike_TitlesTXT_Killed_Hostage"									"Vous avez tué un otage !"
+		"Cstrike_TitlesTXT_Killed_Hostage"									"Vous avez tué l'otage !"
 		"Cstrike_TitlesTXT_Killed_Teammate"									"Vous avez tué un coéquipier !"
 
 		"Cstrike_TitlesTXT_Map_Description_not_available"					"Description de la carte indisponible."
@@ -1313,7 +1313,7 @@
 		"LongHall"			"Long couloir"
 		"SideHall"			"Couloir latéral"
 		"FrontHall"			"Vestibule"
-		"BackHall"			"Couloir arrière"
+		"BackHall"			"Fond de salle"
 		"MainHall"			"Couloir principal"
 		"FarSide"			"Fond"
 		"Windows"			"Fenêtres"
@@ -1443,7 +1443,7 @@
 		"Decon"			"Salle de décontamination"
 		"Observation"		"Salle d'observation"
 		"Admin"			"Administration"
-		"Toxic"			"Salle toxique"
+		"Toxic"			"Zone toxique"
 		"Mini"			"M-INI"
 		"Control"		"Salle de contrôle"
 		"Heaven"		"Paradis"
@@ -1543,7 +1543,7 @@
 		"TMain"				"Sortie principale T"
 		"Tunnel1"			"Tunnel 1"
 		"Tunnel2"			"Tunnel 2"
-		"ElectricalBox"		"Boîtier électrique"
+		"ElectricalBox"		"Armoire électrique"
 		"TUpper"			 "Escaliers T"
 		"Football"			 "Football"
 		"420"				"420"
@@ -1586,7 +1586,30 @@
 		"TMid"				"Milieu T"
 		"Toilets"			"Toilettes"
 		"Candle"			"Bougie"
-
+		//Cache
+		"OutsideA"			"Extérieur A"
+		"OutsideB"			"Extérieur B"
+		"AHalls"			"Couloirs A"
+		"BHalls"			"Couloirs B"
+		"SunRoom"			"Soleil"
+		"Checkers"			"Damier"
+		"Headshot"			"Perchoir"
+		"TreeRoom"			"Salle de l'arbre"
+		"CTLane"			"Voie AT"
+		"Bear"				"Ours"
+		"BusStop"			"Arrêt de bus"
+		"Corner"			"Coin"
+		"ABoost"			"Boost A"
+		"Highway"			"Route"
+		"Sandbags"			"Sacs de sable"
+		"Cubby"				"Recoin"
+		"MidRoof"			"Toit milieu"
+		"Lockers"			"Casiers"
+		"AStairs"			"Escaliers A"
+		"TTruck"			"Camion T"
+		"Useless"			"Vacant"
+		"TYard"				"Cour T"
+		"Boost"				"Appentis"
 		// coop_cementplant
 		"Gravelpit"		"Carrière de cailloux"
 		"Forest"		"Forêt"
@@ -1762,7 +1785,7 @@
 		"SFUI_ContractKillStart"			"<font color='#45b512'>%s1 $</font> pour éliminer la <font color='#e58816'>cible prioritaire</font>."
 		"SFUI_ContractKillComplete"			"Cible prioritaire éliminée avec succès : <font color='#45b512'>%s1 $</font> obtenus !"
 		"SFUI_ContractKillAlreadyOpen"		"Une cible prioritaire vous est déjà assignée."
-		"SFUI_HostageApproachPayout"		"Vous avez rapproché un otage : <font color='#45b512'>%s1 $</font> bonus !"
+		"SFUI_HostageApproachPayout"		"Vous avez rapproché l'otage : <font color='#45b512'>%s1 $</font> bonus !"
 		"SFUI_HostageRescuedFullPayout"		"Évacuation de l'otage : <font color='#45b512'>%s1 $</font> obtenus !"
 		"SFUI_ReturnToPlayArea"				"Revenez dans la zone de sécurité !"
 		"SFUI_IsTheWinner"					"<font color='#45b512'>%s1</font> a gagné !"
@@ -1900,7 +1923,7 @@
 		"SFUI_PlayerCount_Alive_Left:f"		"{left_side_alive, plural, one{EN VIE} other{EN VIE}}"
 		"SFUI_PlayerCount_Alive_Right:f"	"{right_side_alive, plural, one{EN VIE} other{EN VIE}}"
 
-		"hostagerescuetime"			"Les ATs ont obtenu du temps supplémentaire pour avoir pris en charge un otage."
+		"hostagerescuetime"			"Les ATs ont obtenu du temps supplémentaire pour avoir porté secours à un(e) otage."
 
 		// Cash award reasons
 		//  = 0x06	   - Use color reserved for awards from this point forward. Most likely a green.
@@ -1913,7 +1936,7 @@
 		"Player_Cash_Award_Bomb_Planted"		" +%s1 $ pour avoir posé la bombe."
 		"Player_Cash_Award_Bomb_Defused"		" +%s1 $ pour avoir désamorcé la bombe."
 		"Player_Cash_Award_Rescued_Hostage"		" +%s1 $ pour avoir exfiltré un(e) otage."
-		"Player_Cash_Award_Interact_Hostage"	" +%s1 $ pour avoir pris en charge un(e) otage."
+		"Player_Cash_Award_Interact_Hostage"	" +%s1 $ pour avoir porté secours à un(e) otage."
 		"Player_Cash_Award_Respawn"				" +%s1 $ pour avoir réapparu."
 		"Player_Cash_Award_Get_Killed"			" +%s1 $ pour avoir été éliminé(e)."
 
@@ -1955,7 +1978,7 @@
 		"Team_Cash_Award_Loser_Bonus_Neg"					"  −%s1 $ à l'équipe pour avoir perdu."
 		"Team_Cash_Award_Loser_Zero"						"  −%s1 $ à l'équipe pour les personnes mortes de l'équipe perdante."
 		"Team_Cash_Award_Rescued_Hostage"					" +%s1 $ à l'équipe pour avoir secouru un(e) otage."
-		"Team_Cash_Award_Hostage_Interaction"				" +%s1 $ à l'équipe pour avoir pris en charge un(e) otage."
+		"Team_Cash_Award_Hostage_Interaction"				" +%s1 $ à l'équipe pour avoir porté secours à un(e) otage."
 		"Team_Cash_Award_Hostage_Alive"						" +%s1 $ à l'équipe pour avoir sauvé des otages."
 		"Team_Cash_Award_Planted_Bomb_But_Defused"			" +%s1 $ à l'équipe pour avoir posé la bombe."
 		"Team_Cash_Award_Survive_GuardianMode_Wave"			" +%s1 $ à l'équipe pour avoir survécu à la vague."
@@ -1988,7 +2011,7 @@
 		"winpanel_mvp_award_ace"		"MJ : %s1 pour avoir éliminé toute l'équipe ennemie"
 		"winpanel_mvp_award_bombplant"	"MJ : %s1 pour avoir posé la bombe"
 		"winpanel_mvp_award_bombdefuse"	"MJ : %s1 pour avoir désamorcé la bombe"
-		"winpanel_mvp_award_rescue"		"MJ : %s1 pour avoir exfiltré un otage"
+		"winpanel_mvp_award_rescue"		"MJ : %s1 pour avoir exfiltré un(e) otage"
 		"winpanel_mvp_award_score"		"MJ : %s1 pour avoir obtenu le meilleur score"
 		"winpanel_mvp_award_gungame"	"Gagnant de la Course à l'armement : %s1"
 		"winpanel_mvp_survivor"			"%s1 est la dernière personne en vie !"
@@ -5840,6 +5863,36 @@
 		"musickit_jamesandthecoldgun_01_desc"			"Le duo de rock gallois James and the Cold Gun dégage une énergie pure et sans filtre, mélangeant une attitude punk classique à une touche d'alt-rock moderne pour créer un kit de musiques torride."
 		"coupon_jamesandthecoldgun_01"					"Kit de musiques | James and the Cold Gun, Chewing Glass"
 		"coupon_jamesandthecoldgun_01_stattrak"			"Kit de musiques StatTrak™ | James and the Cold Gun, Chewing Glass"
+		
+		"musickit_alrt_01"						"ALRT, DOPAMINE HIT"
+		"musickit_alrt_01_desc"					"La bass house survoltée de ce « DOPAMINE HIT » d'ALRT vous procurera une dose d'adrénaline inégalée pour vous motiver à donner le meilleur de vous-même lorsque les occasions se présenteront."
+		"coupon_alrt_01"						"Kit de musiques | ALRT, DOPAMINE HIT"
+		"coupon_alrt_01_stattrak"				"Kit de musiques StatTrak™ | ALRT, DOPAMINE HIT"
+		
+		"musickit_altare_01"					"Altare, Change My Mind"
+		"musickit_altare_01_desc"				"L'hymne wave euphorique « Change My Mind » d'Altare est parfait quand vous savourez votre triomphe et qu'absolument personne ne semble pouvoir vous arrêter."
+		"coupon_altare_01"						"Kit de musiques | Altare, Change My Mind"
+		"coupon_altare_01_stattrak"				"Kit de musiques StatTrak™ | Altare, Change My Mind"
+		
+		"musickit_borne_01"						"borne, Give It To Me"
+		"musickit_borne_01_desc"				"Avec « Give It To Me », la pépite aux lignes de basse agressives, faites manger la poussière à vos adversaires dans Counter-Strike, et au-delà."
+		"coupon_borne_01"						"Kit de musiques | borne, Give It To Me"
+		"coupon_borne_01_stattrak"				"Kit de musiques StatTrak™ | borne, Give It To Me"
+		
+		"musickit_pirapus_01"					"Pirapus, EVERYNITE"
+		"musickit_pirapus_01_desc"				"« EVERYNITE », un hymne drum and bass électrisant de Pirapus, évoque le sentiment d'être au bord de l'exploit. Comme son nom l'indique, vos sens seront en alerte nuit après nuit."
+		"coupon_pirapus_01"						"Kit de musiques | Pirapus, EVERYNITE"
+		"coupon_pirapus_01_stattrak"			"Kit de musiques StatTrak™ | Pirapus, EVERYNITE"
+		
+		"musickit_repiet_01"					"Repiet & Julia Kleijn, On And On"
+		"musickit_repiet_01_desc"				"Avec le morceau « On And On » de Repiet et Julia Kleijn qui vous restera dans la tête, vous pourrez relever tous les défis. Que vous soyez au sommet de votre forme ou au creux de la vague, cette mélodie insufflera un esprit combattif pour surmonter tous les obstacles."
+		"coupon_repiet_01"						"Kit de musiques | Repiet & Julia Kleijn, On And On"
+		"coupon_repiet_01_stattrak"				"Kit de musiques StatTrak™ | Repiet & Julia Kleijn, On And On"
+		
+		"musickit_shockone_01"					"ShockOne, Voices"
+		"musickit_shockone_01_desc"				"Brisez vos chaines avec le morceau de drum and bass effrénée de ShockOne, « Voices ». Quand il n'y a plus que vous pour arracher la victoire, ce kit de musiques vous portera vers beaucoup de titres de MJ avec ses lignes de basse percutantes."
+		"coupon_shockone_01"					"Kit de musiques | ShockOne, Voices"
+		"coupon_shockone_01_stattrak"			"Kit de musiques StatTrak™ | ShockOne, Voices"
 
 //////////////////
 
@@ -34059,6 +34112,8 @@
 		"store_nav_popular"		"NOUVEAU ET POPULAIRE"
 		"store_linked_item_tooltip"		"Cliquez pour voir les deux versions de cet item"
 		"store_nav_more"		"Voir plus"
+		"store_nav_shop_all"		"Tout afficher"
+		"store_nav_section_coupon_nightmode2" "Kits de musiques<br>NIGHTMODE II"
 
 		"StoreCheckout_NoItems"			"Votre panier est vide !"
 		"StoreCheckout_TooManyItems"	"Vous avez placé un trop grand nombre d'objets dans votre panier !"
@@ -37485,7 +37540,10 @@
 		"SFUI_match_cancelled"			"Match annulé"
 		"SFUI_match_abort_match_network_event"	"Ce match est annulé en raison d'une interruption réseau.\nCe match n'influera pas sur votre grade."
 		"SFUI_match_abort_match_vac_live"	"Le système VAC Live a détecté une personne qui triche et a mis fin au match.\nCe match n'influera pas sur votre grade."
-		"SFUI_match_abort_match_abnormal_behavior"	"VAC a détecté une activité suspecte et a annulé le match.\nLa personne incriminée et les membres de son groupe ont reçu une pénalité."
+		
+		"SFUI_match_abort_match_abnormal_behavior"	"%s1 et les autres membres du groupe ont reçu une pénalité VACnet."
+		"SFUI_match_abort_match_abnormal_behavior_pano"	"VACnet a détecté une activité suspecte et a annulé la partie."
+
 		"SFUI_match_vac_live_partied_with_cheater"	"Ce match ne sera pas comptabilisé, car une personne de votre groupe a été bannie."
 		"SFUI_match_abort_match_missing_player"	" Le match a été annulé car personne ne s'est connecté."
 		"SFUI_match_abort_match_player_abandoned"	"  Le match a été annulé, car une personne s'est déconnectée."
@@ -47410,6 +47468,9 @@ GSS !"
 		"quest_11015_var_desc:f"	 					"{mission-points, plural, one{Gagnez une manche en mode <b>{s:gamemode} sur {s:location}</b>.} other{Gagnez des manches en mode <b>{s:gamemode} sur {s:location}</b>.}}"
 		"quest_11015_var_ingame:f"						"{mission-points, plural, one{Gagnez une manche.} other{Gagnez des manches.}}"
 
+		"quest_11016_var_desc:f"	 					"{mission-points, plural, one{Gagnez une manche en mode <b>{s:gamemode} sur {s:location}</b>.} other{Gagnez des manches en mode <b>{s:gamemode} sur {s:location}</b>.}}"
+		"quest_11016_var_ingame:f"						"{mission-points, plural, one{Gagnez une manche.} other{Gagnez des manches.}}"
+
 // ---------------------------------------------------------------------------------------------
 // Join Friend Listen Servers
 // ---------------------------------------------------------------------------------------------
@@ -47419,8 +47480,8 @@ GSS !"
 		"tooltip_short_viewaddon"			"Voir la carte personnalisée"
 		"tooltip_short_kick_player"			"Exclure"
 
-// crow_mask_50454_comment
-// crow_mask_50455_comment
+// crow_mask_50516_comment
+// crow_mask_50517_comment
 }
 
 
