@@ -9,6 +9,7 @@
 // Playing on every difficulty will be like playing on a public server with mixed skill levels between Rank and Pro.
 // v1.6 bots can spray at any range now. set skill value back to 100 for pros
 // v1.7 overhaul bots' weaponpreferences and difficulty levels
+// v1.8 add Developer List to credit nade system developers; adjust LookAngleStiffness for compatibility with BotAimImprover 2.0.0
 //----------------------------------------------------------------------------
 
 //
@@ -29,12 +30,12 @@ Default
         Difficulty = NORMAL
         VoicePitch = 100
         Skin = 0
-    	LookAngleMaxAccelNormal = 99999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999.9.9.9.9
-    	LookAngleStiffnessNormal = 5000.0
-    	LookAngleDampingNormal = 45.0
-    	LookAngleMaxAccelAttacking = 99999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999.9.9.9.9
-    	LookAngleStiffnessAttacking = 5200.0
-    	LookAngleDampingAttacking = 39.95
+	    LookAngleMaxAccelNormal = 99999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999.9.9.9.9
+	    LookAngleStiffnessNormal = 3000.0
+	    LookAngleDampingNormal = 45.0
+	    LookAngleMaxAccelAttacking = 99999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999.9.9.9.9
+	    LookAngleStiffnessAttacking = 3000.0
+	    LookAngleDampingAttacking = 39.95
 End
 
 //----------------------------------------------------------------------------
@@ -383,7 +384,7 @@ ProPrecise+RiflePro+CamperPersonality "stavn"
 	VoicePitch = 77
 End
 
-ProPrecise+SniperPro+SniperPersonality "dev1ce"
+ProPrecise+SniperPro+SniperPersonality "device"
 	VoicePitch = 104
 End
 
@@ -1300,7 +1301,7 @@ End
 ProSteady+RiflePro+RiflePersonality "Westmelon"
 	VoicePitch = 92
 End
-ProPrecise+SniperPro+SniperPersonality "z4kr"
+ProPrecise+SniperPro+SniperPersonality "z4KR"
 	VoicePitch = 92
 End
 ProSteady+RiflePro+RiflePersonality "Starry"
@@ -4072,14 +4073,29 @@ End
 ProSteady+RiflePro+RiflePersonality "chengking"
 	VoicePitch = 90
 End
-ProFast+RiflePro+RiflePersonality "arrozd0ce"
-	VoicePitch = 104
-End
 ProSteady+Duelist+FastshotPersonality "misutaaa"
 	VoicePitch = 91
 End
-ProSteady+RiflePro+RiflePersonality "x9"
+ProSteady+RiflePro+RiflePersonality "xelex"
 	VoicePitch = 92
+End
+ProSlow+SniperPro+FreemanPersonality "s1zzi"
+End
+ProSlow+RiflePro+RusherPersonality "Br4tkO"
+End
+ProSlow+RiflePro+CamperPersonality "nacho"
+End
+ProSlow+SniperPro+SniperPersonality "millert"
+End
+ProSteady+RiflePro+RiflePersonality "teme"
+End
+ProSlow+RiflePro+RusherPersonality "Cliqq"
+End
+ProSteady+RiflePro+RiflePersonality "Schwarz"
+End
+ProSlow+SniperPro+SniperPersonality "3gl"
+End
+RankOthers+RiflePro+RiflePersonality "enkay J"
 End
 
 //----------------------------------------------------------------------------
@@ -5064,4 +5080,62 @@ End
 RankDuelist+SniperPure+ScoperPersonality "DeepSight"
 End
 RankRifler+Rusher+RusherPersonality "RushFlux"
+End
+
+// Developer list
+ProSteady+SniperPro+SniperPersonality "Lupin" 
+End
+
+ProSteady+RiflePro+RusherPersonality "NJ"
+End
+
+ProSlow+RiflePro+RusherPersonality "newbie046"
+End
+
+ProFast+RiflePro+FreemanPersonality "XYC_KL"
+End
+
+ProSlow+Rusher+FreemanPersonality "xuan"
+End
+
+ProSlow+Fastshot+SniperPersonality "luochenlinyu"
+End
+
+ProSlow+RiflePro+FreemanPersonality "Aurelius47"
+End
+
+ProSlow+SniperPro+SniperPersonality "B1gcul"
+End
+
+ProSlow+Rusher+FreemanPersonality "Charlotte"
+End
+
+ProSlow+Duelist+FastshotPersonality "WanderDream"
+End
+
+ProSteady+Fastshot+FastshotPersonality "Gardevior"
+End
+
+ProSlow+RiflePro+RusherPersonality "YYBN"
+End
+
+RankRifler+Duelist+FreemanPersonality "jessie"
+End
+
+ProSteady+RiflePro+RiflePersonality "Ch1ANnn1"
+End
+
+ProSteady+RiflePro+RiflePersonality "HoshinoSatoshi"
+End
+
+ProSteady+RiflePro+RiflePersonality "Kzen"
+End
+
+ProSlow+RiflePro+RiflePersonality "tht"
+End
+
+RankOthers+Duelist+ScoperPersonality "Mark William"
+End
+
+RankOthers+RiflePro+RiflePersonality "Jw1zxm"
 End
