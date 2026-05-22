@@ -217,6 +217,7 @@ bot_add_t "nacho";bot_add_t "cass1n";bot_add_t "buda";bot_add_t "tomaszin";bot_a
 35. ENCE
 
 bot_add_ct "HENU";bot_add_ct "millert";bot_add_ct "teme";bot_add_ct "Cliqq";bot_add_ct "Schwarz";mp_teamlogo_1 ence;mp_teamname_1 ENCE
+
 bot_add_t "HENU";bot_add_t "millert";bot_add_t "teme";bot_add_t "Cliqq";bot_add_t "Schwarz";mp_teamlogo_2 ence;mp_teamname_2 ENCE
 
 36. ECSTATIC
