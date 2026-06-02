@@ -9,8 +9,8 @@ Aims to enhance your experience when playing against bots offline or with friend
 
 1. Makes bots aim better and more human-like
 2. Allows bots to throw nades deftly according to the situation
-3. Fixes most bot stuck issues
-4. Improves bots' movement
+3. Improves bots' movement
+4. Fixes most bot stuck issues
 5. Allows bots to buy everything and overhauls their economy management
 6. Refines bot behavior, allowing them to spray, flick, spam smokes and anti-flash
 7. Assigns each bot their own agent model, music kit and avatar
