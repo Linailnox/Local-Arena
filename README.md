@@ -13,7 +13,7 @@ Aims to enhance your experience when playing against bots offline or with friend
 4. Fixes most bot stuck issues
 5. Allows bots to buy everything and overhauls their economy management
 6. Refines bot behavior, allowing them to spray, flick, spam smokes and anti-flash
-7. Assigns each bot their own agent model, music kit, random knife skin, gloves, and avatar
+7. Assigns each bot their own agent model, music kit, knife skin, gloves, avatar, and profile
 8. Makes bots smarter, more organized, and more alert to their surroundings
 9. Changes bot names to pro and random players. (the characteristics of each pro player are based on stats from [HLTV](https://www.hltv.org/))
 10. Removes the prefix from bot names
@@ -159,19 +159,10 @@ After modification, if you wanna **play with bots again**, navigate to `game/csg
 
 Add `-disable_workshop_command_filtering` to your launch options
 
-### How to disable agent skins, music kits, knives, and gloves
+### How to disable agent skins, music kits, knife skins, and gloves
 
 1. Open the root of CS2 and navigate to `game/csgo/addons/counterstrikesharp/plugins`  
 2. Rename the `BotRandomizer` folder to `BotRandomizer_disabled`
-
-### Optional: BotHider (disguise bots as human players)
-
-[CS2-Bot-Hider](https://github.com/XBribo/CS2-Bot-Hider) is a Metamod plugin that removes the `BOT` scoreboard tag and assigns realistic SteamIDs and names. This repo ships a companion **BotHiderImpl** CounterStrikeSharp plugin so other plugins (including BotRandomizer) still see disguised bots via `player.IsBot`.
-
-1. Build or download **BotHider** for your OS and place the binary under `addons/BotHider/bin/` (`linuxsteamrt64/BotHider` or `win64/BotHider.dll`).
-2. Copy from this repo: `addons/metamod/BotHider.vdf`, `addons/BotHider/bot_info.json`, `addons/BotHider/gamedata.json`, `addons/BotHider/map_whitelist.json`.
-3. Build **BotHiderApi** and **BotHiderImpl** (`dotnet build -c Release` in each `.csproj` folder) and deploy the DLLs plus `0Harmony.dll` as described in the BotHider README.
-4. Restart the server. Use `bh_status` in console to verify managed slots.
 
 ### How to surf normally
 
@@ -185,7 +176,8 @@ Run `sv_standable_normal 0.7` in your game console
 [CS2-Bot-NadeSystem](https://github.com/ed0ard/CS2-Bot-NadeSystem)  
 [CS2_ExecAfter_No_Admin](https://github.com/ed0ard/CS2_ExecAfter_No_Admin) forked from [kus](https://github.com/kus)  
 [CS2-Bot-Randomizer](https://github.com/ed0ard/CS2-Bot-Randomizer)  
-[CS2-Bot-Hider](https://github.com/XBribo/CS2-Bot-Hider)  
+[CS2-Bot-Hider](https://github.com/XBribo/CS2-Bot-Hider) by [XBribo](https://github.com/XBribo)  
+[CSGOBetterBots](https://github.com/manicogaming/CSGOBetterBots/blob/master/addons/sourcemod/data/bot_info.json) by [manico](https://github.com/manicogaming)  
 [CS2-Smarter-Bot](https://github.com/ed0ard/CS2-Smarter-Bot)  
 [CS2-BotAI](https://github.com/ed0ard/CS2-BotAI) forked from [Austin](https://github.com/Austinbots)  
 [CS2-BotAI-for-Linux](https://github.com/Austinbots/CS2-BotAI)  
