@@ -13,7 +13,7 @@ Aims to enhance your experience when playing against bots offline or with friend
 4. Fixes most bot stuck issues
 5. Allows bots to buy everything and overhauls their economy management
 6. Refines bot behavior, allowing them to spray, flick, spam smokes and anti-flash
-7. Assigns each bot their own agent model, music kit, knife skin, gloves, avatar, and profile
+7. Assigns each bot their own knife, gloves, weapon skins, agent model, music kit, avatar, and profile
 8. Makes bots smarter, more organized, and more alert to their surroundings
 9. Changes bot names to pro and random players. (the characteristics of each pro player are based on stats from [HLTV](https://www.hltv.org/))
 10. Removes the prefix from bot names
