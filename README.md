@@ -22,24 +22,47 @@ Aims to enhance your experience when playing against bots offline or with friend
 
 ## Installation
 
+### Windows
+
 1. Download the latest **CS2BotImprover.zip** in [Releases](https://github.com/ed0ard/CS2-Bot-Improver/releases) and unzip it
 
    (If you run a dedicated server that is not only for bot matches, please download **CS2BotImprover_rules_unchanged.zip**)
-    
-   (For Linux, please download **CS2BotImprover_for_Linux.zip**)
+
+2. Put **Panel v1.4.0.exe** anywhere convenient
+
+<img width="128" height="128" alt="App" src="https://github.com/user-attachments/assets/7271dc7d-2436-484b-8359-6531f4abd710" />
+
+3. Open the root of CS2 and navigate to `game/csgo` directory
 
 <img width="405" height="256" alt="snap_1" src="https://github.com/user-attachments/assets/ae2be90e-6742-4f1f-8e0c-096b728d5dbd" />
 
-2. Open the root of CS2 and navigate to `game/csgo` directory
+3. Copy all the remaining files in `CS2BotImprover` and paste them into it
 
-<img width="348" height="123" alt="snap_2" src="https://github.com/user-attachments/assets/c6dcfc51-0062-44a7-9c9b-e8f094b8d8b3" />
+<img width="540" height="181" alt="snap_windows" src="https://github.com/user-attachments/assets/6a8645fc-78e7-4f3a-92d3-5d1b6d913918" />
 
-3. Copy all the files in `CS2BotImprover` and paste them into it
+4. Open **Panel v1.4.0.exe**, select **Bot Mode**, then click **Launch CS2** 
+
+<img width="339" height="129" alt="Panel_1" src="https://github.com/user-attachments/assets/dc806991-c940-43cf-a614-f49012fae4a7" />
+
+
+### Linux
+
+1. Download the latest **CS2BotImprover_for_Linux.zip** in [Releases](https://github.com/ed0ard/CS2-Bot-Improver/releases) and unzip it
+
+2. Put **Command.txt** anywhere convenient
+
+3. Open the root of CS2 and navigate to `game/csgo` directory
+
+<img width="405" height="256" alt="snap_1" src="https://github.com/user-attachments/assets/ae2be90e-6742-4f1f-8e0c-096b728d5dbd" />
+
+4. Copy all the remaining files in `CS2BotImprover` and paste them into it
+
+<img width="535" height="180" alt="snap_linux" src="https://github.com/user-attachments/assets/9bda7b1d-43d3-49cf-a283-27b124b894e0" />
+
+5. Add `-insecure` in launch options
 
 <img width="130" height="153" alt="snap_3" src="https://github.com/user-attachments/assets/4c775e36-3fc3-4a19-9cb1-4f0c9327838c" /><br>
 <img width="625" height="423" alt="snap_4" src="https://github.com/user-attachments/assets/ac0b0c57-ee67-4e33-96fb-146d14714fc8" />
-
-4. Add `-insecure` in launch options
 
 ## Commands
 
@@ -131,21 +154,54 @@ Point at the ground and press `\` on your keyboard to generate all kinds of kniv
 `scouts_off`  
 Input the command after a match begins to turn on/off Flying Scoutsman
 
+## Panel Guide (Windows-Only)
+
+### Status Lights
+🟢 No issues detected  
+🟡 Restart CS2 to apply changes  
+🔴 Files missing. Click the red light to view the list of missing files  
+
+<img width="481" height="82" alt="Status Lights" src="https://github.com/user-attachments/assets/26a947e2-4e0e-423f-bce8-f220d88509a2" />
+
+### Matchmaking & Bot Mode Toggle
+Select your desired mode, then click `Launch CS2`
+
+<img width="472" height="179" alt="Mode_2" src="https://github.com/user-attachments/assets/3f9254fa-4cbe-4854-8fd1-0f35228fff77" />
+
+### Settings
+Click the <img width="31" height="32" alt="Settings" src="https://github.com/user-attachments/assets/7f94176b-79f1-4e22-9495-4589c4dea9eb" /> icon in the top-right corner to open `Settings`
+
+### Commands
+Click `Commands`, type keywords to search, then click a block to auto-copy
+
+<img width="350" height="420" alt="Screenshot 2026-06-14 090901" src="https://github.com/user-attachments/assets/957cfafb-900d-4450-b985-13d3e8efc375" />
+
 ## FAQ
 
-### How to change the difficulty level
+### How to manually change the difficulty level
 
 1. Open the root of CS2 and navigate to `game/csgo/overrides` directory  
 2. Open the `Low` for easy difficulty, `Medium` for a mixed difficulty based on HLTV stats (default), and `High` for extreme difficulty  
 3. Copy `botprofile.vpk` and paste it into `game/csgo/overrides` before launching the game
 
-### How to play online matches normally
+### How to manually switch to normal online match mode
 
 1. Open the root of CS2 and navigate to `game/csgo/backup/Online` directory  
 2. Copy `gameinfo.gi` and paste it to `game/csgo` directory (Replace the file in the destination)  
 3. Delete `-insecure` in your launch options  
 
 After modification, if you wanna **play with bots again**, navigate to `game/csgo/backup/WithBots` directory, replace the file as above and add the launch option
+
+### How to manually disable bot weapon skins, agent skins, music kits, knives and gloves
+
+1. Open the root of CS2 and navigate to `game/csgo/addons/counterstrikesharp/plugins`  
+2. Rename the `BotRandomizer` folder to `BotRandomizer_disabled`  
+3. Navigate to `addons/counterstrikesharp/configs/core.json` and set `FollowCS2ServerGuidelines` to `true`
+
+### How to manually disable bot steam profiles
+
+1. Open the root of CS2 and navigate to `game/csgo/addons`  
+2. Rename the `BotHider` folder to `BotHider_disabled`  
 
 ### How to play bot matches with friends
 
@@ -158,11 +214,6 @@ After modification, if you wanna **play with bots again**, navigate to `game/csg
 ### How to run the plugin well on workshop maps
 
 Add `-disable_workshop_command_filtering` to your launch options
-
-### How to disable agent skins, music kits, knife skins, and gloves
-
-1. Open the root of CS2 and navigate to `game/csgo/addons/counterstrikesharp/plugins`  
-2. Rename the `BotRandomizer` folder to `BotRandomizer_disabled`
 
 ### How to surf normally
 
