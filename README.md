@@ -36,7 +36,7 @@ Aims to enhance your experience when playing against bots offline or with friend
 
 <img width="405" height="256" alt="snap_1" src="https://github.com/user-attachments/assets/ae2be90e-6742-4f1f-8e0c-096b728d5dbd" />
 
-3. Copy all the remaining files in `CS2BotImprover` and paste them into it
+3. Copy all the remaining files in `CS2BotImprover` and paste them into `game/csgo`
 
 <img width="540" height="181" alt="snap_windows" src="https://github.com/user-attachments/assets/6a8645fc-78e7-4f3a-92d3-5d1b6d913918" />
 
@@ -55,7 +55,7 @@ Aims to enhance your experience when playing against bots offline or with friend
 
 <img width="405" height="256" alt="snap_1" src="https://github.com/user-attachments/assets/ae2be90e-6742-4f1f-8e0c-096b728d5dbd" />
 
-4. Copy all the remaining files in `CS2BotImprover` and paste them into it
+4. Copy all the remaining files in `CS2BotImprover` and paste them into `game/csgo`
 
 <img width="535" height="180" alt="snap_linux" src="https://github.com/user-attachments/assets/9bda7b1d-43d3-49cf-a283-27b124b894e0" />
 
