@@ -178,6 +178,14 @@ Click `Commands`, click a block to auto-copy, or type keywords to search
 
 ## FAQ
 
+### How to play bot matches with friends
+
+1. Start a bot match and input the required commands. Then type `status` in the console  
+<img width="597" height="141" alt="snap_6" src="https://github.com/user-attachments/assets/792c4b4f-1d56-4a39-9186-b301cbff1846" />
+
+2. Copy the text after `steamid:`, add `connect ` before it (don’t forget the space between them)  
+3. Send the full command to your friends and have them paste it into their consoles
+
 ### How to manually change the difficulty level
 
 1. Open the root of CS2 and navigate to `game/csgo/overrides` directory  
@@ -202,14 +210,6 @@ After modification, if you wanna **play with bots again**, navigate to `game/csg
 
 1. Open the root of CS2 and navigate to `game/csgo/addons`  
 2. Rename the `BotHider` folder to `BotHider_disabled`  
-
-### How to play bot matches with friends
-
-1. Start a bot match and input the required commands. Then type `status` in the console  
-<img width="597" height="141" alt="snap_6" src="https://github.com/user-attachments/assets/792c4b4f-1d56-4a39-9186-b301cbff1846" />
-
-2. Copy the text after `steamid:`, add `connect ` before it (don’t forget the space between them)  
-3. Send the full command to your friends and have them paste it into their consoles
 
 ### How to run the plugin well on workshop maps
 
