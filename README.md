@@ -237,4 +237,4 @@ Run `sv_standable_normal 0.7` in your game console
 [Apple-Style-GUI](https://github.com/ed0ard/Apple-Style-GUI)  
 
 ## License
-GPL-3.0
+AGPL-3.0
