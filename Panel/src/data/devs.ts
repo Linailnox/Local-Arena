@@ -9,6 +9,7 @@ export const DEVS: string[] = [
   "Misaka17032",
   "unicbm",
   "YYBN",
+  "AmagiReina",
   "htfy96",
   "DANK1NG1I45l4",
   "XYC_KL",
