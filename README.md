@@ -100,7 +100,8 @@ Shows the current nade throwing mode
 ### Damage Recap
 
 - `css_damage_style`: Shows the current round-end damage recap style
-- `css_damage_style classic`: Uses the existing English damage recap format (default)
+- `css_damage_style auto`: Uses `pw` for Chinese player languages and `classic` for other languages (default)
+- `css_damage_style classic`: Always uses the existing English damage recap format
 - `css_damage_style pw`: Uses a compact Perfect World-style Chinese format with highlighted numeric values
 
 ### Buy
