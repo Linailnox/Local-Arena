@@ -219,7 +219,7 @@ Add `-disable_workshop_command_filtering` to your launch options
 
 Run `sv_standable_normal 0.7` in your game console
 
-### Will I get VAC banned for using this plugin?
+### Will I get VAC banned for using this plugin
 
 This plugin itself poses no VAC ban risk.
 
