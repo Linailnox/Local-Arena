@@ -97,13 +97,6 @@ Bots have minimal limitations and think less before throwing nades
 `bot_nades`  
 Shows the current nade throwing mode
 
-### Damage Recap
-
-- `css_damage_style`: Shows the current round-end damage recap style
-- `css_damage_style auto`: Uses `pw` for Chinese player languages and `classic` for other languages (default)
-- `css_damage_style classic`: Always uses the existing English damage recap format
-- `css_damage_style pw`: Uses a compact Perfect World-style Chinese format with highlighted numeric values
-
 ### Buy
 
 Input the weapon's name in your console to give every bot this weapon from the next round
@@ -225,6 +218,12 @@ Add `-disable_workshop_command_filtering` to your launch options
 ### How to surf normally
 
 Run `sv_standable_normal 0.7` in your game console
+
+### Will I get VAC banned for using this plugin?
+
+This plugin itself poses no VAC ban risk.
+
+However, if you use other third-party player skin-changing features alongside it, there may be a ban risk. Please use at your own risk.
 
 ## Credits
 [metamod-source](https://github.com/alliedmodders/metamod-source)  
