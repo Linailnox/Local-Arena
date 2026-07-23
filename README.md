@@ -232,7 +232,7 @@ However, if you use other third-party player skin-changing features alongside it
 [CS2-Bullseye-Bot](https://github.com/ed0ard/CS2-Bullseye-Bot)  
 [CS2-Bot-NadeSystem](https://github.com/ed0ard/CS2-Bot-NadeSystem)  
 [CS2_ExecAfter_No_Admin](https://github.com/ed0ard/CS2_ExecAfter_No_Admin) forked from [kus](https://github.com/kus)  
-[CS2-Bot-Randomizer](https://github.com/ed0ard/CS2-Bot-Randomizer)  
+[CS2-Bot-Randomizer](https://github.com/ed0ard/CS2-Bot-Randomizer) by [ed0ard](https://github.com/ed0ard), [Misaka17032](https://github.com/Misaka17032), and [unicbm](https://github.com/unicbm)<br>
 [CS2-Bot-Hider](https://github.com/XBribo/CS2-Bot-Hider) by [XBribo](https://github.com/XBribo)  
 [CS2-Bot-Controller](https://github.com/XBribo/CS2-Bot-Controller) by [XBribo](https://github.com/XBribo)  
 [CSGOBetterBots](https://github.com/manicogaming/CSGOBetterBots/blob/master/addons/sourcemod/data/bot_info.json) by [manico](https://github.com/manicogaming)  
