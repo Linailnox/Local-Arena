@@ -46,6 +46,8 @@ export default function PresetsPanel({ onBack }: { onBack?: () => void }) {
   const cfgPresent = presets?.cfg_present ?? false;
   const running = presets?.cs2_running ?? false;
   const disabled = !csgoPath || !cfgPresent;
+  const aimSupported = presets?.aim_supported ?? false;
+  const aimRuntimeActive = presets?.aim_active;
 
   // aimPending / nadesPending live in the global store, so each section's
   // pending-restart flag survives leaving and returning to this panel. A section
@@ -60,6 +62,16 @@ export default function PresetsPanel({ onBack }: { onBack?: () => void }) {
   const nades: NadesValue =
     presets?.nades ?? ((config?.nades as NadesValue | null) ?? "normal");
   const aimOption = AIM.find(({ value }) => value === aim) ?? AIM[1];
+  const aimRuntimeDetail = !aimSupported
+    ? t("pre.aimUnavailable")
+    : aimRuntimeActive === true
+    ? t("pre.aimRuntimeActive", {
+        count: presets?.aim_override_count ?? 0,
+        errors: presets?.aim_error_count ?? 0,
+      })
+    : aimRuntimeActive === false
+    ? t("pre.aimRuntimeInactive")
+    : t("pre.aimRuntimeUnknown");
   const nadesOption = NADES.find(({ value }) => value === nades) ?? NADES[2];
   const botItemsCfgPresent = botItems?.cfg_present ?? false;
   const botItemsRunning = botItems?.cs2_running ?? false;
@@ -75,17 +87,24 @@ export default function PresetsPanel({ onBack }: { onBack?: () => void }) {
   return (
     <SubPage title={t("pre.title")} onBack={onBack}>
       <div className="presets__controls">
-        <Section title={t("pre.aim")} status={statusFor(aimPending)}>
+        <Section
+          title={t("pre.aim")}
+          status={!aimSupported ? "off" : aimRuntimeActive === false ? "red" : statusFor(aimPending)}
+        >
           <Segmented
             ariaLabel={t("pre.aim")}
             value={aim}
             onChange={(v) => applyAim(v)}
-            disabled={disabled}
+            disabled={disabled || !aimSupported}
             options={AIM.map(({ value, labelKey }) => ({ value, label: t(labelKey) }))}
           />
           <p className="selection-detail" aria-live="polite">
-            {t(aimOption.descriptionKey)}
+            {aimSupported ? t(aimOption.descriptionKey) : aimRuntimeDetail}
           </p>
+          <p className="selection-detail" aria-live="polite">
+            {aimRuntimeDetail}
+          </p>
+          <p className="selection-detail">{t("pre.appliesNextLaunch")}</p>
         </Section>
 
         <Section title={t("pre.nades")} status={statusFor(nadesPending)}>
