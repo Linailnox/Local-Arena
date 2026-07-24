@@ -28,7 +28,7 @@ Aims to enhance your experience when playing against bots offline or with friend
 
    (If you run a dedicated server that is not only for bot matches, please download **CS2BotImprover_rules_unchanged.zip**)
 
-2. Put **Panel v1.4.2.exe** anywhere convenient
+2. Put **Panel v1.4.3.exe** anywhere convenient
 
 <img width="128" height="128" alt="App" src="https://github.com/user-attachments/assets/7271dc7d-2436-484b-8359-6531f4abd710" />
 
@@ -40,7 +40,7 @@ Aims to enhance your experience when playing against bots offline or with friend
 
 <img width="540" height="181" alt="snap_windows" src="https://github.com/user-attachments/assets/6a8645fc-78e7-4f3a-92d3-5d1b6d913918" />
 
-4. Open **Panel v1.4.2.exe**, select **Bot Mode**, then click **Launch CS2** 
+4. Open **Panel v1.4.3.exe**, select **Bot Mode**, then click **Launch CS2** 
 
 <img width="339" height="129" alt="Panel_1" src="https://github.com/user-attachments/assets/dc806991-c940-43cf-a614-f49012fae4a7" />
 
@@ -85,6 +85,9 @@ Check the current aim mode
 `bot_nades off`  
 Bots won't throw any nades
 
+`bot_nades less`  
+Bots use the same decision logic as normal mode with lower count limits
+
 `bot_nades normal`  
 Bots follow almost the same count limits as human players (default)
 
@@ -96,6 +99,11 @@ Bots have minimal limitations and think less before throwing nades
 
 `bot_nades`  
 Shows the current nade throwing mode
+
+### Skins
+
+`br_reroll`  
+Reroll all bot skins on their next spawn
 
 ### Buy
 
@@ -232,7 +240,8 @@ However, if you use other third-party player skin-changing features alongside it
 [CS2-Bullseye-Bot](https://github.com/ed0ard/CS2-Bullseye-Bot)  
 [CS2-Bot-NadeSystem](https://github.com/ed0ard/CS2-Bot-NadeSystem)  
 [CS2_ExecAfter_No_Admin](https://github.com/ed0ard/CS2_ExecAfter_No_Admin) forked from [kus](https://github.com/kus)  
-[CS2-Bot-Randomizer](https://github.com/ed0ard/CS2-Bot-Randomizer) by [ed0ard](https://github.com/ed0ard), [Misaka17032](https://github.com/Misaka17032), and [unicbm](https://github.com/unicbm)<br>
+[CS2-Bot-Randomizer](https://github.com/ed0ard/CS2-Bot-Randomizer)  
+[CS2-Lib](https://github.com/ianlucas/cs2-lib) by [Lucas](https://github.com/ianlucas)  
 [CS2-Bot-Hider](https://github.com/XBribo/CS2-Bot-Hider) by [XBribo](https://github.com/XBribo)  
 [CS2-Bot-Controller](https://github.com/XBribo/CS2-Bot-Controller) by [XBribo](https://github.com/XBribo)  
 [CSGOBetterBots](https://github.com/manicogaming/CSGOBetterBots/blob/master/addons/sourcemod/data/bot_info.json) by [manico](https://github.com/manicogaming)  
