@@ -608,6 +608,8 @@ export const api = {
   recordPanelError: (error: AppError, context: string) =>
     invoke<void>("record_panel_error", { error: { ...error, context } }),
   getRuntimeSnapshot: () => invoke<RuntimeSnapshot>("get_runtime_snapshot"),
+  getCs2Process: (csgo: string | null) =>
+    invoke<Cs2ProcessInfo>("get_cs2_process", { csgo }),
   detectDirectories: () => invoke<DirectoryInfo>("detect_directories"),
   selectDirectory: (path: string) =>
     invoke<DirectoryInfo>("select_directory", { path }),

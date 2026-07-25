@@ -534,6 +534,12 @@ fn cs2_running() -> bool {
     inspect_cs2_process(None).running
 }
 
+#[tauri::command]
+fn get_cs2_process(csgo: Option<String>) -> Result<Cs2ProcessInfo> {
+    let selected = csgo.as_deref().map(csgo_path).transpose()?;
+    Ok(inspect_cs2_process(selected.as_deref()))
+}
+
 fn ensure_target_not_running(root: &Path) -> Result<()> {
     let process = inspect_cs2_process(Some(root));
     if blocks_target_write(&process) {
@@ -3626,7 +3632,7 @@ pub fn run() {
             reconcile_launch_options, launch_cs2, reconcile_core_json, get_bot_items, set_bot_item,
             get_presets, set_aim, set_nades, get_drop_knives, set_drop_knives,
             get_knife_customizer, save_knife_customizer, export_cosmetics_preset,
-            import_cosmetics_preset, get_runtime_snapshot,
+            import_cosmetics_preset, get_runtime_snapshot, get_cs2_process,
             inspect_installation, get_install_plan, install_payload, repair_payload,
             restore_payload, restore_pristine_cs2, export_diagnostics, get_panel_memory, save_panel_memory,
             appearance::get_appearance, appearance::save_appearance,
