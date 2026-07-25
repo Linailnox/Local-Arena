@@ -63,6 +63,7 @@ type Store = {
   refreshDirectory: () => Promise<DirectoryInfo | null>;
   refreshFiles: () => Promise<void>;
   refreshDifficulty: () => Promise<void>;
+  refreshProcess: (silent?: boolean) => Promise<Cs2ProcessInfo | null>;
   refreshAll: (silent?: boolean) => Promise<void>;
   updateConfig: (patch: Partial<AppConfig>) => Promise<boolean>;
   chooseDirectory: (path: string) => Promise<void>;
@@ -187,6 +188,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [dropKnives, setDropKnives] = useState<DropKnivesState | null>(null);
   const [error, setError] = useState<AppError | null>(null);
   const configRef = useRef<AppConfig | null>(null);
+  const lastSnapshotErrorLogRef = useRef(0);
   configRef.current = config;
 
   const reportError = useCallback((e: unknown) => {
@@ -339,6 +341,18 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }
   }, [reportError]);
 
+  const refreshProcess = useCallback(async (silent = false) => {
+    const csgo = directory?.valid ? directory.selected : null;
+    try {
+      const info = await api.getCs2Process(csgo);
+      setProcess(info);
+      return info;
+    } catch (e) {
+      if (!silent) reportError(e);
+      return null;
+    }
+  }, [directory, reportError]);
+
   const refreshAll = useCallback(async (silent = false) => {
     try {
       const snapshot = await api.getRuntimeSnapshot();
@@ -361,8 +375,17 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         setDropKnivesPending(false);
       }
     } catch (e) {
-      // A background refresh keeps the last good snapshot and retries later.
-      if (silent) return;
+      // Keep the complete last-good snapshot, but refresh the process lock
+      // independently so a transient disk scan cannot leave install disabled.
+      if (silent) {
+        await refreshProcess(true);
+        const now = Date.now();
+        if (now - lastSnapshotErrorLogRef.current >= 30_000) {
+          lastSnapshotErrorLogRef.current = now;
+          void api.recordPanelError(toAppError(e), "runtime-snapshot-background").catch(() => {});
+        }
+        return;
+      }
       setDirectory(null);
       setProcess(null);
       setInstallation(null);
@@ -380,7 +403,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setDropKnivesPending(false);
       reportError(e);
     }
-  }, [clearBotItemsPending, reportError, setAimPending, setDifficultyPending,
+  }, [clearBotItemsPending, refreshProcess, reportError, setAimPending, setDifficultyPending,
     setDropKnivesPending, setModePending, setNadesPending]);
 
   const updateConfig = useCallback(
@@ -610,6 +633,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     refreshDirectory,
     refreshFiles,
     refreshDifficulty,
+    refreshProcess,
     refreshAll,
     updateConfig,
     chooseDirectory,
