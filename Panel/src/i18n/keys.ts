@@ -803,6 +803,9 @@ export const EN = {
   "first.complete": "Installation complete",
   "first.completeDesc": "The managed payload was installed and verified, you can repair or restore it later from Settings",
   "first.finish": "Open Panel",
+  "first.cs2Detected": "CS2 may still be running",
+  "first.cs2DetectedDesc": "Close CS2 and recheck, or continue to let the installer perform a fresh authoritative process check",
+  "first.recheck": "Recheck",
 
   "ctx.refresh": "Refresh",
 
