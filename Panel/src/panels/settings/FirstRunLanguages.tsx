@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { CheckCircle2, FolderSearch, ShieldCheck } from "lucide-react";
+import { CheckCircle2, FolderSearch, RefreshCw, ShieldCheck, Stethoscope } from "lucide-react";
 import { useStore } from "../../state/store";
 import { LANGUAGES } from "../../data/languages";
 import { useT, type I18nKey } from "../../i18n";
 import type { InstallationSource, InstallPlan, MigrationKind } from "../../lib/api";
 import StatusDot from "../../components/StatusDot";
+import { installAttemptDisabled, processBlocksSelectedInstallation } from "../../lib/installGate";
 import { openDialog } from "../../lib/platform";
 import "./settings.css";
 
@@ -37,7 +38,7 @@ const ACTION_KEYS: Record<MigrationKind, I18nKey> = {
 export default function FirstRunLanguages() {
   const {
     config, directory, process, updateConfig, chooseDirectory, getInstallPlan,
-    installPayload, reportError,
+    installPayload, exportDiagnostics, refreshProcess, reportError,
   } = useStore();
   const t = useT();
   const saved = config?.first_run_step;
@@ -45,8 +46,10 @@ export default function FirstRunLanguages() {
   const [step, setStep] = useState<Step>(initial);
   const [plan, setPlan] = useState<InstallPlan | null>(null);
   const [working, setWorking] = useState(false);
+  const [diagnosticWorking, setDiagnosticWorking] = useState(false);
+  const [diagnosticPath, setDiagnosticPath] = useState<string | null>(null);
   const selected = directory?.selected ?? null;
-  const blocked = !!process?.running && (process.matches_selected || !process.path_accessible);
+  const blocked = processBlocksSelectedInstallation(process);
 
   useEffect(() => {
     if (step !== "preview" || plan) return;
@@ -93,6 +96,15 @@ export default function FirstRunLanguages() {
 
   const finish = () => updateConfig({ first_run_done: true, first_run_step: "complete" });
 
+  const diagnostics = async () => {
+    if (diagnosticWorking) return;
+    setDiagnosticWorking(true);
+    try {
+      const report = await exportDiagnostics();
+      if (report) setDiagnosticPath(report.path);
+    } finally { setDiagnosticWorking(false); }
+  };
+
   return (
     <div className="firstrun">
       <div className="firstrun__card glass glass-strong">
@@ -126,9 +138,15 @@ export default function FirstRunLanguages() {
             ))}
             {!directory?.candidates.length && <div className="dir-note">{t("set.noCsgo")}</div>}
           </div>
+          {blocked && <div className="firstrun__process-warning">
+            <span><strong>{t("first.cs2Detected")}</strong><small>{t("first.cs2DetectedDesc")}</small></span>
+            <button disabled={working} onClick={() => refreshProcess()}><RefreshCw size={15} />{t("first.recheck")}</button>
+          </div>}
+          {diagnosticPath && <code className="firstrun__diagnostic-path">{t("install.exported", { path: diagnosticPath })}</code>}
           <div className="firstrun__footer">
+            <button disabled={diagnosticWorking} onClick={diagnostics}><Stethoscope size={15} />{diagnosticWorking ? t("install.working") : t("install.diagnostics")}</button>
             <button disabled={working} onClick={browse}>{t("set.browse")}</button>
-            <button className="is-primary" disabled={!selected || blocked || working} onClick={preview}>
+            <button className="is-primary" disabled={installAttemptDisabled(selected, working)} onClick={preview}>
               {working ? t("install.working") : t("first.continue")}
             </button>
           </div>
@@ -147,10 +165,14 @@ export default function FirstRunLanguages() {
             <div><b>{t("install.files", { n: plan.total_files })}</b><b>{t("install.newFiles", { n: plan.new_files })}</b><b>{t("install.overwritten", { n: plan.overwritten_files })}</b></div>
             <span><small>{t("install.backup")}</small><strong>{plan.backup_path}</strong></span>
           </div>}
+          {blocked && <div className="firstrun__process-warning">
+            <span><strong>{t("first.cs2Detected")}</strong><small>{t("first.cs2DetectedDesc")}</small></span>
+            <button disabled={working} onClick={() => refreshProcess()}><RefreshCw size={15} />{t("first.recheck")}</button>
+          </div>}
           <div className="firstrun__footer">
             <button onClick={() => move("directory")}>{t("first.back")}</button>
             {plan?.can_install ? (
-              <button className="is-primary" disabled={working || blocked} onClick={install}>
+              <button className="is-primary" disabled={working} onClick={install}>
                 {working ? t("install.working") : t(ACTION_KEYS[plan.migration_kind])}
               </button>
             ) : (

@@ -7,7 +7,7 @@ param(
     [string]$LlvmBin,
     [string]$XwinCache,
     [string]$OutputDirectory,
-    [string]$ReleaseVersion = "1.4.2.6-Preview.2",
+    [string]$ReleaseVersion = "1.4.2.6-Preview.3",
     [string]$MinimumPanelVersion = "1.4.2.4",
     [switch]$SkipBuild,
     [switch]$SkipNpmInstall
