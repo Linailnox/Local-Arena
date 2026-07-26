@@ -9518,13 +9518,28 @@ End
 ProSlow+RiflePro+FreemanPersonality "Skodo"
 	VoicePitch = 76
 End
-ProSlow+RiflePro+RiflePersonality "dem0n"
+ProSlow+SniperPro+SniperPersonality "dem0n"
 	VoicePitch = 78
 End
 ProSlow+RiflePro+FreemanPersonality "slaxejezzz"
 	VoicePitch = 91
 End
+ProSlow+RiflePro+FreemanPersonality "Krabeni"
+	VoicePitch = 91
+End
+ProSlow+RiflePro+FreemanPersonality "cmtry"
+	VoicePitch = 91
+End
 ProSteady+RiflePro+FreemanPersonality "tikuak"
+	VoicePitch = 114
+	LookAngleMaxAccelNormal = 5500.0
+	LookAngleStiffnessNormal = 1150.0
+	LookAngleDampingNormal = 100.0
+	LookAngleMaxAccelAttacking = 5500.0
+	LookAngleStiffnessAttacking = 1150.0
+	LookAngleDampingAttacking = 50.0
+End
+ProSteady+RiflePro+FreemanPersonality "dziugss"
 	VoicePitch = 114
 	LookAngleMaxAccelNormal = 5500.0
 	LookAngleStiffnessNormal = 1150.0
