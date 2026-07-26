@@ -4125,7 +4125,7 @@ ProSlow+RiflePro+RiflePersonality "Ltz"
 End
 ProSteady+SniperPro+SniperPersonality "MartinezSa"
 End
-ProTop+SniperPro+SniperPersonality "forsaken"
+ProTop+RiflePro+RiflePersonality "forsaken"
 	VoicePitch = 115
     LookAngleMaxAccelNormal = 99999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999.9.9.9.9
     LookAngleStiffnessNormal = 3000.0
