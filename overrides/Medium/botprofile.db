@@ -9526,6 +9526,12 @@ ProSlow+RiflePro+FreemanPersonality "slaxejezzz"
 End
 ProSteady+RiflePro+FreemanPersonality "tikuak"
 	VoicePitch = 114
+	LookAngleMaxAccelNormal = 5500.0
+	LookAngleStiffnessNormal = 1150.0
+	LookAngleDampingNormal = 100.0
+	LookAngleMaxAccelAttacking = 5500.0
+	LookAngleStiffnessAttacking = 1150.0
+	LookAngleDampingAttacking = 50.0
 End
 ProSlow+RiflePro+FreemanPersonality "DarkMeister"
 	VoicePitch = 91
