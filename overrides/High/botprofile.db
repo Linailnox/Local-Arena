@@ -4109,11 +4109,13 @@ ProSlow+RiflePro+FreemanPersonality "slaxejezzz"
 End
 ProSteady+RiflePro+FreemanPersonality "tikuak"
 End
-ProSlow+RiflePro+FreemanPersonality "DarkMeister"
+ProSlow+RiflePro+RiflePersonality "DarkMeister"
 End
 ProSlow+RiflePro+RiflePersonality "Krabeni"
 End
 ProSlow+RiflePro+RiflePersonality "cmtry"
+End
+ProSteady+RiflePro+RiflePersonality "dziugss"
 End
 //----------------------------------------------------------------------------
 
