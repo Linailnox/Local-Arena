@@ -10646,6 +10646,15 @@ ProSlow+SniperPro+SniperPersonality "3gl"
 End
 RankOthers+RiflePro+RiflePersonality "enkay J"
 End
+ProTop+SniperPro+SniperPersonality "forsaken"
+	VoicePitch = 115
+    LookAngleMaxAccelNormal = 99999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999.9.9.9.9
+    LookAngleStiffnessNormal = 3000.0
+    LookAngleDampingNormal = 45.0
+    LookAngleMaxAccelAttacking = 99999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999.9.9.9.9
+    LookAngleStiffnessAttacking = 3000.0
+    LookAngleDampingAttacking = 39.95
+End
 //----------------------------------------------------------------------------
 
 RankRifler+Rusher+RusherPersonality "NoScopeDad69"
