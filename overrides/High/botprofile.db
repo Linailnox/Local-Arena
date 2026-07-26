@@ -4125,6 +4125,8 @@ ProSlow+RiflePro+RiflePersonality "Ltz"
 End
 ProSteady+SniperPro+SniperPersonality "MartinezSa"
 End
+ProTop+RiflePro+RiflePersonality "forsaken"
+End
 //----------------------------------------------------------------------------
 
 RankRifler+Rusher+RusherPersonality "NoScopeDad69"
