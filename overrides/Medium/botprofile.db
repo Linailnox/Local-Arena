@@ -9518,6 +9518,18 @@ End
 ProSlow+RiflePro+FreemanPersonality "Skodo"
 	VoicePitch = 76
 End
+ProSlow+RiflePro+RiflePersonality "dem0n"
+	VoicePitch = 78
+End
+ProSlow+RiflePro+FreemanPersonality "slaxejezzz"
+	VoicePitch = 91
+End
+ProSteady+RiflePro+FreemanPersonality "tikuak"
+	VoicePitch = 114
+End
+ProSlow+RiflePro+FreemanPersonality "DarkMeister"
+	VoicePitch = 91
+End
 ProFast+RiflePro+RiflePersonality "kroK"
 	VoicePitch = 111
 	LookAngleMaxAccelNormal = 7000.0
