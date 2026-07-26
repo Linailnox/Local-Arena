@@ -3968,7 +3968,7 @@ End
 ProFast+RiflePro+RiflePersonality "S5J"
 	VoicePitch = 107
 End
-ProSteady+RiflePro+RiflePersonality "tO0RO"
+ProSteady+SniperPro+SniperPersonality "tO0RO"
 	VoicePitch = 88
 End
 ProSteady+RiflePro+RiflePersonality "HaZR"
@@ -4107,15 +4107,23 @@ ProSlow+SniperPro+SniperPersonality "dem0n"
 End
 ProSlow+RiflePro+FreemanPersonality "slaxejezzz"
 End
-ProSteady+RiflePro+FreemanPersonality "tikuak"
-End
-ProSlow+RiflePro+RiflePersonality "DarkMeister"
-End
 ProSlow+RiflePro+RiflePersonality "Krabeni"
 End
 ProSlow+RiflePro+RiflePersonality "cmtry"
 End
-ProSteady+RiflePro+RiflePersonality "tikuak"
+ProSteady+RiflePro+FreemanPersonality "tikuak"
+End
+ProSteady+RiflePro+RiflePersonality "dziugss"
+End
+ProSlow+RiflePro+RiflePersonality "DarkMeister"
+End
+ProSlow+RiflePro+RiflePersonality "F0R3VER"
+End
+ProSlow+RiflePro+FreemanPersonality "AquaRS"
+End
+ProSlow+RiflePro+RiflePersonality "Ltz"
+End
+ProSteady+SniperPro+SniperPersonality "MartinezSa"
 End
 //----------------------------------------------------------------------------
 
