@@ -9524,10 +9524,10 @@ End
 ProSlow+RiflePro+FreemanPersonality "slaxejezzz"
 	VoicePitch = 91
 End
-ProSlow+RiflePro+FreemanPersonality "Krabeni"
+ProSlow+RiflePro+RiflePersonality "Krabeni"
 	VoicePitch = 91
 End
-ProSlow+RiflePro+FreemanPersonality "cmtry"
+ProSlow+RiflePro+RiflePersonality "cmtry"
 	VoicePitch = 91
 End
 ProSteady+RiflePro+FreemanPersonality "tikuak"
@@ -9539,7 +9539,7 @@ ProSteady+RiflePro+FreemanPersonality "tikuak"
 	LookAngleStiffnessAttacking = 1150.0
 	LookAngleDampingAttacking = 50.0
 End
-ProSteady+RiflePro+FreemanPersonality "dziugss"
+ProSteady+RiflePro+RiflePersonality "dziugss"
 	VoicePitch = 114
 	LookAngleMaxAccelNormal = 5500.0
 	LookAngleStiffnessNormal = 1150.0
@@ -9548,8 +9548,26 @@ ProSteady+RiflePro+FreemanPersonality "dziugss"
 	LookAngleStiffnessAttacking = 1150.0
 	LookAngleDampingAttacking = 50.0
 End
-ProSlow+RiflePro+FreemanPersonality "DarkMeister"
+ProSlow+RiflePro+RiflePersonality "DarkMeister"
 	VoicePitch = 91
+End
+ProSlow+RiflePro+RiflePersonality "F0R3VER"
+	VoicePitch = 91
+End
+ProSlow+RiflePro+FreemanPersonality "AquaRS"
+	VoicePitch = 91
+End
+ProSlow+RiflePro+RiflePersonality "Ltz"
+	VoicePitch = 91
+End
+ProSteady+SniperPro+SniperPersonality "MartinezSa"
+	VoicePitch = 114
+	LookAngleMaxAccelNormal = 5500.0
+	LookAngleStiffnessNormal = 1150.0
+	LookAngleDampingNormal = 100.0
+	LookAngleMaxAccelAttacking = 5500.0
+	LookAngleStiffnessAttacking = 1150.0
+	LookAngleDampingAttacking = 50.0
 End
 ProFast+RiflePro+RiflePersonality "kroK"
 	VoicePitch = 111
@@ -10259,7 +10277,7 @@ ProFast+RiflePro+RiflePersonality "S5J"
 	LookAngleStiffnessAttacking = 2000.0
 	LookAngleDampingAttacking = 40.0
 End
-ProSteady+RiflePro+RiflePersonality "tO0RO"
+ProSteady+SniperPro+SniperPersonality "tO0RO"
 	VoicePitch = 88
 	LookAngleMaxAccelNormal = 5500.0
 	LookAngleStiffnessNormal = 1150.0
