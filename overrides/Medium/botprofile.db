@@ -1941,7 +1941,7 @@ End
 ProSlow+RiflePro+FreemanPersonality "AyeZ"
 	VoicePitch = 75
 End
-ProSteady+RiflePro+FreemanPersonality "Techno4K"
+ProSteady+RiflePro+FreemanPersonality "Techno"
 	VoicePitch = 74
 	LookAngleMaxAccelNormal = 5500.0
 	LookAngleStiffnessNormal = 1150.0
