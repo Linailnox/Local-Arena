@@ -117,6 +117,7 @@ const COMMAND_DESCRIPTION_KEYS: Record<string, I18nKey> = {
   "bot_aim body": "cmd.detail.aimBody",
   "bot_aim mixed": "cmd.detail.aimMixed",
   "bot_nades normal": "cmd.detail.nadesNormal",
+  "bot_nades less": "cmd.detail.nadesLess",
   "bot_nades more": "cmd.detail.nadesMore",
   "bot_nades max": "cmd.detail.nadesMax",
   "bot_nades off": "cmd.detail.nadesOff",

@@ -22,7 +22,7 @@ export const THIRD_PARTY_GROUPS: ThirdPartyGroup[] = [
     projects: [
       {
         name: "CS2-Bot-Improver",
-        version: "v1.4.2 source base",
+        version: "v1.4.3 source base",
         license: "AGPL-3.0",
         url: "https://github.com/ed0ard/CS2-Bot-Improver",
         description: "Original enhanced-bot codebase used as the upstream foundation.",

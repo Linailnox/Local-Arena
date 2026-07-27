@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$PackageRoot,
-    [string]$ExpectedPackageVersion = "1.4.2.6-Preview.3"
+    [string]$ExpectedPackageVersion = "1.4.3.1-Preview.1"
 )
 
 $ErrorActionPreference = "Stop"
@@ -100,6 +100,7 @@ else {
         "addons/counterstrikesharp/plugins/BotBuy/BotBuy.cs",
         "addons/counterstrikesharp/plugins/BotBuy/BotBuy.csproj",
         "addons/counterstrikesharp/plugins/BotRandomizer/BotRandomizer.cs",
+        "addons/counterstrikesharp/plugins/BotRandomizer/Cosmetics/CosmeticModels.cs",
         "addons/counterstrikesharp/plugins/BotRandomizer/bot_randomizer_options.json",
         "addons/counterstrikesharp/plugins/BotControllerImpl/BotControllerImpl.csproj",
         "addons/counterstrikesharp/plugins/BotControllerImpl/BotController.NativeApi.cs",
@@ -168,6 +169,11 @@ if ($nadeSystem -notmatch 'if \(!bot\.IsValid\) return;' -or
     $nadeSystem -notmatch 'catch \(Exception\)\s*\{\s*return;\s*\}') {
     Add-Failure "NadeSystem no longer guards delayed callbacks against disconnected bot pawns."
 }
+if ($nadeSystem -notmatch '_botNadesMode == "less"' -or
+    $nadeSystem -notmatch 'LessModeAllows\(' -or
+    $nadeSystem -notmatch 'IncrementBotCount\(') {
+    Add-Failure "NadeSystem no longer contains the upstream 1.4.3 Less mode limits."
+}
 $nadeDataRoot = Join-Path $repo "addons/counterstrikesharp/plugins/NadeSystem/grenades"
 $nadeDataFiles = @(Get-ChildItem -LiteralPath $nadeDataRoot -Filter "*.json" -File -ErrorAction SilentlyContinue)
 if ($nadeDataFiles.Count -ne 48) {
@@ -220,6 +226,9 @@ $requiredSources = @(
     "scripts/generate-sticker-catalog.mjs",
     "scripts/test-sticker-editor.mjs",
     "addons/counterstrikesharp/plugins/BotRandomizer/BotRandomizer.cs",
+    "addons/counterstrikesharp/plugins/BotRandomizer/Cosmetics/CosmeticModels.cs",
+    "addons/counterstrikesharp/plugins/BotRandomizer/charm_placements.json",
+    "addons/counterstrikesharp/plugins/BotRandomizer/cosmetic_catalog.json",
     "addons/counterstrikesharp/plugins/BotControllerImpl/BotControllerImplPlugin.cs",
     "addons/counterstrikesharp/plugins/BotRandomizer/bot_randomizer_options.json",
     "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/PlayerKnifeCustomizer.cs",
@@ -231,6 +240,23 @@ foreach ($relative in $requiredSources) {
 }
 
 $playerCosmetics = Get-Content -LiteralPath (Join-Path $repo "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/PlayerKnifeCustomizer.cs") -Raw
+$botRandomizer = Get-Content -LiteralPath (Join-Path $repo "addons/counterstrikesharp/plugins/BotRandomizer/BotRandomizer.cs") -Raw
+$botRandomizerModels = Get-Content -LiteralPath (Join-Path $repo "addons/counterstrikesharp/plugins/BotRandomizer/Cosmetics/CosmeticModels.cs") -Raw
+if ($botRandomizer -notmatch 'LoadOptions\(\);' -or
+    $botRandomizer -notmatch '_options\.Skins && _weaponItemViews\?\.NativeAvailable' -or
+    $botRandomizer -notmatch 'includeStickers: true' -or
+    $botRandomizer -notmatch 'includeCharms: true' -or
+    $botRandomizer -notmatch 'IsBot: true, IsHLTV: false' -or
+    $botRandomizerModels -notmatch 'JsonPropertyName\("skins"\)' -or
+    $botRandomizerModels -notmatch 'JsonPropertyName\("profiles"\)' -or
+    $botRandomizerModels -notmatch 'JsonPropertyName\("agents"\)' -or
+    $botRandomizerModels -notmatch 'JsonPropertyName\("music"\)') {
+    Add-Failure "BotRandomizer no longer combines upstream Bot cosmetics with Local Arena feature gates."
+}
+if ($playerCosmetics -notmatch 'IsBot: false, IsHLTV: false' -or
+    $playerCosmetics -notmatch 'StickerReleaseEnabled = false') {
+    Add-Failure "Player cosmetics must remain human-only with player stickers disabled for this preview."
+}
 $giveHookStart = $playerCosmetics.IndexOf("private HookResult OnGiveNamedItemPost", [StringComparison]::Ordinal)
 $nextMethodStart = $playerCosmetics.IndexOf("private static CCSPlayerController? GetPlayerFromItemServices", [StringComparison]::Ordinal)
 if ($giveHookStart -lt 0 -or $nextMethodStart -le $giveHookStart) {
@@ -284,7 +310,9 @@ $jsonFiles = @(
     "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/player_gun_presets.json",
     "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/player_knife_presets.json",
     "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/skins_en.json",
-    "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/weapon_skins.json"
+    "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/weapon_skins.json",
+    "addons/counterstrikesharp/plugins/BotRandomizer/charm_placements.json",
+    "addons/counterstrikesharp/plugins/BotRandomizer/cosmetic_catalog.json"
 )
 $counts = @{}
 foreach ($relative in $jsonFiles) {
@@ -296,6 +324,15 @@ $catalogB = Join-Path $repo "addons/counterstrikesharp/plugins/PlayerKnifeCustom
 if ((Get-FileHash -LiteralPath $catalogA -Algorithm SHA256).Hash -ne
     (Get-FileHash -LiteralPath $catalogB -Algorithm SHA256).Hash) {
     Add-Failure "Panel and plugin weapon catalogs are not identical."
+}
+
+$panelApi = Get-Content -LiteralPath (Join-Path $repo "Panel/src/lib/api.ts") -Raw
+$panelPresets = Get-Content -LiteralPath (Join-Path $repo "Panel/src/panels/PresetsPanel.tsx") -Raw
+$panelBackend = Get-Content -LiteralPath (Join-Path $repo "Panel/src-tauri/src/lib.rs") -Raw
+if ($panelApi -notmatch '"less"' -or
+    $panelPresets -notmatch 'value: "less"' -or
+    $panelBackend -notmatch '"normal", "less", "off"') {
+    Add-Failure "The Panel and Rust backend no longer expose the upstream NadeSystem Less mode."
 }
 
 $stickerSourcePath = Join-Path $repo "Panel/src/data/stickerCatalog.source.json"
@@ -393,6 +430,8 @@ if ($PackageRoot) {
         "addons/counterstrikesharp/plugins/BotControllerImpl/BotControllerImpl.dll",
         "addons/counterstrikesharp/plugins/BotHiderImpl/BotHiderImpl.dll",
         "addons/counterstrikesharp/plugins/BotRandomizer/BotRandomizer.dll",
+        "addons/counterstrikesharp/plugins/BotRandomizer/charm_placements.json",
+        "addons/counterstrikesharp/plugins/BotRandomizer/cosmetic_catalog.json",
         "addons/counterstrikesharp/plugins/BotState/BotState.dll",
         "addons/counterstrikesharp/plugins/NadeSystem/NadeSystem.dll",
         "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/PlayerKnifeCustomizer.dll",
