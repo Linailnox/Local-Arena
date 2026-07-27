@@ -1672,7 +1672,7 @@ fn set_aim(app: AppHandle, csgo: String, value: String) -> Result<PresetsState> 
 
 #[tauri::command]
 fn set_nades(app: AppHandle, csgo: String, value: String) -> Result<PresetsState> {
-    if !["max", "more", "normal", "off"].contains(&value.as_str()) {
+    if !["max", "more", "normal", "less", "off"].contains(&value.as_str()) {
         return Err(AppError::invalid("Unknown nade mode"));
     }
     let root = csgo_path(&csgo)?;
