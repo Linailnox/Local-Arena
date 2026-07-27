@@ -269,9 +269,9 @@ bot_add_t "cadiaN";bot_add_t "spooke";bot_add_t "arrozdoce";bot_add_t "adamb";bo
 
 40. 100 Thieves
 
-bot_add_ct "Ag1l";bot_add_ct "device";bot_add_ct "poiii";bot_add_ct "sirah";bot_add_ct "rain";mp_teamlogo_1 thv;mp_teamname_1 100 Thieves
+bot_add_ct "Gizmy";bot_add_ct "device";bot_add_ct "poiii";bot_add_ct "sirah";bot_add_ct "rain";mp_teamlogo_1 thv;mp_teamname_1 100 Thieves
 
-bot_add_t "Ag1l";bot_add_t "device";bot_add_t "poiii";bot_add_t "sirah";bot_add_t "rain";mp_teamlogo_2 thv;mp_teamname_2 100 Thieves
+bot_add_t "Gizmy";bot_add_t "device";bot_add_t "poiii";bot_add_t "sirah";bot_add_t "rain";mp_teamlogo_2 thv;mp_teamname_2 100 Thieves
 
 
 COORDINATED BUY
