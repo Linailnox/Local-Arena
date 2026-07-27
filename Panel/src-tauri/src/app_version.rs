@@ -23,7 +23,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn preview_semver_maps_to_the_four_part_display_version() {
-        assert_eq!(display(), "1.4.3.1-Preview.1");
+    fn release_semver_maps_to_the_four_part_display_version() {
+        assert_eq!(display(), "1.4.3.1");
     }
 }
