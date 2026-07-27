@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$PackageRoot,
-    [string]$ExpectedPackageVersion = "1.4.3.1-Preview.1"
+    [string]$ExpectedPackageVersion = "1.4.3.1"
 )
 
 $ErrorActionPreference = "Stop"
