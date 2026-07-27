@@ -191,9 +191,9 @@ bot_add_t "Brollan";bot_add_t "nilo";bot_add_t "susp";bot_add_t "MartinezSa";bot
 
 27. Sharks
 
-bot_add_ct "nitr0";bot_add_ct "Sonic";bot_add_ct "oSee";bot_add_ct "br0";bot_add_ct "Grim";mp_teamlogo_1 shrk;mp_teamname_1 Sharks
+bot_add_ct "gafolo";bot_add_ct "koala";bot_add_ct "maxxkor";bot_add_ct "rdnzao";bot_add_ct "doc";mp_teamlogo_1 shrk;mp_teamname_1 Sharks
 
-bot_add_t "nitr0";bot_add_t "Sonic";bot_add_t "oSee";bot_add_t "br0";bot_add_t "Grim";mp_teamlogo_2 shrk;mp_teamname_2 Sharks
+bot_add_t "gafolo";bot_add_t "koala";bot_add_t "maxxkor";bot_add_t "rdnzao";bot_add_t "doc";mp_teamlogo_2 shrk;mp_teamname_2 Sharks
 
 28. FlyQuest
 
@@ -221,9 +221,9 @@ bot_add_t "Westmelon";bot_add_t "z4KR";bot_add_t "Starry";bot_add_t "EmiliaQAQ";
 
 32. NRG
 
-bot_add_ct "nitr0";bot_add_ct "Sonic";bot_add_ct "oSee";bot_add_ct "br0";bot_add_ct "Grim";mp_teamlogo_1 nrg;mp_teamname_1 NRG
+bot_add_ct "nitr0";bot_add_ct "Sonic";bot_add_ct "hallzerk";bot_add_ct "Grim";bot_add_ct "Jeorge";mp_teamlogo_1 nrg;mp_teamname_1 NRG
 
-bot_add_t "nitr0";bot_add_t "Sonic";bot_add_t "oSee";bot_add_t "br0";bot_add_t "Grim";mp_teamlogo_2 nrg;mp_teamname_2 NRG
+bot_add_t "nitr0";bot_add_t "Sonic";bot_add_t "hallzerk";bot_add_t "Grim";bot_add_t "Jeorge";mp_teamlogo_2 nrg;mp_teamname_2 NRG
 
 33. Virtus.pro
 
