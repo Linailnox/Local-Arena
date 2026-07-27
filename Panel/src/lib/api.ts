@@ -196,7 +196,7 @@ export type BotItemsState = {
 };
 
 export type AimValue = "head" | "mixed" | "body";
-export type NadesValue = "max" | "more" | "normal" | "off";
+export type NadesValue = "max" | "more" | "normal" | "less" | "off";
 
 export type PresetsState = {
   aim: AimValue | null;
