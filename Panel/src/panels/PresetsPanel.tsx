@@ -18,6 +18,7 @@ const NADES: { value: NadesValue; labelKey: I18nKey; descriptionKey: I18nKey }[]
   { value: "max", labelKey: "pre.nadesMax", descriptionKey: "pre.nadesMaxDesc" },
   { value: "more", labelKey: "pre.nadesMore", descriptionKey: "pre.nadesMoreDesc" },
   { value: "normal", labelKey: "pre.nadesNormal", descriptionKey: "pre.nadesNormalDesc" },
+  { value: "less", labelKey: "pre.nadesLess", descriptionKey: "pre.nadesLessDesc" },
   { value: "off", labelKey: "pre.nadesOff", descriptionKey: "pre.nadesOffDesc" },
 ];
 

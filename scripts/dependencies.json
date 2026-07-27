@@ -1,13 +1,13 @@
 {
   "upstream": {
     "repository": "https://github.com/ed0ard/CS2-Bot-Improver",
-    "baseCommit": "97fd57d2ee1e14e408ae3ca7b1b0cae596a792cc",
-    "sourceCommit": "7a7c30afe606db0eb157a2f19e97f7b8bfea5930",
-    "release": "v1.4.2",
+    "baseCommit": "d1d83982db88fbdb686b2bf13aa8c6f9d65a4604",
+    "sourceCommit": "d1d83982db88fbdb686b2bf13aa8c6f9d65a4604",
+    "release": "v1.4.3",
     "windowsAsset": {
       "name": "CS2BotImprover.zip",
-      "url": "https://github.com/ed0ard/CS2-Bot-Improver/releases/download/v1.4.2/CS2BotImprover.zip",
-      "sha256": "0603709b1bc1ae42d5d0ba65d9fcdec32c31a0db0e421d2797435f63946052d3"
+      "url": "https://github.com/ed0ard/CS2-Bot-Improver/releases/download/v1.4.3/CS2BotImprover.zip",
+      "sha256": "b59800f0d33b306b9aa74b3607e4e4fa2cd87609816f00097da2fdc0da2c40a1"
     }
   },
   "metamod": {
@@ -45,12 +45,6 @@
     },
     "windowsDllSha256": "5b18a8d43acc500960368875dd8670b695b3ea3f467832bbf61fe4989ab44093",
     "cssImplSha256": "301ac4ed23ae75c220ab88f6bb9604822eac32a94285fea8d2c388e5fd4420e0"
-  },
-  "upstreamPatches": {
-    "botAiWindowsSignatures": {
-      "pullRequest": 75,
-      "commit": "3db93baadc3489fbee73683fc90a3a162163178f"
-    }
   },
   "botHider": {
     "repository": "https://github.com/XBribo/CS2-Bot-Hider",
