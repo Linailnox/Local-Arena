@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   BookOpenText,
   Command,
@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import TitleBar from "./components/TitleBar";
 import ErrorModal from "./components/ErrorModal";
+import Modal from "./components/Modal";
 import OverviewDashboard, { type DashboardTarget } from "./panels/OverviewDashboard";
 import PresetsPanel from "./panels/PresetsPanel";
 import CommandsPanel from "./panels/CommandsPanel";
@@ -28,6 +29,8 @@ import { useT, type I18nKey } from "./i18n";
 import appLogo from "./assets/app-logo.png";
 import { stickerFeatureEnabled } from "./lib/stickerEditor";
 import { APP_DISPLAY_VERSION } from "./lib/version";
+import { api } from "./lib/api";
+import { openExternalUrl } from "./lib/platform";
 import { useAppearance } from "./state/appearance";
 import "./App.css";
 
@@ -35,11 +38,14 @@ type View = "main" | "stickers" | DashboardTarget;
 
 const VIEWS: View[] = ["main", "match", "matchHistory", "settings", "presets", "commands", "weaponPresets", "stickers", "guide"];
 const VIEW_KEY = "cs2bi.view";
+const WELCOME_STORY_URL = "https://api.hypcvgm.top/la";
 
 export default function App() {
-  const { error, clearError, ready, config, exportDiagnostics } = useStore();
+  const { error, clearError, ready, config, exportDiagnostics, updateConfig, reportError } = useStore();
   const { appearance } = useAppearance();
   const t = useT();
+  const storyPromptAttempted = useRef(false);
+  const [storyOpen, setStoryOpen] = useState(false);
   // Remember the open view in the portable Panel memory.
   const [view, setView] = useState<View>(() => {
     const stored = localStorage.getItem(VIEW_KEY);
@@ -58,6 +64,28 @@ export default function App() {
   }, []);
   const firstRun = ready && !!config && !config.first_run_done;
   const stickersVisible = stickerFeatureEnabled(config);
+
+  useEffect(() => {
+    if (
+      !ready
+      || !config?.first_run_done
+      || config.welcome_story_prompt_presented
+      || storyPromptAttempted.current
+    ) return;
+    storyPromptAttempted.current = true;
+    void api.shouldPresentWelcomeStory()
+      .then(async (eligible) => {
+        if (!eligible) return;
+        if (await updateConfig({ welcome_story_prompt_presented: true })) setStoryOpen(true);
+      })
+      .catch(reportError);
+  }, [config?.first_run_done, config?.welcome_story_prompt_presented, ready, reportError, updateConfig]);
+
+  const openWelcomeStory = async () => {
+    setStoryOpen(false);
+    try { await openExternalUrl(WELCOME_STORY_URL); }
+    catch (error) { reportError(error); }
+  };
 
   useEffect(() => {
     if (view === "stickers" && !stickersVisible) setView("main");
@@ -144,6 +172,17 @@ export default function App() {
 
       <ErrorModal error={error} onClose={clearError} onExport={exportDiagnostics} onOpenGuide={openGuide} />
       {firstRun && <FirstRunLanguages />}
+      <Modal
+        open={storyOpen}
+        title={t("first.storyTitle")}
+        onClose={() => setStoryOpen(false)}
+        footer={<>
+          <button className="welcome-story__secondary" onClick={() => void openWelcomeStory()}>{t("first.storyListen")}</button>
+          <button className="welcome-story__primary" onClick={() => setStoryOpen(false)}>{t("first.storyDecline")}</button>
+        </>}
+      >
+        <p className="welcome-story__copy">{t("first.storyBody")}</p>
+      </Modal>
     </div>
   );
 }

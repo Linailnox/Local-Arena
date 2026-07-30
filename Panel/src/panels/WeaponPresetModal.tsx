@@ -10,6 +10,7 @@ import imageRows from "../data/skinImages.json";
 import { localizedSkinName } from "../data/skinLocalization";
 import { useStore } from "../state/store";
 import { useSelectedPickerScroll } from "../lib/useSelectedPickerScroll";
+import { withPreservedGunPresetDecorations } from "../lib/stickerEditor";
 import "./KnifePresetModal.css";
 import "./WeaponPresetsPanel.css";
 
@@ -61,12 +62,14 @@ export default function WeaponPresetModal({ weapon, team, csgoPath, config, onSa
           delete activePresets[key];
           delete otherPresets[key];
         } else {
-          if (shared && wasLinked && !linkSides && activePresets[key]) otherPresets[key] = activePresets[key];
+          if (shared && wasLinked && !linkSides && activePresets[key])
+            otherPresets[key] = withPreservedGunPresetDecorations(activePresets[key], otherPresets[key]);
           delete activePresets[key];
         }
       } else {
         activePresets[key] = draft;
-        if (shared && (linkSides || wasLinked)) otherPresets[key] = draft;
+        if (shared && (linkSides || wasLinked))
+          otherPresets[key] = withPreservedGunPresetDecorations(draft, otherPresets[key]);
       }
       const loadouts = {
         ...config.loadouts,

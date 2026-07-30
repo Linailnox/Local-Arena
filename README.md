@@ -30,7 +30,9 @@
 
 <div align="center">
 
-The current `main` branch targets **1.4.3.1**
+The current `main` branch targets **1.4.3.2**
+
+Update codename: **Richer Cosmetics**
 
 **Guide:** [First installation](#four-step-first-installation) · [Existing installation](#updating-an-existing-installation) · [Launch modes](#choose-the-correct-mode) · [Cosmetics](#player-cosmetic-presets) · [Recovery](#installation-updates-and-recovery) · [Troubleshooting](#troubleshooting)
 
@@ -190,6 +192,12 @@ The Weapon Presets page separates CT-only, T-only, and shared weapons
 <p align="center">
   <img src="./Panel/src/assets/guide/02-weapon-presets.png" alt="CT and T weapon presets" width="100%">
 </p>
+
+### Stickers, charms, and agents
+
+Enable the Cosmetic Forge under **Settings → Experimental Features** to configure up to five stickers and one charm for a saved gun-skin preset, plus separate CT/T agent models for the human player. Sticker instance slots are selected separately from weapon-native positions. Charms snap only to validated weapon placements from the local catalog, so presets never store arbitrary XYZ coordinates. Agent models are selected from a local team-owned allowlist and applied only through the human-player spawn pipeline. Knives do not accept stickers or charms.
+
+The forge uses a local 2.5D preview and does not launch CS2 or depend on in-game screenshots. BotRandomizer remains a separate bot-only pipeline, so player cosmetic presets do not overwrite bot state.
 
 ### CT and T knives and gloves
 

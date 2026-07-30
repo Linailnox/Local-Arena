@@ -1275,6 +1275,23 @@
   text-align: center;
 }
 .firstrun__complete button { margin-top: 6px; }
+.welcome-story__copy { margin: 0; color: var(--text-secondary); line-height: 1.6; }
+.welcome-story__secondary,
+.welcome-story__primary {
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: var(--r-sm);
+  font-size: 12px;
+  font-weight: 650;
+}
+.welcome-story__secondary {
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--text-secondary);
+}
+.welcome-story__secondary:hover { border-color: var(--line-strong); color: var(--text-primary); }
+.welcome-story__primary { border: 1px solid var(--c-ink); background: var(--c-ink); color: var(--text-on-accent); }
+.welcome-story__primary:hover { background: var(--c-ink-hover); }
 
 /* Installation and recovery */
 .installation-page {

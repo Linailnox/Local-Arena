@@ -5,11 +5,14 @@ import { LANGUAGES } from "../../data/languages";
 import { useT, type I18nKey } from "../../i18n";
 import type { InstallationSource, InstallPlan, MigrationKind } from "../../lib/api";
 import StatusDot from "../../components/StatusDot";
+import Modal from "../../components/Modal";
 import { installAttemptDisabled, processBlocksSelectedInstallation } from "../../lib/installGate";
-import { openDialog } from "../../lib/platform";
+import { openDialog, openExternalUrl } from "../../lib/platform";
 import "./settings.css";
 
 type Step = "language" | "directory" | "preview" | "complete";
+
+const WELCOME_STORY_URL = "https://api.hypcvgm.top/la";
 
 const SOURCE_KEYS: Record<InstallationSource, I18nKey> = {
   clean: "install.source.clean",
@@ -48,6 +51,7 @@ export default function FirstRunLanguages() {
   const [working, setWorking] = useState(false);
   const [diagnosticWorking, setDiagnosticWorking] = useState(false);
   const [diagnosticPath, setDiagnosticPath] = useState<string | null>(null);
+  const [storyOpen, setStoryOpen] = useState(false);
   const selected = directory?.selected ?? null;
   const blocked = processBlocksSelectedInstallation(process);
 
@@ -90,7 +94,15 @@ export default function FirstRunLanguages() {
     setWorking(true);
     try {
       const result = await installPayload();
-      if (result) await move("complete");
+      if (result) {
+        const showStory = result.welcome_story_eligible && !config?.welcome_story_prompt_presented;
+        const saved = await updateConfig({
+          first_run_step: "complete",
+          ...(showStory ? { welcome_story_prompt_presented: true } : {}),
+        });
+        setStep("complete");
+        if (showStory && saved) setStoryOpen(true);
+      }
     } finally { setWorking(false); }
   };
 
@@ -105,7 +117,14 @@ export default function FirstRunLanguages() {
     } finally { setDiagnosticWorking(false); }
   };
 
+  const openStory = async () => {
+    setStoryOpen(false);
+    try { await openExternalUrl(WELCOME_STORY_URL); }
+    catch (error) { reportError(error); }
+  };
+
   return (
+    <>
     <div className="firstrun">
       <div className="firstrun__card glass glass-strong">
         {step === "language" && <>
@@ -191,5 +210,17 @@ export default function FirstRunLanguages() {
         </div>}
       </div>
     </div>
+    <Modal
+      open={storyOpen}
+      title={t("first.storyTitle")}
+      onClose={() => setStoryOpen(false)}
+      footer={<>
+        <button className="welcome-story__secondary" onClick={() => void openStory()}>{t("first.storyListen")}</button>
+        <button className="welcome-story__primary" onClick={() => setStoryOpen(false)}>{t("first.storyDecline")}</button>
+      </>}
+    >
+      <p className="welcome-story__copy">{t("first.storyBody")}</p>
+    </Modal>
+    </>
   );
 }

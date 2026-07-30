@@ -32,7 +32,7 @@ import {
   type DiagnosticReport,
 } from "../lib/api";
 
-type Store = {
+export type Store = {
   ready: boolean;
   config: AppConfig | null;
   directory: DirectoryInfo | null;
@@ -653,4 +653,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   };
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+}
+
+type PreviewStore = Pick<Store, "config" | "csgoPath" | "process" | "reportError">;
+
+// Scoped provider for browser-only component previews. It intentionally exposes
+// only the state consumed by the previewed surface and never invokes Tauri.
+export function AppStatePreviewProvider({ children, value }: { children: ReactNode; value: PreviewStore }) {
+  return <Ctx.Provider value={value as Store}>{children}</Ctx.Provider>;
 }
