@@ -357,17 +357,21 @@ mod tests {
     use super::*;
     use ed25519_dalek::{Signer, SigningKey};
     use std::io::{Cursor, Write};
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
     use zip::write::SimpleFileOptions;
 
+    static NEXT_TEST_ROOT: AtomicU64 = AtomicU64::new(0);
+
     fn root() -> PathBuf {
         std::env::temp_dir().join(format!(
-            "cs2bi-update-core-{}-{}",
+            "cs2bi-update-core-{}-{}-{}",
             std::process::id(),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
-                .as_nanos()
+                .as_nanos(),
+            NEXT_TEST_ROOT.fetch_add(1, Ordering::Relaxed)
         ))
     }
 

@@ -1,0 +1,1373 @@
+{
+  "1": {
+    "stickerSchemaCount": 5,
+    "stickerPositions": [
+      {
+        "schema": 0,
+        "x": 0.25,
+        "y": 0.48
+      },
+      {
+        "schema": 1,
+        "x": 0.375,
+        "y": 0.42
+      },
+      {
+        "schema": 2,
+        "x": 0.5,
+        "y": 0.48
+      },
+      {
+        "schema": 3,
+        "x": 0.625,
+        "y": 0.42
+      },
+      {
+        "schema": 4,
+        "x": 0.75,
+        "y": 0.48
+      }
+    ],
+    "charmPositions": [
+      {
+        "placementId": 0,
+        "x": 0.2,
+        "y": 0.403
+      },
+      {
+        "placementId": 1,
+        "x": 0.2059,
+        "y": 0.5637
+      },
+      {
+        "placementId": 2,
+        "x": 0.2073,
+        "y": 0.3
+      },
+      {
+        "placementId": 3,
+        "x": 0.7092,
+        "y": 0.7
+      },
+      {
+        "placementId": 4,
+        "x": 0.7327,
+        "y": 0.4752
+      },
+      {
+        "placementId": 5,
+        "x": 0.7461,
+        "y": 0.398
+      },
+      {
+        "placementId": 7,
+        "x": 0.7641,
+        "y": 0.5894
+      },
+      {
+        "placementId": 8,
+        "x": 0.8,
+        "y": 0.3124
+      }
+    ]
+  },
+  "2": {
+    "stickerSchemaCount": 4,
+    "stickerPositions": [
+      {
+        "schema": 0,
+        "x": 0.25,
+        "y": 0.48
+      },
+      {
+        "schema": 1,
+        "x": 0.4167,
+        "y": 0.42
+      },
+      {
+        "schema": 2,
+        "x": 0.5833,
+        "y": 0.48
+      },
+      {
+        "schema": 3,
+        "x": 0.75,
+        "y": 0.42
+      }
+    ],
+    "charmPositions": []
+  },
+  "3": {
+    "stickerSchemaCount": 6,
+    "stickerPositions": [
+      {
+        "schema": 0,
+        "x": 0.25,
+        "y": 0.48
+      },
+      {
+        "schema": 1,
+        "x": 0.35,
+        "y": 0.42
+      },
+      {
+        "schema": 2,
+        "x": 0.45,
+        "y": 0.48
+      },
+      {
+        "schema": 3,
+        "x": 0.55,
+        "y": 0.42
+      },
+      {
+        "schema": 4,
+        "x": 0.65,
+        "y": 0.48
+      },
+      {
+        "schema": 5,
+        "x": 0.75,
+        "y": 0.42
+      }
+    ],
+    "charmPositions": [
+      {
+        "placementId": 0,
+        "x": 0.2,
+        "y": 0.3
+      },
+      {
+        "placementId": 1,
+        "x": 0.8,
+        "y": 0.7
+      }
+    ]
+  },
+  "4": {
+    "stickerSchemaCount": 4,
+    "stickerPositions": [
+      {
+        "schema": 0,
+        "x": 0.25,
+        "y": 0.48
+      },
+      {
+        "schema": 1,
+        "x": 0.4167,
+        "y": 0.42
+      },
+      {
+        "schema": 2,
+        "x": 0.5833,
+        "y": 0.48
+      },
+      {
+        "schema": 3,
+        "x": 0.75,
+        "y": 0.42
+      }
+    ],
+    "charmPositions": [
+      {
+        "placementId": 0,
+        "x": 0.2,
+        "y": 0.3196
+      },
+      {
+        "placementId": 11,
+        "x": 0.2627,
+        "y": 0.7
+      },
+      {
+        "placementId": 12,
+        "x": 0.5966,
+        "y": 0.4528
+      },
+      {
+        "placementId": 13,
+        "x": 0.7123,
+        "y": 0.3841
+      },
+      {
+        "placementId": 15,
+        "x": 0.7851,
+        "y": 0.3007
+      },
+      {
+        "placementId": 18,
+        "x": 0.7978,
+        "y": 0.4117
+      }
+    ]
+  },
+  "7": {
+    "stickerSchemaCount": 4,
+    "stickerPositions": [
+      {
+        "schema": 0,
+        "x": 0.25,
+        "y": 0.48
+      },
+      {
+        "schema": 1,
+        "x": 0.4167,
+        "y": 0.42
+      },
+      {
+        "schema": 2,
+        "x": 0.5833,
+        "y": 0.48
+      },
+      {
+        "schema": 3,
+        "x": 0.75,
+        "y": 0.42
+      }
+    ],
+    "charmPositions": [
+      {
+        "placementId": 0,
+        "x": 0.2,
+        "y": 0.4033
+      },
+      {
+        "placementId": 4,
+        "x": 0.3466,
+        "y": 0.7
+      },
+      {
+        "placementId": 7,
+        "x": 0.3754,
+        "y": 0.3765
+      },
+      {
+        "placementId": 11,
+        "x": 0.4315,
+        "y": 0.3052
+      },
+      {
+        "placementId": 21,
+        "x": 0.6349,
+        "y": 0.4357
+      },
+      {
+        "placementId": 23,
+        "x": 0.7789,
+        "y": 0.4401
+      },
+      {
+        "placementId": 24,
+        "x": 0.7818,
+        "y": 0.5408
+      },
+      {
+        "placementId": 32,
+        "x": 0.799,
+        "y": 0.6178
+      }
+    ]
+  },
+  "8": {
+    "stickerSchemaCount": 5,
+    "stickerPositions": [
+      {
+        "schema": 0,
+        "x": 0.25,
+        "y": 0.48
+      },
+      {
+        "schema": 1,
+        "x": 0.375,
+        "y": 0.42
+      },
+      {
+        "schema": 2,
+        "x": 0.5,
+        "y": 0.48
+      },
+      {
+        "schema": 3,
+        "x": 0.625,
+        "y": 0.42
+      },
+      {
+        "schema": 4,
+        "x": 0.75,
+        "y": 0.48
+      }
+    ],
+    "charmPositions": []
+  },
+  "9": {
+    "stickerSchemaCount": 4,
+    "stickerPositions": [
+      {
+        "schema": 0,
+        "x": 0.25,
+        "y": 0.48
+      },
+      {
+        "schema": 1,
+        "x": 0.4167,
+        "y": 0.42
+      },
+      {
+        "schema": 2,
+        "x": 0.5833,
+        "y": 0.48
+      },
+      {
+        "schema": 3,
+        "x": 0.75,
+        "y": 0.42
+      }
+    ],
+    "charmPositions": [
+      {
+        "placementId": 0,
+        "x": 0.2,
+        "y": 0.4094
+      },
+      {
+        "placementId": 1,
+        "x": 0.242,
+        "y": 0.641
+      },
+      {
+        "placementId": 6,
+        "x": 0.326,
+        "y": 0.5534
+      },
+      {
+        "placementId": 7,
+        "x": 0.3767,
+        "y": 0.361
+      },
+      {
+        "placementId": 10,
+        "x": 0.8,
+        "y": 0.7
+      }
+    ]
+  },
+  "10": {
+    "stickerSchemaCount": 5,
+    "stickerPositions": [
+      {
+        "schema": 0,
+        "x": 0.25,
+        "y": 0.48
+      },
+      {
+        "schema": 1,
+        "x": 0.375,
+        "y": 0.42
+      },
+      {
+        "schema": 2,
+        "x": 0.5,
+        "y": 0.48
+      },
+      {
+        "schema": 3,
+        "x": 0.625,
+        "y": 0.42
+      },
+      {
+        "schema": 4,
+        "x": 0.75,
+        "y": 0.48
+      }
+    ],
+    "charmPositions": [
+      {
+        "placementId": 0,
+        "x": 0.2,
+        "y": 0.3
+      },
+      {
+        "placementId": 1,
+        "x": 0.8,
+        "y": 0.7
+      }
+    ]
+  },
+  "11": {
+    "stickerSchemaCount": 5,
+    "stickerPositions": [
+      {
+        "schema": 0,
+        "x": 0.25,
+        "y": 0.48
+      },
+      {
+        "schema": 1,
+        "x": 0.375,
+        "y": 0.42
+      },
+      {
+        "schema": 2,
+        "x": 0.5,
+        "y": 0.48
+      },
+      {
+        "schema": 3,
+        "x": 0.625,
+        "y": 0.42
+      },
+      {
+        "schema": 4,
+        "x": 0.75,
+        "y": 0.48
+      }
+    ],
+    "charmPositions": []
+  },
+  "13": {
+    "stickerSchemaCount": 4,
+    "stickerPositions": [
+      {
+        "schema": 0,
+        "x": 0.25,
+        "y": 0.48
+      },
+      {
+        "schema": 1,
+        "x": 0.4167,
+        "y": 0.42
+      },
+      {
+        "schema": 2,
+        "x": 0.5833,
+        "y": 0.48
+      },
+      {
+        "schema": 3,
+        "x": 0.75,
+        "y": 0.42
+      }
+    ],
+    "charmPositions": [
+      {
+        "placementId": 0,
+        "x": 0.2,
+        "y": 0.3
+      },
+      {
+        "placementId": 1,
+        "x": 0.2765,
+        "y": 0.6427
+      },
+      {
+        "placementId": 2,
+        "x": 0.8,
+        "y": 0.7
+      }
+    ]
+  },
+  "14": {
+    "stickerSchemaCount": 4,
+    "stickerPositions": [
+      {
+        "schema": 0,
+        "x": 0.25,
+        "y": 0.48
+      },
+      {
+        "schema": 1,
+        "x": 0.4167,
+        "y": 0.42
+      },
+      {
+        "schema": 2,
+        "x": 0.5833,
+        "y": 0.48
+      },
+      {
+        "schema": 3,
+        "x": 0.75,
+        "y": 0.42
+      }
+    ],
+    "charmPositions": []
+  },
+  "16": {
+    "stickerSchemaCount": 4,
+    "stickerPositions": [
+      {
+        "schema": 0,
+        "x": 0.25,
+        "y": 0.48
+      },
+      {
+        "schema": 1,
+        "x": 0.4167,
+        "y": 0.42
+      },
+      {
+        "schema": 2,
+        "x": 0.5833,
+        "y": 0.48
+      },
+      {
+        "schema": 3,
+        "x": 0.75,
+        "y": 0.42
+      }
+    ],
+    "charmPositions": [
+      {
+        "placementId": 0,
+        "x": 0.2,
+        "y": 0.7
+      },
+      {
+        "placementId": 1,
+        "x": 0.4724,
+        "y": 0.3739
+      },
+      {
+        "placementId": 4,
+        "x": 0.5315,
+        "y": 0.5009
+      },
+      {
+        "placementId": 5,
+        "x": 0.5644,
+        "y": 0.4077
+      },
+      {
+        "placementId": 6,
+        "x": 0.7974,
+        "y": 0.3
+      },
+      {
+        "placementId": 7,
+        "x": 0.7979,
+        "y": 0.444
+      }
+    ]
+  },
+  "17": {
+    "stickerSchemaCount": 5,
+    "stickerPositions": [
+      {
+        "schema": 0,
+        "x": 0.25,
+        "y": 0.48
+      },
+      {
+        "schema": 1,
+        "x": 0.375,
+        "y": 0.42
+      },
+      {
+        "schema": 2,
+        "x": 0.5,
+        "y": 0.48
+      },
+      {
+        "schema": 3,
+        "x": 0.625,
+        "y": 0.42
+      },
+      {
+        "schema": 4,
+        "x": 0.75,
+        "y": 0.48
+      }
+    ],
+    "charmPositions": [
+      {
+        "placementId": 0,
+        "x": 0.2,
+        "y": 0.3
+      },
+      {
+        "placementId": 1,
+        "x": 0.8,
+        "y": 0.7
+      }
+    ]
+  },
+  "19": {
+    "stickerSchemaCount": 5,
+    "stickerPositions": [
+      {
+        "schema": 0,
+        "x": 0.25,
+        "y": 0.48
+      },
+      {
+        "schema": 1,
+        "x": 0.375,
+        "y": 0.42
+      },
+      {
+        "schema": 2,
+        "x": 0.5,
+        "y": 0.48
+      },
+      {
+        "schema": 3,
+        "x": 0.625,
+        "y": 0.42
+      },
+      {
+        "schema": 4,
+        "x": 0.75,
+        "y": 0.48
+      }
+    ],
+    "charmPositions": []
+  },
+  "23": {
+    "stickerSchemaCount": 6,
+    "stickerPositions": [
+      {
+        "schema": 0,
+        "x": 0.25,
+        "y": 0.48
+      },
+      {
+        "schema": 1,
+        "x": 0.35,
+        "y": 0.42
+      },
+      {
+        "schema": 2,
+        "x": 0.45,
+        "y": 0.48
+      },
+      {
+        "schema": 3,
+        "x": 0.55,
+        "y": 0.42
+      },
+      {
+        "schema": 4,
+        "x": 0.65,
+        "y": 0.48
+      },
+      {
+        "schema": 5,
+        "x": 0.75,
+        "y": 0.42
+      }
+    ],
+    "charmPositions": []
+  },
+  "24": {
+    "stickerSchemaCount": 4,
+    "stickerPositions": [
+      {
+        "schema": 0,
+        "x": 0.25,
+        "y": 0.48
+      },
+      {
+        "schema": 1,
+        "x": 0.4167,
+        "y": 0.42
+      },
+      {
+        "schema": 2,
+        "x": 0.5833,
+        "y": 0.48
+      },
+      {
+        "schema": 3,
+        "x": 0.75,
+        "y": 0.42
+      }
+    ],
+    "charmPositions": []
+  },
+  "25": {
+    "stickerSchemaCount": 5,
+    "stickerPositions": [
+      {
+        "schema": 0,
+        "x": 0.25,
+        "y": 0.48
+      },
+      {
+        "schema": 1,
+        "x": 0.375,
+        "y": 0.42
+      },
+      {
+        "schema": 2,
+        "x": 0.5,
+        "y": 0.48
+      },
+      {
+        "schema": 3,
+        "x": 0.625,
+        "y": 0.42
+      },
+      {
+        "schema": 4,
+        "x": 0.75,
+        "y": 0.48
+      }
+    ],
+    "charmPositions": []
+  },
+  "26": {
+    "stickerSchemaCount": 4,
+    "stickerPositions": [
+      {
+        "schema": 0,
+        "x": 0.25,
+        "y": 0.48
+      },
+      {
+        "schema": 1,
+        "x": 0.4167,
+        "y": 0.42
+      },
+      {
+        "schema": 2,
+        "x": 0.5833,
+        "y": 0.48
+      },
+      {
+        "schema": 3,
+        "x": 0.75,
+        "y": 0.42
+      }
+    ],
+    "charmPositions": []
+  },
+  "27": {
+    "stickerSchemaCount": 4,
+    "stickerPositions": [
+      {
+        "schema": 0,
+        "x": 0.25,
+        "y": 0.48
+      },
+      {
+        "schema": 1,
+        "x": 0.4167,
+        "y": 0.42
+      },
+      {
+        "schema": 2,
+        "x": 0.5833,
+        "y": 0.48
+      },
+      {
+        "schema": 3,
+        "x": 0.75,
+        "y": 0.42
+      }
+    ],
+    "charmPositions": []
+  },
+  "28": {
+    "stickerSchemaCount": 4,
+    "stickerPositions": [
+      {
+        "schema": 0,
+        "x": 0.25,
+        "y": 0.48
+      },
+      {
+        "schema": 1,
+        "x": 0.4167,
+        "y": 0.42
+      },
+      {
+        "schema": 2,
+        "x": 0.5833,
+        "y": 0.48
+      },
+      {
+        "schema": 3,
+        "x": 0.75,
+        "y": 0.42
+      }
+    ],
+    "charmPositions": []
+  },
+  "29": {
+    "stickerSchemaCount": 5,
+    "stickerPositions": [
+      {
+        "schema": 0,
+        "x": 0.25,
+        "y": 0.48
+      },
+      {
+        "schema": 1,
+        "x": 0.375,
+        "y": 0.42
+      },
+      {
+        "schema": 2,
+        "x": 0.5,
+        "y": 0.48
+      },
+      {
+        "schema": 3,
+        "x": 0.625,
+        "y": 0.42
+      },
+      {
+        "schema": 4,
+        "x": 0.75,
+        "y": 0.48
+      }
+    ],
+    "charmPositions": []
+  },
+  "30": {
+    "stickerSchemaCount": 4,
+    "stickerPositions": [
+      {
+        "schema": 0,
+        "x": 0.25,
+        "y": 0.48
+      },
+      {
+        "schema": 1,
+        "x": 0.4167,
+        "y": 0.42
+      },
+      {
+        "schema": 2,
+        "x": 0.5833,
+        "y": 0.48
+      },
+      {
+        "schema": 3,
+        "x": 0.75,
+        "y": 0.42
+      }
+    ],
+    "charmPositions": [
+      {
+        "placementId": 0,
+        "x": 0.2,
+        "y": 0.7
+      },
+      {
+        "placementId": 1,
+        "x": 0.5862,
+        "y": 0.3
+      },
+      {
+        "placementId": 2,
+        "x": 0.8,
+        "y": 0.496
+      }
+    ]
+  },
+  "31": {
+    "stickerSchemaCount": 5,
+    "stickerPositions": [
+      {
+        "schema": 0,
+        "x": 0.25,
+        "y": 0.48
+      },
+      {
+        "schema": 1,
+        "x": 0.375,
+        "y": 0.42
+      },
+      {
+        "schema": 2,
+        "x": 0.5,
+        "y": 0.48
+      },
+      {
+        "schema": 3,
+        "x": 0.625,
+        "y": 0.42
+      },
+      {
+        "schema": 4,
+        "x": 0.75,
+        "y": 0.48
+      }
+    ],
+    "charmPositions": []
+  },
+  "32": {
+    "stickerSchemaCount": 6,
+    "stickerPositions": [
+      {
+        "schema": 0,
+        "x": 0.25,
+        "y": 0.48
+      },
+      {
+        "schema": 1,
+        "x": 0.35,
+        "y": 0.42
+      },
+      {
+        "schema": 2,
+        "x": 0.45,
+        "y": 0.48
+      },
+      {
+        "schema": 3,
+        "x": 0.55,
+        "y": 0.42
+      },
+      {
+        "schema": 4,
+        "x": 0.65,
+        "y": 0.48
+      },
+      {
+        "schema": 5,
+        "x": 0.75,
+        "y": 0.42
+      }
+    ],
+    "charmPositions": [
+      {
+        "placementId": 0,
+        "x": 0.2,
+        "y": 0.7
+      }
+    ]
+  },
+  "33": {
+    "stickerSchemaCount": 6,
+    "stickerPositions": [
+      {
+        "schema": 0,
+        "x": 0.25,
+        "y": 0.48
+      },
+      {
+        "schema": 1,
+        "x": 0.35,
+        "y": 0.42
+      },
+      {
+        "schema": 2,
+        "x": 0.45,
+        "y": 0.48
+      },
+      {
+        "schema": 3,
+        "x": 0.55,
+        "y": 0.42
+      },
+      {
+        "schema": 4,
+        "x": 0.65,
+        "y": 0.48
+      },
+      {
+        "schema": 5,
+        "x": 0.75,
+        "y": 0.42
+      }
+    ],
+    "charmPositions": [
+      {
+        "placementId": 0,
+        "x": 0.2,
+        "y": 0.7
+      }
+    ]
+  },
+  "34": {
+    "stickerSchemaCount": 4,
+    "stickerPositions": [
+      {
+        "schema": 0,
+        "x": 0.25,
+        "y": 0.48
+      },
+      {
+        "schema": 1,
+        "x": 0.4167,
+        "y": 0.42
+      },
+      {
+        "schema": 2,
+        "x": 0.5833,
+        "y": 0.48
+      },
+      {
+        "schema": 3,
+        "x": 0.75,
+        "y": 0.42
+      }
+    ],
+    "charmPositions": [
+      {
+        "placementId": 0,
+        "x": 0.2,
+        "y": 0.7
+      },
+      {
+        "placementId": 1,
+        "x": 0.8,
+        "y": 0.3
+      }
+    ]
+  },
+  "35": {
+    "stickerSchemaCount": 5,
+    "stickerPositions": [
+      {
+        "schema": 0,
+        "x": 0.25,
+        "y": 0.48
+      },
+      {
+        "schema": 1,
+        "x": 0.375,
+        "y": 0.42
+      },
+      {
+        "schema": 2,
+        "x": 0.5,
+        "y": 0.48
+      },
+      {
+        "schema": 3,
+        "x": 0.625,
+        "y": 0.42
+      },
+      {
+        "schema": 4,
+        "x": 0.75,
+        "y": 0.48
+      }
+    ],
+    "charmPositions": []
+  },
+  "36": {
+    "stickerSchemaCount": 6,
+    "stickerPositions": [
+      {
+        "schema": 0,
+        "x": 0.25,
+        "y": 0.48
+      },
+      {
+        "schema": 1,
+        "x": 0.35,
+        "y": 0.42
+      },
+      {
+        "schema": 2,
+        "x": 0.45,
+        "y": 0.48
+      },
+      {
+        "schema": 3,
+        "x": 0.55,
+        "y": 0.42
+      },
+      {
+        "schema": 4,
+        "x": 0.65,
+        "y": 0.48
+      },
+      {
+        "schema": 5,
+        "x": 0.75,
+        "y": 0.42
+      }
+    ],
+    "charmPositions": []
+  },
+  "38": {
+    "stickerSchemaCount": 4,
+    "stickerPositions": [
+      {
+        "schema": 0,
+        "x": 0.25,
+        "y": 0.48
+      },
+      {
+        "schema": 1,
+        "x": 0.4167,
+        "y": 0.42
+      },
+      {
+        "schema": 2,
+        "x": 0.5833,
+        "y": 0.48
+      },
+      {
+        "schema": 3,
+        "x": 0.75,
+        "y": 0.42
+      }
+    ],
+    "charmPositions": []
+  },
+  "39": {
+    "stickerSchemaCount": 4,
+    "stickerPositions": [
+      {
+        "schema": 0,
+        "x": 0.25,
+        "y": 0.48
+      },
+      {
+        "schema": 1,
+        "x": 0.4167,
+        "y": 0.42
+      },
+      {
+        "schema": 2,
+        "x": 0.5833,
+        "y": 0.48
+      },
+      {
+        "schema": 3,
+        "x": 0.75,
+        "y": 0.42
+      }
+    ],
+    "charmPositions": []
+  },
+  "40": {
+    "stickerSchemaCount": 4,
+    "stickerPositions": [
+      {
+        "schema": 0,
+        "x": 0.25,
+        "y": 0.48
+      },
+      {
+        "schema": 1,
+        "x": 0.4167,
+        "y": 0.42
+      },
+      {
+        "schema": 2,
+        "x": 0.5833,
+        "y": 0.48
+      },
+      {
+        "schema": 3,
+        "x": 0.75,
+        "y": 0.42
+      }
+    ],
+    "charmPositions": [
+      {
+        "placementId": 0,
+        "x": 0.2,
+        "y": 0.7
+      }
+    ]
+  },
+  "60": {
+    "stickerSchemaCount": 5,
+    "stickerPositions": [
+      {
+        "schema": 0,
+        "x": 0.25,
+        "y": 0.48
+      },
+      {
+        "schema": 1,
+        "x": 0.375,
+        "y": 0.42
+      },
+      {
+        "schema": 2,
+        "x": 0.5,
+        "y": 0.48
+      },
+      {
+        "schema": 3,
+        "x": 0.625,
+        "y": 0.42
+      },
+      {
+        "schema": 4,
+        "x": 0.75,
+        "y": 0.48
+      }
+    ],
+    "charmPositions": [
+      {
+        "placementId": 0,
+        "x": 0.2,
+        "y": 0.5365
+      },
+      {
+        "placementId": 2,
+        "x": 0.2417,
+        "y": 0.3
+      },
+      {
+        "placementId": 11,
+        "x": 0.2751,
+        "y": 0.5838
+      },
+      {
+        "placementId": 13,
+        "x": 0.3011,
+        "y": 0.3719
+      },
+      {
+        "placementId": 14,
+        "x": 0.3576,
+        "y": 0.7
+      },
+      {
+        "placementId": 15,
+        "x": 0.6463,
+        "y": 0.6671
+      },
+      {
+        "placementId": 17,
+        "x": 0.7842,
+        "y": 0.5539
+      }
+    ]
+  },
+  "61": {
+    "stickerSchemaCount": 5,
+    "stickerPositions": [
+      {
+        "schema": 0,
+        "x": 0.25,
+        "y": 0.48
+      },
+      {
+        "schema": 1,
+        "x": 0.375,
+        "y": 0.42
+      },
+      {
+        "schema": 2,
+        "x": 0.5,
+        "y": 0.48
+      },
+      {
+        "schema": 3,
+        "x": 0.625,
+        "y": 0.42
+      },
+      {
+        "schema": 4,
+        "x": 0.75,
+        "y": 0.48
+      }
+    ],
+    "charmPositions": [
+      {
+        "placementId": 0,
+        "x": 0.2,
+        "y": 0.4808
+      },
+      {
+        "placementId": 7,
+        "x": 0.3897,
+        "y": 0.4075
+      },
+      {
+        "placementId": 8,
+        "x": 0.4278,
+        "y": 0.3228
+      },
+      {
+        "placementId": 10,
+        "x": 0.4438,
+        "y": 0.5186
+      },
+      {
+        "placementId": 14,
+        "x": 0.4669,
+        "y": 0.6394
+      },
+      {
+        "placementId": 25,
+        "x": 0.7165,
+        "y": 0.3645
+      },
+      {
+        "placementId": 26,
+        "x": 0.7589,
+        "y": 0.5212
+      },
+      {
+        "placementId": 30,
+        "x": 0.784,
+        "y": 0.4088
+      }
+    ]
+  },
+  "63": {
+    "stickerSchemaCount": 5,
+    "stickerPositions": [
+      {
+        "schema": 0,
+        "x": 0.25,
+        "y": 0.48
+      },
+      {
+        "schema": 1,
+        "x": 0.375,
+        "y": 0.42
+      },
+      {
+        "schema": 2,
+        "x": 0.5,
+        "y": 0.48
+      },
+      {
+        "schema": 3,
+        "x": 0.625,
+        "y": 0.42
+      },
+      {
+        "schema": 4,
+        "x": 0.75,
+        "y": 0.48
+      }
+    ],
+    "charmPositions": []
+  },
+  "64": {
+    "stickerSchemaCount": 5,
+    "stickerPositions": [
+      {
+        "schema": 0,
+        "x": 0.25,
+        "y": 0.48
+      },
+      {
+        "schema": 1,
+        "x": 0.375,
+        "y": 0.42
+      },
+      {
+        "schema": 2,
+        "x": 0.5,
+        "y": 0.48
+      },
+      {
+        "schema": 3,
+        "x": 0.625,
+        "y": 0.42
+      },
+      {
+        "schema": 4,
+        "x": 0.75,
+        "y": 0.48
+      }
+    ],
+    "charmPositions": []
+  }
+}
