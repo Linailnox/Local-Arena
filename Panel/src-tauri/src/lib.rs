@@ -114,6 +114,8 @@ struct AppConfig {
     #[serde(default)]
     first_run_step: Option<String>,
     #[serde(default)]
+    welcome_story_prompt_presented: bool,
+    #[serde(default)]
     cosmetics_enabled_before_online: Option<bool>,
     #[serde(default)]
     cosmetics_enabled_before_preview: Option<bool>,
@@ -138,6 +140,7 @@ impl Default for AppConfig {
             csgo_path: None,
             first_run_done: false,
             first_run_step: Some("language".into()),
+            welcome_story_prompt_presented: false,
             cosmetics_enabled_before_online: None,
             cosmetics_enabled_before_preview: None,
             experimental_features_enabled: false,
@@ -153,8 +156,13 @@ fn prepare_legacy_config_for_portable_state(mut config: AppConfig) -> AppConfig 
     config
 }
 
-fn apply_release_feature_gates(config: &mut AppConfig) {
-    config.experimental_stickers_enabled = false;
+fn apply_release_feature_gates(_config: &mut AppConfig) {
+}
+
+const WELCOME_STORY_RELEASE_VERSION: &str = "1.4.3.2";
+
+fn welcome_story_release_eligible(release_build: bool, display_version: &str) -> bool {
+    release_build && display_version == WELCOME_STORY_RELEASE_VERSION
 }
 
 #[derive(Serialize)]
@@ -260,6 +268,8 @@ struct PanelErrorRecord {
 struct StickerPreset {
     slot: u8,
     id: u32,
+    #[serde(default)]
+    schema: u32,
     wear: f32,
     scale: f32,
     rotation: f32,
@@ -267,6 +277,13 @@ struct StickerPreset {
     offset_y: f32,
     #[serde(default)]
     custom_position: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+struct CharmPreset {
+    id: u32,
+    placement_id: u32,
+    seed: i32,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -281,6 +298,28 @@ struct KnifePreset {
     souvenir_enabled: bool,
     #[serde(default)]
     stickers: Vec<StickerPreset>,
+    #[serde(default)]
+    charm: Option<CharmPreset>,
+}
+
+impl KnifePreset {
+    fn base_value_eq(&self, other: &Self) -> bool {
+        self.paint == other.paint
+            && self.seed == other.seed
+            && self.wear == other.wear
+            && self.name_tag == other.name_tag
+            && self.stattrak_enabled == other.stattrak_enabled
+            && self.stattrak_count == other.stattrak_count
+            && self.souvenir_enabled == other.souvenir_enabled
+    }
+
+    fn clone_without_decorations(&self) -> Self {
+        Self {
+            stickers: Vec::new(),
+            charm: None,
+            ..self.clone()
+        }
+    }
 }
 
 const DEFAULT_GLOVE_DEFINDEX: u16 = 5030;
@@ -308,8 +347,8 @@ impl Default for GlovePreset {
     }
 }
 
-const COSMETICS_SCHEMA_VERSION: u8 = 3;
-const STICKER_RELEASE_ENABLED: bool = false;
+const COSMETICS_SCHEMA_VERSION: u8 = 5;
+const STICKER_RELEASE_ENABLED: bool = true;
 const CT_ONLY_WEAPONS: &[u16] = &[3, 8, 10, 16, 27, 32, 34, 38, 60, 61];
 const T_ONLY_WEAPONS: &[u16] = &[4, 7, 11, 13, 17, 29, 30, 39];
 const SHARED_WEAPONS: &[u16] = &[
@@ -335,6 +374,8 @@ fn weapon_side(defindex: u16) -> WeaponSide {
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 struct TeamLoadout {
+    #[serde(default)]
+    agent_model: String,
     #[serde(default)]
     default_knife_defindex: u16,
     #[serde(default)]
@@ -383,6 +424,10 @@ struct KnifeCustomizerConfig {
     shared_weapon_links: BTreeMap<String, bool>,
     #[serde(default)]
     stickers_enabled: bool,
+    #[serde(default)]
+    charms_enabled: bool,
+    #[serde(default)]
+    agents_enabled: bool,
 
     // Read-only v1 fields. They are migrated in memory and never serialized again.
     #[serde(default, skip_serializing)]
@@ -402,6 +447,26 @@ fn default_true() -> bool {
 #[derive(Deserialize)]
 struct StickerCatalogEntry {
     id: u32,
+}
+
+#[derive(Deserialize)]
+struct AgentCatalogEntry {
+    team: String,
+    model: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WeaponCosmeticPlacement {
+    sticker_schema_count: u32,
+    #[serde(default)]
+    charm_positions: Vec<PreviewCharmPlacement>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PreviewCharmPlacement {
+    placement_id: u32,
 }
 
 fn valid_sticker_ids() -> &'static BTreeSet<u32> {
@@ -443,6 +508,8 @@ impl Default for KnifeCustomizerConfig {
             loadouts: TeamLoadouts::default(),
             shared_weapon_links,
             stickers_enabled: false,
+            charms_enabled: false,
+            agents_enabled: false,
             default_knife_defindex: 0,
             presets: BTreeMap::new(),
             gun_presets: BTreeMap::new(),
@@ -532,6 +599,44 @@ fn write_config(_app: &AppHandle, config: &AppConfig) -> Result<()> {
 
 fn cs2_running() -> bool {
     inspect_cs2_process(None).running
+}
+
+fn valid_agent_models(team: WeaponSide) -> &'static BTreeSet<String> {
+    static CT: OnceLock<BTreeSet<String>> = OnceLock::new();
+    static T: OnceLock<BTreeSet<String>> = OnceLock::new();
+    let expected = if team == WeaponSide::Ct { "ct" } else { "t" };
+    let target = if team == WeaponSide::Ct { &CT } else { &T };
+    target.get_or_init(|| {
+        serde_json::from_str::<Vec<AgentCatalogEntry>>(include_str!("../../src/data/agentCatalog.json"))
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|entry| entry.team == expected)
+            .map(|entry| entry.model)
+            .collect()
+    })
+}
+
+fn cosmetic_placements() -> &'static BTreeMap<u16, WeaponCosmeticPlacement> {
+    static PLACEMENTS: OnceLock<BTreeMap<u16, WeaponCosmeticPlacement>> = OnceLock::new();
+    PLACEMENTS.get_or_init(|| {
+        serde_json::from_str::<BTreeMap<u16, WeaponCosmeticPlacement>>(include_str!(
+            "../../src/data/cosmeticPlacements.json"
+        ))
+        .unwrap_or_default()
+    })
+}
+
+fn valid_charm_ids() -> &'static BTreeSet<u32> {
+    static IDS: OnceLock<BTreeSet<u32>> = OnceLock::new();
+    IDS.get_or_init(|| {
+        serde_json::from_str::<Vec<StickerCatalogEntry>>(include_str!(
+            "../../src/data/charmCatalog.json"
+        ))
+        .unwrap_or_default()
+        .into_iter()
+        .map(|entry| entry.id)
+        .collect()
+    })
 }
 
 #[tauri::command]
@@ -660,6 +765,11 @@ fn save_config(app: AppHandle, config: AppConfig) -> Result<()> {
         ));
     }
     write_config(&app, &config)
+}
+
+#[tauri::command]
+fn should_present_welcome_story() -> bool {
+    welcome_story_release_eligible(cfg!(not(debug_assertions)), app_version::display())
 }
 
 #[tauri::command]
@@ -1747,7 +1857,8 @@ fn normalize_stickers(defindex: u16, stickers: &mut Vec<StickerPreset>) -> Resul
     if stickers.len() > 5 {
         return Err(AppError::invalid("A weapon cannot have more than five stickers"));
     }
-    if !stickers.is_empty() && !valid_sticker_weapon_ids().contains(&defindex) {
+    let placement = cosmetic_placements().get(&defindex);
+    if !stickers.is_empty() && (!valid_sticker_weapon_ids().contains(&defindex) || placement.is_none()) {
         return Err(AppError::invalid("Stickers are not supported for this weapon"));
     }
     let valid_ids = valid_sticker_ids();
@@ -1758,6 +1869,9 @@ fn normalize_stickers(defindex: u16, stickers: &mut Vec<StickerPreset>) -> Resul
         }
         if sticker.id == 0 || !valid_ids.contains(&sticker.id) {
             return Err(AppError::invalid("Unknown sticker id"));
+        }
+        if sticker.schema >= placement.map_or(0, |entry| entry.sticker_schema_count) {
+            return Err(AppError::invalid("Sticker schema is not supported for this weapon"));
         }
         if !sticker.wear.is_finite()
             || !sticker.scale.is_finite()
@@ -1777,47 +1891,97 @@ fn normalize_stickers(defindex: u16, stickers: &mut Vec<StickerPreset>) -> Resul
     Ok(())
 }
 
-fn sanitize_preset_stickers(
+fn normalize_charm(defindex: u16, charm: &mut Option<CharmPreset>) -> Result<()> {
+    let Some(charm) = charm else {
+        return Ok(());
+    };
+    let placement = cosmetic_placements()
+        .get(&defindex)
+        .ok_or_else(|| AppError::invalid("Charms are not supported for this weapon"))?;
+    if !valid_charm_ids().contains(&charm.id) {
+        return Err(AppError::invalid("Unknown charm id"));
+    }
+    if !(0..=i32::MAX).contains(&charm.seed) {
+        return Err(AppError::invalid("Charm seed is outside the supported range"));
+    }
+    if !placement
+        .charm_positions
+        .iter()
+        .any(|entry| entry.placement_id == charm.placement_id)
+    {
+        return Err(AppError::invalid("Charm placement is not supported for this weapon"));
+    }
+    Ok(())
+}
+
+fn sanitize_preset_decorations(
     preset: &mut serde_json::Value,
-    allow_stickers: bool,
+    allow_decorations: bool,
     defindex: Option<u16>,
+    migrate_schema: bool,
 ) -> bool {
     let Some(object) = preset.as_object_mut() else {
         return false;
     };
-    let Some(value) = object.get_mut("stickers") else {
-        return false;
-    };
-    if !allow_stickers && value.as_array().is_some_and(Vec::is_empty) {
-        return false;
+    let mut changed = false;
+    if let Some(value) = object.get_mut("stickers") {
+        if migrate_schema && allow_decorations {
+            if let (Some(_), Some(stickers), Some(capability)) = (
+                defindex,
+                value.as_array_mut(),
+                defindex.and_then(|id| cosmetic_placements().get(&id)),
+            ) {
+                for sticker in stickers {
+                    let Some(sticker) = sticker.as_object_mut() else { continue };
+                    if sticker.contains_key("schema") { continue; }
+                    let slot = sticker.get("slot").and_then(serde_json::Value::as_u64).unwrap_or(0);
+                    let schema = slot.min(capability.sticker_schema_count.saturating_sub(1) as u64);
+                    sticker.insert("schema".into(), serde_json::Value::from(schema));
+                    changed = true;
+                }
+            }
+        }
+        let valid = allow_decorations
+            && defindex.is_some()
+            && serde_json::from_value::<Vec<StickerPreset>>(value.clone())
+                .ok()
+                .is_some_and(|mut stickers| normalize_stickers(defindex.unwrap(), &mut stickers).is_ok());
+        if !valid && !value.as_array().is_some_and(|entries| entries.is_empty() && !allow_decorations) {
+            *value = serde_json::Value::Array(Vec::new());
+            changed = true;
+        }
     }
-    let valid = allow_stickers
-        && defindex.is_some()
-        && serde_json::from_value::<Vec<StickerPreset>>(value.clone())
-            .ok()
-            .is_some_and(|mut stickers| normalize_stickers(defindex.unwrap(), &mut stickers).is_ok());
-    if valid {
-        return false;
+    if let Some(value) = object.get_mut("charm") {
+        let valid = allow_decorations
+            && defindex.is_some()
+            && (value.is_null()
+                || serde_json::from_value::<CharmPreset>(value.clone())
+                    .ok()
+                    .is_some_and(|charm| normalize_charm(defindex.unwrap(), &mut Some(charm)).is_ok()));
+        if !valid && !value.is_null() {
+            *value = serde_json::Value::Null;
+            changed = true;
+        }
     }
-    *value = serde_json::Value::Array(Vec::new());
-    true
+    changed
 }
 
-fn sanitize_preset_map(value: Option<&mut serde_json::Value>, allow_stickers: bool) -> bool {
+fn sanitize_preset_map(value: Option<&mut serde_json::Value>, allow_decorations: bool, migrate_schema: bool) -> bool {
     let Some(map) = value.and_then(serde_json::Value::as_object_mut) else {
         return false;
     };
     map.iter_mut().fold(false, |changed, (defindex, preset)| {
-        sanitize_preset_stickers(preset, allow_stickers, defindex.parse().ok()) || changed
+        sanitize_preset_decorations(preset, allow_decorations, defindex.parse().ok(), migrate_schema) || changed
     })
 }
 
-fn sanitize_knife_config_stickers(value: &mut serde_json::Value) -> bool {
+fn sanitize_knife_config_decorations(value: &mut serde_json::Value, schema: Option<u64>) -> bool {
     let Some(root) = value.as_object_mut() else {
         return false;
     };
-    let mut changed = sanitize_preset_map(root.get_mut("presets"), false)
-        | sanitize_preset_map(root.get_mut("gun_presets"), true);
+    let migrate_schema = schema.is_none_or(|version| version < COSMETICS_SCHEMA_VERSION as u64);
+    let mut changed = sanitize_preset_map(root.get_mut("presets"), false, migrate_schema)
+        | sanitize_preset_map(root.get_mut("gun_presets"), true, migrate_schema);
     let Some(loadouts) = root
         .get_mut("loadouts")
         .and_then(serde_json::Value::as_object_mut)
@@ -1831,25 +1995,29 @@ fn sanitize_knife_config_stickers(value: &mut serde_json::Value) -> bool {
         else {
             continue;
         };
-        changed |= sanitize_preset_map(team.get_mut("knife_presets"), false);
-        changed |= sanitize_preset_map(team.get_mut("gun_presets"), true);
+        changed |= sanitize_preset_map(team.get_mut("knife_presets"), false, migrate_schema);
+        changed |= sanitize_preset_map(team.get_mut("gun_presets"), true, migrate_schema);
     }
     changed
 }
 
-fn sanitize_team_gun_stickers(value: &mut serde_json::Value, schema: Option<u64>) -> bool {
-    if matches!(schema, Some(2) | Some(3)) {
+fn sanitize_team_gun_decorations(value: &mut serde_json::Value, schema: Option<u64>) -> bool {
+    let migrate_schema = schema.is_none_or(|version| version < COSMETICS_SCHEMA_VERSION as u64);
+    if matches!(schema, Some(2) | Some(3) | Some(4) | Some(5)) {
         let Some(root) = value.as_object_mut() else {
             return false;
         };
-        sanitize_preset_map(root.get_mut("ct"), true)
-            | sanitize_preset_map(root.get_mut("t"), true)
+        sanitize_preset_map(root.get_mut("ct"), true, migrate_schema)
+            | sanitize_preset_map(root.get_mut("t"), true, migrate_schema)
     } else {
-        sanitize_preset_map(Some(value), true)
+        sanitize_preset_map(Some(value), true, migrate_schema)
     }
 }
 
 fn normalize_team_loadout(team: WeaponSide, loadout: &mut TeamLoadout) -> Result<()> {
+    if !loadout.agent_model.is_empty() && !valid_agent_models(team).contains(&loadout.agent_model) {
+        return Err(AppError::invalid("Invalid agent model for team"));
+    }
     for (def, preset) in &mut loadout.knife_presets {
         let defindex: u16 = def
             .parse()
@@ -1857,8 +2025,8 @@ fn normalize_team_loadout(team: WeaponSide, loadout: &mut TeamLoadout) -> Result
         if !(500..=526).contains(&defindex) || preset.paint <= 0 {
             return Err(AppError::invalid("Invalid knife preset"));
         }
-        if !preset.stickers.is_empty() {
-            return Err(AppError::invalid("Knife stickers are not supported"));
+        if !preset.stickers.is_empty() || preset.charm.is_some() {
+            return Err(AppError::invalid("Knife stickers and charms are not supported"));
         }
         normalize_preset(preset);
     }
@@ -1878,6 +2046,7 @@ fn normalize_team_loadout(team: WeaponSide, loadout: &mut TeamLoadout) -> Result
         }
         normalize_preset(preset);
         normalize_stickers(defindex, &mut preset.stickers)?;
+        normalize_charm(defindex, &mut preset.charm)?;
     }
     if loadout.default_knife_defindex != 0
         && !loadout
@@ -1943,14 +2112,21 @@ fn migrate_legacy_config(config: &mut KnifeCustomizerConfig) {
         ensure_shared_link_defaults(config);
         return;
     }
-    if config.schema_version == 2 {
+    if matches!(config.schema_version, 2 | 3 | 4) {
+        if config.schema_version == 2 {
+            config.stickers_enabled = false;
+        }
+        if config.schema_version < 4 {
+            config.charms_enabled = false;
+        }
         config.schema_version = COSMETICS_SCHEMA_VERSION;
-        config.stickers_enabled = false;
+        config.agents_enabled = false;
         ensure_shared_link_defaults(config);
         return;
     }
     let legacy_guns = std::mem::take(&mut config.gun_presets);
     let legacy_loadout = TeamLoadout {
+        agent_model: String::new(),
         default_knife_defindex: config.default_knife_defindex,
         knife_presets: std::mem::take(&mut config.presets),
         glove: std::mem::take(&mut config.glove),
@@ -1969,11 +2145,11 @@ fn read_knife_config(root: &Path) -> Result<KnifeCustomizerConfig> {
     let mut config = if path.is_file() {
         let text = fs::read_to_string(&path)?;
         let mut value: serde_json::Value = serde_json::from_str(&text)?;
-        needs_migration = value
+        let source_schema = value
             .get("schema_version")
-            .and_then(serde_json::Value::as_u64)
-            != Some(COSMETICS_SCHEMA_VERSION as u64);
-        needs_migration |= sanitize_knife_config_stickers(&mut value);
+            .and_then(serde_json::Value::as_u64);
+        needs_migration = source_schema != Some(COSMETICS_SCHEMA_VERSION as u64);
+        needs_migration |= sanitize_knife_config_decorations(&mut value, source_schema);
         serde_json::from_value(value)?
     } else {
         KnifeCustomizerConfig::default()
@@ -1987,8 +2163,8 @@ fn read_knife_config(root: &Path) -> Result<KnifeCustomizerConfig> {
         let gun_schema = value
             .get("schema_version")
             .and_then(serde_json::Value::as_u64);
-        needs_migration |= sanitize_team_gun_stickers(&mut value, gun_schema);
-        if matches!(gun_schema, Some(2) | Some(3)) {
+        needs_migration |= sanitize_team_gun_decorations(&mut value, gun_schema);
+        if matches!(gun_schema, Some(2) | Some(3) | Some(4) | Some(5)) {
             let guns: TeamGunConfig = serde_json::from_value(value)?;
             config.loadouts.ct.gun_presets = guns.ct;
             config.loadouts.t.gun_presets = guns.t;
@@ -2010,6 +2186,8 @@ fn normalize_knife_config(config: &mut KnifeCustomizerConfig) -> Result<()> {
     migrate_legacy_config(config);
     config.schema_version = COSMETICS_SCHEMA_VERSION;
     config.stickers_enabled = STICKER_RELEASE_ENABLED && config.stickers_enabled;
+    config.charms_enabled = STICKER_RELEASE_ENABLED && config.charms_enabled;
+    config.agents_enabled = STICKER_RELEASE_ENABLED && config.agents_enabled;
     config.music_kit_id = config.music_kit_id.clamp(0, u16::MAX as i32);
     normalize_team_loadout(WeaponSide::Ct, &mut config.loadouts.ct)?;
     normalize_team_loadout(WeaponSide::T, &mut config.loadouts.t)?;
@@ -2028,22 +2206,22 @@ fn normalize_knife_config(config: &mut KnifeCustomizerConfig) -> Result<()> {
         let ct = config.loadouts.ct.gun_presets.get(key);
         let t = config.loadouts.t.gun_presets.get(key);
         match (ct, t) {
-            (Some(left), Some(right)) if left != right => {
-                return Err(AppError::invalid("Linked CT/T weapon presets must match"));
+            (Some(left), Some(right)) if !left.base_value_eq(right) => {
+                return Err(AppError::invalid("Linked CT/T weapon base presets must match"));
             }
             (Some(preset), None) => {
                 config
                     .loadouts
                     .t
                     .gun_presets
-                    .insert(key.clone(), preset.clone());
+                    .insert(key.clone(), preset.clone_without_decorations());
             }
             (None, Some(preset)) => {
                 config
                     .loadouts
                     .ct
                     .gun_presets
-                    .insert(key.clone(), preset.clone());
+                    .insert(key.clone(), preset.clone_without_decorations());
             }
             _ => {}
         }
@@ -2110,9 +2288,26 @@ fn sticker_configuration(config: &KnifeCustomizerConfig) -> BTreeMap<String, Vec
     result
 }
 
+fn charm_configuration(config: &KnifeCustomizerConfig) -> BTreeMap<String, CharmPreset> {
+    let mut result = BTreeMap::new();
+    for (side, loadout) in [("ct", &config.loadouts.ct), ("t", &config.loadouts.t)] {
+        for (defindex, preset) in &loadout.gun_presets {
+            if let Some(charm) = &preset.charm {
+                result.insert(format!("{side}:gun:{defindex}"), charm.clone());
+            }
+        }
+    }
+    result
+}
+
 fn sticker_configuration_changed(left: &KnifeCustomizerConfig, right: &KnifeCustomizerConfig) -> bool {
     left.stickers_enabled != right.stickers_enabled
+        || left.charms_enabled != right.charms_enabled
+        || left.agents_enabled != right.agents_enabled
+        || left.loadouts.ct.agent_model != right.loadouts.ct.agent_model
+        || left.loadouts.t.agent_model != right.loadouts.t.agent_model
         || sticker_configuration(left) != sticker_configuration(right)
+        || charm_configuration(left) != charm_configuration(right)
 }
 
 fn explicit_json_path(value: &str, operation: &str) -> Result<PathBuf> {
@@ -2796,6 +2991,7 @@ mod tests {
             stattrak_count: 0,
             souvenir_enabled: false,
             stickers: vec![],
+            charm: None,
         }
     }
 
@@ -2803,6 +2999,7 @@ mod tests {
         StickerPreset {
             slot,
             id,
+            schema: slot as u32,
             wear: 0.0,
             scale: 1.0,
             rotation: 0.0,
@@ -2924,6 +3121,7 @@ mod tests {
                 stattrak_count: -7,
                 souvenir_enabled: false,
                 stickers: vec![],
+                charm: None,
             },
         );
 
@@ -3122,6 +3320,14 @@ mod tests {
     }
 
     #[test]
+    fn welcome_story_is_limited_to_the_1432_release_build() {
+        assert!(welcome_story_release_eligible(true, "1.4.3.2"));
+        assert!(!welcome_story_release_eligible(false, "1.4.3.2"));
+        assert!(!welcome_story_release_eligible(true, "1.4.3.1"));
+        assert!(!welcome_story_release_eligible(true, "1.4.3.3"));
+    }
+
+    #[test]
     fn bot_mode_launch_always_includes_insecure_arguments() {
         let (arguments, options) = launch_request(LaunchMode::Bots);
         assert_eq!(
@@ -3159,6 +3365,7 @@ mod tests {
                 stattrak_count: 99,
                 souvenir_enabled: false,
                 stickers: vec![],
+                charm: None,
             },
         );
         save_knife_config(&root, &mut config).unwrap();
@@ -3374,6 +3581,7 @@ mod tests {
                 stattrak_count: 12,
                 souvenir_enabled: true,
                 stickers: vec![],
+                charm: None,
             },
         );
 
@@ -3405,7 +3613,7 @@ mod tests {
 
         let config = read_knife_config(&root).unwrap();
 
-        assert_eq!(config.schema_version, 3);
+        assert_eq!(config.schema_version, COSMETICS_SCHEMA_VERSION);
         assert!(!config.stickers_enabled);
         assert_eq!(config.music_kit_id, 36);
         assert_eq!(config.loadouts.t.gun_presets["7"].paint, 661);
@@ -3413,6 +3621,31 @@ mod tests {
         assert!(versioned_backup_path(&knife_path, 2).is_file());
         assert!(versioned_backup_path(&gun_path, 2).is_file());
         assert!(fs::read_to_string(versioned_backup_path(&gun_path, 2)).unwrap().contains("\"schema_version\":2"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn v3_stickers_gain_weapon_schema_without_losing_the_base_skin() {
+        let root = test_root();
+        let knife_path = knife_config_path(&root);
+        let gun_path = gun_config_path(&root);
+        fs::create_dir_all(knife_path.parent().unwrap()).unwrap();
+        fs::write(&knife_path, r#"{
+            "schema_version":3,"enabled":true,"apply_to_human_players":true,"apply_on_pickup":true,
+            "music_kit_id":0,"stickers_enabled":true,"loadouts":{"ct":{"default_knife_defindex":0,"knife_presets":{},"glove":{"enabled":false,"defindex":5030,"paint":10048,"seed":0,"wear":0.01},"gun_presets":{}},"t":{"default_knife_defindex":0,"knife_presets":{},"glove":{"enabled":false,"defindex":5030,"paint":10048,"seed":0,"wear":0.01},"gun_presets":{}}},"shared_weapon_links":{}
+        }"#).unwrap();
+        fs::write(&gun_path, r#"{
+            "schema_version":3,"ct":{},"t":{"7":{"paint":661,"seed":321,"wear":0.08,"name_tag":"AK","stattrak_enabled":false,"stattrak_count":0,"souvenir_enabled":false,"stickers":[{"slot":3,"id":1,"wear":0,"scale":1,"rotation":0,"offset_x":0,"offset_y":0,"custom_position":false}]}},"shared_weapon_links":{}
+        }"#).unwrap();
+
+        let config = read_knife_config(&root).unwrap();
+
+        assert_eq!(config.schema_version, COSMETICS_SCHEMA_VERSION);
+        assert!(config.stickers_enabled);
+        assert!(!config.charms_enabled);
+        assert_eq!(config.loadouts.t.gun_presets["7"].paint, 661);
+        assert_eq!(config.loadouts.t.gun_presets["7"].stickers[0].schema, 3);
+        assert!(versioned_backup_path(&gun_path, 3).is_file());
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -3471,6 +3704,53 @@ mod tests {
     }
 
     #[test]
+    fn charm_validation_uses_catalog_ids_and_weapon_owned_placements() {
+        let charm_id = *valid_charm_ids().iter().next().unwrap();
+        let placement_id = cosmetic_placements()[&7].charm_positions[0].placement_id;
+        let mut gun = test_preset(661);
+        gun.charm = Some(CharmPreset { id: charm_id, placement_id, seed: 42 });
+        let mut config = KnifeCustomizerConfig::default();
+        config.loadouts.t.gun_presets.insert("7".into(), gun.clone());
+        normalize_knife_config(&mut config).unwrap();
+
+        gun.charm = Some(CharmPreset { id: u32::MAX, placement_id, seed: 0 });
+        config.loadouts.t.gun_presets.insert("7".into(), gun.clone());
+        assert!(normalize_knife_config(&mut config).unwrap_err().detail.contains("Unknown charm"));
+
+        gun.charm = Some(CharmPreset { id: charm_id, placement_id: u32::MAX, seed: 0 });
+        config.loadouts.t.gun_presets.insert("7".into(), gun);
+        assert!(normalize_knife_config(&mut config).unwrap_err().detail.contains("placement"));
+
+        let mut knife = test_preset(568);
+        knife.charm = Some(CharmPreset { id: charm_id, placement_id, seed: 0 });
+        let mut config = KnifeCustomizerConfig::default();
+        config.loadouts.ct.knife_presets.insert("515".into(), knife);
+        config.loadouts.ct.default_knife_defindex = 515;
+        assert!(normalize_knife_config(&mut config).unwrap_err().detail.contains("charms"));
+    }
+
+    #[test]
+    fn agent_validation_is_team_owned_and_v4_migration_keeps_it_disabled() {
+        let ct_model = valid_agent_models(WeaponSide::Ct).iter().next().unwrap().clone();
+        let t_model = valid_agent_models(WeaponSide::T).iter().next().unwrap().clone();
+        let mut config = KnifeCustomizerConfig::default();
+        config.loadouts.ct.agent_model = ct_model.clone();
+        config.loadouts.t.agent_model = t_model;
+        config.agents_enabled = true;
+        normalize_knife_config(&mut config).unwrap();
+
+        config.loadouts.t.agent_model = ct_model;
+        assert!(normalize_knife_config(&mut config).unwrap_err().detail.contains("agent model"));
+
+        let mut migrated = KnifeCustomizerConfig::default();
+        migrated.schema_version = 4;
+        migrated.agents_enabled = true;
+        migrate_legacy_config(&mut migrated);
+        assert_eq!(migrated.schema_version, COSMETICS_SCHEMA_VERSION);
+        assert!(!migrated.agents_enabled);
+    }
+
+    #[test]
     fn sticker_change_detection_ignores_base_skin_edits_but_tracks_gate_and_slots() {
         let mut current = KnifeCustomizerConfig::default();
         current.loadouts.t.gun_presets.insert("7".into(), test_preset(661));
@@ -3483,23 +3763,31 @@ mod tests {
         edited.stickers_enabled = false;
         edited.loadouts.t.gun_presets.get_mut("7").unwrap().stickers = vec![test_sticker(0, 1)];
         assert!(sticker_configuration_changed(&current, &edited));
+
+        let mut agent_edited = current.clone();
+        agent_edited.loadouts.ct.agent_model = valid_agent_models(WeaponSide::Ct).iter().next().unwrap().clone();
+        assert!(sticker_configuration_changed(&current, &agent_edited));
     }
 
     #[test]
-    fn release_gate_disables_stickers_without_discarding_saved_slots() {
+    fn release_gate_preserves_enabled_decorations_and_saved_slots() {
         let mut app_config = AppConfig::default();
         app_config.experimental_stickers_enabled = true;
         apply_release_feature_gates(&mut app_config);
-        assert!(!app_config.experimental_stickers_enabled);
+        assert!(app_config.experimental_stickers_enabled);
 
         let mut cosmetics = KnifeCustomizerConfig::default();
         cosmetics.stickers_enabled = true;
+        cosmetics.charms_enabled = true;
+        cosmetics.agents_enabled = true;
         let mut preset = test_preset(661);
         preset.stickers = vec![test_sticker(0, 1)];
         cosmetics.loadouts.t.gun_presets.insert("7".into(), preset);
         normalize_knife_config(&mut cosmetics).unwrap();
 
-        assert!(!cosmetics.stickers_enabled);
+        assert!(cosmetics.stickers_enabled);
+        assert!(cosmetics.charms_enabled);
+        assert!(cosmetics.agents_enabled);
         assert_eq!(cosmetics.loadouts.t.gun_presets["7"].stickers.len(), 1);
     }
 
@@ -3519,7 +3807,7 @@ mod tests {
 
         let imported = read_cosmetics_preset(&source).unwrap();
 
-        assert_eq!(imported.schema_version, 3);
+        assert_eq!(imported.schema_version, COSMETICS_SCHEMA_VERSION);
         assert!(!imported.stickers_enabled);
         fs::remove_dir_all(root).unwrap();
     }
@@ -3565,7 +3853,7 @@ mod tests {
     }
 
     #[test]
-    fn linked_shared_weapon_presets_must_match() {
+    fn linked_shared_weapon_base_presets_must_match_but_decorations_may_differ() {
         let mut config = KnifeCustomizerConfig::default();
         let mut left = KnifePreset {
             paint: 344,
@@ -3576,8 +3864,25 @@ mod tests {
             stattrak_count: 0,
             souvenir_enabled: false,
             stickers: vec![],
+            charm: None,
         };
         let mut right = left.clone();
+        left.stickers = vec![test_sticker(0, 1)];
+        right.stickers = vec![test_sticker(1, 2)];
+        config
+            .loadouts
+            .ct
+            .gun_presets
+            .insert("9".into(), left.clone());
+        config
+            .loadouts
+            .t
+            .gun_presets
+            .insert("9".into(), right.clone());
+        normalize_knife_config(&mut config).unwrap();
+        assert_eq!(config.loadouts.ct.gun_presets["9"].stickers[0].id, 1);
+        assert_eq!(config.loadouts.t.gun_presets["9"].stickers[0].id, 2);
+
         right.paint = 279;
         config
             .loadouts
@@ -3586,7 +3891,7 @@ mod tests {
             .insert("9".into(), left.clone());
         config.loadouts.t.gun_presets.insert("9".into(), right);
         let error = normalize_knife_config(&mut config).unwrap_err();
-        assert!(error.detail.contains("must match"));
+        assert!(error.detail.contains("base presets must match"));
 
         config.shared_weapon_links.insert("9".into(), false);
         normalize_knife_config(&mut config).unwrap();
@@ -3627,7 +3932,7 @@ pub fn run() {
             });
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![get_config, save_config, detect_directories, select_directory,
+        .invoke_handler(tauri::generate_handler![get_config, save_config, should_present_welcome_story, detect_directories, select_directory,
             cleanup_backups, validate_files, get_difficulty, set_difficulty, get_mode, set_mode,
             reconcile_launch_options, launch_cs2, reconcile_core_json, get_bot_items, set_bot_item,
             get_presets, set_aim, set_nades, get_drop_knives, set_drop_knives,

@@ -371,12 +371,16 @@ pub fn cleanup_archives(state_root: &Path) -> std::io::Result<usize> {
     Ok(removed)
 }
 
+fn archive_name(timestamp: u64) -> String {
+    format!("LALog_{timestamp}.zip")
+}
+
 pub fn export(state_root: &Path, csgo: Option<&Path>, snapshot: &serde_json::Value) -> Result<DiagnosticArchive> {
     cleanup_archives(state_root).map_err(AppError::transaction_io)?;
     let output_dir = state_root.join("diagnostics");
     fs::create_dir_all(&output_dir).map_err(AppError::transaction_io)?;
     let timestamp = unix_time();
-    let output = output_dir.join(format!("CS2BotImproverPlus-Diagnostics-{timestamp}.zip"));
+    let output = output_dir.join(archive_name(timestamp));
     let temporary = atomic_fs::temporary_path(&output).map_err(AppError::transaction_io)?;
     let file = File::create(&temporary).map_err(AppError::transaction_io)?;
     let mut collector = Collector { writer: ZipWriter::new(file), files: 0, input_bytes: 0 };
@@ -450,6 +454,11 @@ mod tests {
     use super::*;
 
     #[test]
+    fn diagnostic_archive_name_uses_local_arena_prefix() {
+        assert_eq!(archive_name(1234567890), "LALog_1234567890.zip");
+    }
+
+    #[test]
     fn diagnostic_export_is_a_readable_zip() {
         let root = std::env::temp_dir().join(format!("cs2bi-diagnostics-{}", unix_time()));
         let csgo = root.join("game/csgo");
@@ -469,6 +478,9 @@ mod tests {
             br#"{"schema_version":1,"session_id":"session-1"}"#,
         ).unwrap();
         let archive = export(&root, Some(&csgo), &serde_json::json!({"ok": true})).unwrap();
+        let archive_name = Path::new(&archive.path).file_name().and_then(|name| name.to_str()).unwrap();
+        assert!(archive_name.starts_with("LALog_"));
+        assert!(archive_name.ends_with(".zip"));
         let file = File::open(&archive.path).unwrap();
         let mut zip = zip::ZipArchive::new(file).unwrap();
         assert!(zip.by_name("report/runtime-snapshot.json").is_ok());
