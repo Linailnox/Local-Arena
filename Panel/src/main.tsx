@@ -24,6 +24,8 @@ const MAX_ZOOM = 1;
 const MIN_ZOOM = 0.7;
 const SCREEN_FILL = 0.88;
 const TASKBAR_RESERVE = 48;
+const WORKSHOP_BROWSER_PREVIEW = import.meta.env.DEV
+  && new URLSearchParams(window.location.search).get("workshop-preview") === "1";
 
 // The window is created hidden (visible:false). We size + centre it while still
 // hidden, then add the `app-ready` class (kicks off the liquid entrance) and
@@ -94,6 +96,13 @@ document.addEventListener(
 
 async function bootstrap() {
   applyAppearance(DEFAULT_APPEARANCE);
+  if (WORKSHOP_BROWSER_PREVIEW) {
+    const { default: WorkshopBrowserPreview } = await import("./dev/WorkshopBrowserPreview");
+    ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+      <React.StrictMode><WorkshopBrowserPreview /></React.StrictMode>
+    );
+    return;
+  }
   try {
     const memory = await api.getPanelMemory();
     for (const [key, value] of Object.entries(memory.entries)) {
@@ -117,7 +126,8 @@ async function bootstrap() {
 }
 
 function renderStartupError(error: unknown) {
-  reveal();
+  if (WORKSHOP_BROWSER_PREVIEW) document.documentElement.classList.add("app-ready");
+  else reveal();
   const root = document.getElementById("root");
   if (!root) return;
   const panel = document.createElement("section");
@@ -134,6 +144,11 @@ function renderStartupError(error: unknown) {
 }
 
 async function start() {
+  if (WORKSHOP_BROWSER_PREVIEW) {
+    document.documentElement.classList.add("app-ready");
+    await bootstrap();
+    return;
+  }
   void fitWindowToScreen();
   // Safety net: never leave the window hidden if sizing hangs or is denied.
   setTimeout(reveal, 1200);

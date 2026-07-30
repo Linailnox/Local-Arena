@@ -108,6 +108,23 @@ pub enum MigrationKind {
     Blocked,
 }
 
+fn welcome_story_prompt_eligible(
+    release_build: bool,
+    full_package: bool,
+    migration_kind: MigrationKind,
+    repaired: bool,
+) -> bool {
+    release_build
+        && full_package
+        && !repaired
+        && matches!(
+            migration_kind,
+            MigrationKind::FreshInstall
+                | MigrationKind::AdoptLegacyPlus
+                | MigrationKind::ReplaceUpstream
+        )
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RestoreBaseline {
@@ -235,6 +252,7 @@ pub struct InstallTransactionResult {
     pub installed_files: usize,
     pub backup_path: String,
     pub repaired: bool,
+    pub welcome_story_eligible: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -1204,6 +1222,12 @@ pub fn install(
         installed_files,
         backup_path: directory.to_string_lossy().into_owned(),
         repaired,
+        welcome_story_eligible: welcome_story_prompt_eligible(
+            cfg!(not(debug_assertions)),
+            payload_root.join(MANIFEST_FILE).is_file(),
+            detection.migration_kind,
+            repaired,
+        ),
     })
 }
 
@@ -1557,6 +1581,32 @@ pub fn restore_pristine(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn welcome_story_requires_a_release_first_install_from_the_full_package() {
+        for migration_kind in [
+            MigrationKind::FreshInstall,
+            MigrationKind::AdoptLegacyPlus,
+            MigrationKind::ReplaceUpstream,
+        ] {
+            assert!(welcome_story_prompt_eligible(true, true, migration_kind, false));
+            assert!(!welcome_story_prompt_eligible(false, true, migration_kind, false));
+            assert!(!welcome_story_prompt_eligible(true, false, migration_kind, false));
+            assert!(!welcome_story_prompt_eligible(true, true, migration_kind, true));
+        }
+        assert!(!welcome_story_prompt_eligible(
+            true,
+            true,
+            MigrationKind::ManagedUpgrade,
+            false,
+        ));
+        assert!(!welcome_story_prompt_eligible(
+            true,
+            true,
+            MigrationKind::Blocked,
+            false,
+        ));
+    }
 
     fn root(name: &str) -> PathBuf {
         let path = std::env::temp_dir().join(format!("cs2bi-installer-{name}-{}", unix_time()));

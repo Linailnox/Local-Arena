@@ -1,9 +1,13 @@
 .stickers-page {
+  width: 100%;
+  max-width: 980px;
+  height: min(590px, calc(100vh - 144px));
   min-height: 0;
+  margin-inline: auto;
   display: grid;
-  grid-template-columns: 190px minmax(390px, 1fr) minmax(270px, 330px);
-  gap: 12px;
-  padding: 14px 18px 20px;
+  grid-template-columns: 160px minmax(390px, 1fr) 270px;
+  align-items: start;
+  gap: 10px;
 }
 
 .stickers-weapons,
@@ -17,17 +21,18 @@
 }
 
 .stickers-weapons {
+  height: min(500px, 100%);
   overflow: hidden;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
 }
 .stickers-weapons > header {
-  min-height: 54px;
-  display: flex;
+  min-height: 72px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 9px 10px;
+  gap: 5px;
+  padding: 7px 9px;
   border-bottom: 1px solid var(--line-subtle);
 }
 .stickers-weapons > header strong {
@@ -44,9 +49,9 @@
 }
 .stickers-weapons > div > button {
   min-width: 0;
-  min-height: 48px;
+  min-height: 43px;
   display: grid;
-  grid-template-columns: 58px minmax(0, 1fr);
+  grid-template-columns: 50px minmax(0, 1fr);
   align-items: center;
   gap: 7px;
   padding: 5px 7px;
@@ -62,29 +67,49 @@
   background: var(--c-accent-soft);
   color: var(--c-accent-hover);
 }
-.stickers-weapons img { width: 58px; height: 34px; object-fit: contain; }
+.stickers-weapons img { width: 50px; height: 30px; object-fit: contain; }
+.stickers-weapons .agent-current { cursor: default; }
+.stickers-weapons .agent-current > svg { justify-self: center; color: var(--c-accent-hover); }
+.stickers-weapons .agent-current .cosmetic-image,
+.stickers-weapons .agent-current .cosmetic-image-fallback { width: 50px; height: 34px; }
 .stickers-weapons span { overflow: hidden; font-size: 11px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .stickers-weapons p { margin: 14px 8px; color: var(--text-tertiary); font-size: 11px; line-height: 1.5; }
 
 .stickers-editor {
-  align-content: start;
-  display: grid;
-  gap: 11px;
-  padding: 12px;
+  height: 100%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 10px;
 }
+.stickers-weapons .team-switch--compact { width: 100%; min-height: 32px; }
+.stickers-weapons .team-switch--compact .team-switch__option { min-height: 26px; padding-inline: 8px; font-size: 11px; }
+.stickers-editor__toolbar {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 1fr;
+  align-items: center;
+  gap: 8px;
+}
+.stickers-editor__toolbar > .seg:first-child { width: min(280px, 100%); }
+.stickers-editor__toolbar > .seg:only-child { justify-self: center; }
 .stickers-preview {
+  flex: 0 0 auto;
   position: relative;
   overflow: hidden;
   width: 100%;
-  aspect-ratio: 16 / 8.8;
+  aspect-ratio: 16 / 8.6;
   border: 1px solid var(--line-strong);
   border-radius: var(--r-sm);
   background: var(--paper-sunken);
   touch-action: none;
 }
+.stickers-preview:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 2px; }
 .stickers-preview::after {
   position: absolute;
   inset: 0;
+  z-index: 0;
   content: "";
   pointer-events: none;
   background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px);
@@ -93,12 +118,61 @@
 .stickers-preview__weapon {
   position: absolute;
   inset: 8% 5%;
+  z-index: 1;
   width: 90%;
   height: 84%;
   object-fit: contain;
   filter: drop-shadow(0 12px 13px rgba(0, 0, 0, 0.17));
   user-select: none;
 }
+.stickers-preview__agent {
+  position: absolute;
+  z-index: 1;
+  inset: 12%;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  text-align: center;
+}
+.stickers-preview__agent > svg { color: var(--c-accent-hover); }
+.stickers-preview__agent .cosmetic-image,
+.stickers-preview__agent .cosmetic-image-fallback { width: 116px; height: 138px; }
+.stickers-preview__agent .cosmetic-image { filter: drop-shadow(0 9px 9px rgba(0, 0, 0, 0.15)); }
+.stickers-preview__agent strong { color: var(--text-primary); font-size: 15px; }
+.stickers-preview__agent small {
+  max-width: 90%;
+  overflow-wrap: anywhere;
+  color: var(--text-tertiary);
+  font: 9px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+.stickers-preview__hotspot,
+.stickers-preview__charm-hotspot {
+  position: absolute;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px dashed rgba(62, 91, 133, 0.48);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.48);
+  color: var(--text-tertiary);
+  transform: translate(-50%, -50%);
+}
+.stickers-preview__hotspot { width: 30px; height: 30px; }
+.stickers-preview__hotspot span { font-size: 9px; font-weight: 700; }
+.stickers-preview__hotspot:disabled { opacity: 0.48; cursor: default; }
+.stickers-preview__hotspot.is-active,
+.stickers-preview__charm-hotspot.is-active {
+  border-style: solid;
+  border-color: var(--c-accent);
+  background: var(--c-accent-soft);
+  color: var(--c-accent-hover);
+}
+.stickers-preview__charm-hotspot { width: 34px; height: 34px; }
+.stickers-preview__charm-hotspot .cosmetic-image,
+.stickers-preview__charm-hotspot .cosmetic-image-fallback { width: 25px; height: 25px; }
 .stickers-preview__sticker {
   position: absolute;
   z-index: 2;
@@ -118,13 +192,14 @@
 .stickers-preview__sticker img { width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
 
 .sticker-slots {
+  flex: 0 0 auto;
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 7px;
 }
 .sticker-slots > button {
   position: relative;
-  height: 58px;
+  height: 52px;
   display: grid;
   place-items: center;
   padding: 5px;
@@ -134,6 +209,7 @@
   color: var(--text-tertiary);
 }
 .sticker-slots > button.is-active { border-color: var(--c-accent-line); background: var(--c-accent-soft); }
+.sticker-slots > button.is-unavailable { border-style: dashed; opacity: 0.64; }
 .sticker-slots b { position: absolute; top: 4px; left: 6px; color: var(--text-tertiary); font-size: 9px; }
 .sticker-slots img { width: 38px; height: 38px; object-fit: contain; }
 .sticker-slots > button > span:not(.sticker-image-fallback) { font-size: 20px; font-weight: 400; }
@@ -153,6 +229,14 @@
   border-bottom: 1px solid var(--line-subtle);
 }
 .sticker-controls > header > span { min-width: 0; display: grid; gap: 2px; }
+.sticker-controls > header > .cosmetic-selection {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cosmetic-selection > span { min-width: 0; display: grid; gap: 2px; }
+.cosmetic-selection .cosmetic-image,
+.cosmetic-selection .cosmetic-image-fallback { flex: 0 0 38px; width: 38px; height: 38px; }
 .sticker-controls > header small { color: var(--text-tertiary); font-size: 9px; }
 .sticker-controls > header strong { overflow: hidden; color: var(--text-primary); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .sticker-controls > header > div { display: flex; gap: 4px; }
@@ -190,6 +274,25 @@
   font: 10px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
 }
 .sticker-custom { min-height: 31px; display: flex; align-items: center; justify-content: space-between; }
+.sticker-advanced {
+  display: grid;
+  gap: 8px;
+  padding: 7px 0;
+  border-top: 1px solid var(--line-subtle);
+  border-bottom: 1px solid var(--line-subtle);
+}
+.sticker-advanced summary {
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 650;
+}
+.sticker-advanced[open] summary { margin-bottom: 8px; }
+.sticker-advanced .sticker-control + .sticker-control { margin-top: 7px; }
+.charm-controls { min-height: 92px; }
+.agent-controls { min-height: 92px; }
+.charm-controls .sticker-control { grid-template-columns: 58px minmax(80px, 1fr) 112px; }
+.charm-controls .sticker-control input[type="number"] { width: 112px; }
 .sticker-reset {
   min-height: 31px;
   justify-self: start;
@@ -206,6 +309,7 @@
 }
 
 .sticker-catalog {
+  height: min(530px, 100%);
   min-height: 0;
   overflow: hidden;
   display: grid;
@@ -235,9 +339,9 @@
 }
 .sticker-catalog__grid > button {
   min-width: 0;
-  height: 94px;
+  height: 82px;
   display: grid;
-  grid-template-rows: 50px auto auto;
+  grid-template-rows: 42px auto auto;
   justify-items: center;
   gap: 2px;
   padding: 5px;
@@ -248,12 +352,21 @@
 }
 .sticker-catalog__grid > button:hover { background: rgba(255, 255, 255, 0.75); }
 .sticker-catalog__grid > button.is-active { border-color: var(--c-accent-line); background: var(--c-accent-soft); }
-.sticker-catalog__grid img { width: 48px; height: 48px; object-fit: contain; }
+.sticker-catalog__grid img { width: 40px; height: 40px; object-fit: contain; }
 .sticker-catalog__grid > button > span:not(.sticker-image-fallback) { width: 100%; overflow: hidden; font-size: 8px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .sticker-catalog__grid small { color: var(--text-tertiary); font-size: 8px; }
+.sticker-catalog__grid.is-charms > button { grid-template-rows: 42px auto auto; }
+.sticker-catalog__grid.is-agents > button { grid-template-rows: 42px auto auto; }
 .sticker-catalog footer { min-height: 34px; display: flex; align-items: center; justify-content: center; gap: 10px; border-top: 1px solid var(--line-subtle); }
 .sticker-catalog footer span { min-width: 58px; color: var(--text-tertiary); font-size: 9px; text-align: center; }
 .sticker-image-fallback { display: grid; place-items: center; color: var(--text-tertiary); }
+.cosmetic-image { display: block; object-fit: contain; }
+.cosmetic-image-fallback {
+  display: grid;
+  place-items: center;
+  color: var(--text-tertiary);
+}
+.cosmetic-image-fallback.is-charm { color: var(--c-accent-hover); }
 
 .stickers-save {
   min-height: 34px;
@@ -273,15 +386,16 @@
 .stickers-save:disabled { opacity: 0.42; cursor: default; }
 
 @media (max-width: 1080px) {
-  .stickers-page { grid-template-columns: 170px minmax(360px, 1fr); }
-  .sticker-catalog { grid-column: 1 / -1; min-height: 330px; }
+  .stickers-page { height: auto; grid-template-columns: 164px minmax(360px, 1fr); }
+  .sticker-catalog { grid-column: 1 / -1; width: 100%; height: 330px; }
   .sticker-catalog__grid { grid-template-columns: repeat(8, minmax(0, 1fr)); }
 }
 
 @media (max-width: 760px) {
-  .stickers-page { grid-template-columns: 1fr; padding: 10px; }
-  .stickers-weapons { max-height: 250px; }
-  .sticker-catalog { grid-column: auto; }
+  .stickers-page { grid-template-columns: 1fr; }
+  .stickers-weapons { height: 250px; }
+  .stickers-editor__toolbar { grid-template-columns: 1fr; }
+  .sticker-catalog { grid-column: auto; height: 360px; }
   .sticker-catalog__grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .sticker-control { grid-template-columns: 52px minmax(70px, 1fr) 62px; }
 }

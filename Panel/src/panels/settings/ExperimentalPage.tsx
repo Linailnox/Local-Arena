@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link2, Sticker } from "lucide-react";
+import { Sticker } from "lucide-react";
 import Toggle from "../../components/Toggle";
 import { useStore } from "../../state/store";
 import { useT } from "../../i18n";
@@ -15,6 +15,17 @@ export default function ExperimentalPage() {
     setWorking(true);
     try {
       await updateConfig({ experimental_features_enabled: nextMaster });
+    } catch (error) {
+      reportError(error);
+    } finally {
+      setWorking(false);
+    }
+  };
+  const persistFeature = async (enabled: boolean) => {
+    if (working || running || !master) return;
+    setWorking(true);
+    try {
+      await updateConfig({ experimental_stickers_enabled: enabled });
     } catch (error) {
       reportError(error);
     } finally {
@@ -39,17 +50,13 @@ export default function ExperimentalPage() {
     <div className="experimental-features">
       <section className={!master ? "is-locked" : ""}>
         <i><Sticker size={20} /></i>
-        <span><strong>{t("stickers.title")}</strong><small>{t("experimental.stickersUnavailable")}</small></span>
+        <span><strong>{t("stickers.title")}</strong><small>{t("experimental.stickersDesc")}</small></span>
         <Toggle
-          checked={false}
-          disabled
+          checked={!!config?.experimental_stickers_enabled}
+          disabled={!master || working || running}
+          onChange={(enabled) => void persistFeature(enabled)}
           ariaLabel={t("stickers.title")}
         />
-      </section>
-      <section className="is-locked">
-        <i><Link2 size={20} /></i>
-        <span><strong>{t("experimental.keychains")}</strong><small>{t("experimental.keychainsDesc")}</small></span>
-        <Toggle checked={false} disabled ariaLabel={t("experimental.keychains")} />
       </section>
     </div>
 

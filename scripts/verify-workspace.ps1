@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$PackageRoot,
-    [string]$ExpectedPackageVersion = "1.4.3.1"
+    [string]$ExpectedPackageVersion = "1.4.3.2"
 )
 
 $ErrorActionPreference = "Stop"
@@ -222,8 +222,12 @@ $requiredSources = @(
     "Panel/src/data/stickerCatalog.json",
     "Panel/src/data/stickerCatalog.source.json",
     "Panel/src/data/stickerWeaponIds.json",
+    "Panel/src/data/cosmeticPlacements.json",
+    "Panel/src/data/charmCatalog.json",
+    "Panel/src/data/agentCatalog.json",
     "Panel/src/lib/stickerEditor.ts",
     "scripts/generate-sticker-catalog.mjs",
+    "scripts/generate-player-cosmetic-placements.mjs",
     "scripts/test-sticker-editor.mjs",
     "addons/counterstrikesharp/plugins/BotRandomizer/BotRandomizer.cs",
     "addons/counterstrikesharp/plugins/BotRandomizer/Cosmetics/CosmeticModels.cs",
@@ -233,6 +237,7 @@ $requiredSources = @(
     "addons/counterstrikesharp/plugins/BotRandomizer/bot_randomizer_options.json",
     "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/PlayerKnifeCustomizer.cs",
     "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/sticker_weapon_ids.json",
+    "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/player_cosmetic_catalog.json",
     "addons/counterstrikesharp/plugins/BotHiderImpl/BotHiderImplPlugin.cs"
 )
 foreach ($relative in $requiredSources) {
@@ -254,8 +259,12 @@ if ($botRandomizer -notmatch 'LoadOptions\(\);' -or
     Add-Failure "BotRandomizer no longer combines upstream Bot cosmetics with Local Arena feature gates."
 }
 if ($playerCosmetics -notmatch 'IsBot: false, IsHLTV: false' -or
-    $playerCosmetics -notmatch 'StickerReleaseEnabled = false') {
-    Add-Failure "Player cosmetics must remain human-only with player stickers disabled for this preview."
+    $playerCosmetics -notmatch 'DecorationReleaseEnabled = true' -or
+    $playerCosmetics -notmatch 'CharmAttributePlanner' -or
+    -not $playerCosmetics.Contains('CosmeticApplyPhase.Agent') -or
+    -not $playerCosmetics.Contains('pawn.SetModel(model)') -or
+    $playerCosmetics -notmatch 'player_cosmetic_catalog.json') {
+    Add-Failure "Player cosmetics must remain human-only with catalog-validated sticker, charm, and agent planning."
 }
 $giveHookStart = $playerCosmetics.IndexOf("private HookResult OnGiveNamedItemPost", [StringComparison]::Ordinal)
 $nextMethodStart = $playerCosmetics.IndexOf("private static CCSPlayerController? GetPlayerFromItemServices", [StringComparison]::Ordinal)
@@ -305,8 +314,12 @@ $jsonFiles = @(
     "Panel/src/data/weaponSkins.json",
     "Panel/src/data/stickerCatalog.json",
     "Panel/src/data/stickerWeaponIds.json",
+    "Panel/src/data/cosmeticPlacements.json",
+    "Panel/src/data/charmCatalog.json",
+    "Panel/src/data/agentCatalog.json",
     "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/sticker_ids.json",
     "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/sticker_weapon_ids.json",
+    "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/player_cosmetic_catalog.json",
     "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/player_gun_presets.json",
     "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/player_knife_presets.json",
     "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/skins_en.json",
@@ -363,6 +376,34 @@ try {
 }
 catch {
     Add-Failure "Sticker catalog metadata is invalid: $($_.Exception.Message)"
+}
+
+try {
+    $panelPlacements = Get-Content -LiteralPath (Join-Path $repo "Panel/src/data/cosmeticPlacements.json") -Raw | ConvertFrom-Json
+    $panelCharms = @(Get-Content -LiteralPath (Join-Path $repo "Panel/src/data/charmCatalog.json") -Raw | ConvertFrom-Json)
+    $panelAgents = @(Get-Content -LiteralPath (Join-Path $repo "Panel/src/data/agentCatalog.json") -Raw | ConvertFrom-Json)
+    $pluginCosmetics = Get-Content -LiteralPath (Join-Path $repo "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/player_cosmetic_catalog.json") -Raw | ConvertFrom-Json
+    $placementGenerator = Get-Content -LiteralPath (Join-Path $repo "scripts/generate-player-cosmetic-placements.mjs") -Raw
+    if ($pluginCosmetics.schema_version -ne 1 -or
+        $counts["Panel/src/data/cosmeticPlacements.json"] -ne 35 -or
+        $panelCharms.Count -ne 81 -or
+        @($panelAgents | Where-Object team -eq "ct").Count -ne 35 -or
+        @($panelAgents | Where-Object team -eq "t").Count -ne 44 -or
+        @($pluginCosmetics.charm_ids).Count -ne $panelCharms.Count -or
+        @($pluginCosmetics.agent_models.ct).Count -ne 35 -or
+        @($pluginCosmetics.agent_models.t).Count -ne 44 -or
+        @($panelCharms | Where-Object { -not [string]::IsNullOrWhiteSpace($_.image) }).Count -ne 78 -or
+        @($panelAgents | Where-Object { -not [string]::IsNullOrWhiteSpace($_.image) }).Count -ne 63 -or
+        [string]::IsNullOrWhiteSpace($pluginCosmetics.inventory_images.commit) -or
+        @($pluginCosmetics.weapons.PSObject.Properties).Count -ne 35 -or
+        $placementGenerator -notmatch "charmAnchors" -or
+        $placementGenerator -notmatch "source_sha256" -or
+        $placementGenerator -notmatch [regex]::Escape([string]$pluginCosmetics.inventory_images.commit)) {
+        Add-Failure "Player cosmetic placement, charm, or agent outputs have unexpected counts."
+    }
+}
+catch {
+    Add-Failure "Player cosmetic placement metadata is invalid: $($_.Exception.Message)"
 }
 
 $matchCatalog = Get-Content -LiteralPath (Join-Path $repo "addons/counterstrikesharp/plugins/PlusMatchCoordinator/match_catalog.json") -Raw | ConvertFrom-Json
@@ -437,6 +478,7 @@ if ($PackageRoot) {
         "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/PlayerKnifeCustomizer.dll",
         "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/sticker_ids.json",
         "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/sticker_weapon_ids.json",
+        "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/player_cosmetic_catalog.json",
         "addons/counterstrikesharp/plugins/RoundDamageRecap/RoundDamageRecap.dll",
         "addons/counterstrikesharp/plugins/PlusMatchCoordinator/PlusMatchCoordinator.dll",
         "addons/counterstrikesharp/plugins/PlusMatchCoordinator/MatchCore.dll",

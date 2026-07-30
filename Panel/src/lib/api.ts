@@ -153,6 +153,7 @@ export type InstallTransactionResult = {
   installed_files: number;
   backup_path: string;
   repaired: boolean;
+  welcome_story_eligible: boolean;
 };
 
 export type RestoreResult = {
@@ -226,17 +227,25 @@ export type KnifePreset = {
   stattrak_count: number;
   souvenir_enabled?: boolean;
   stickers?: StickerPreset[];
+  charm?: CharmPreset | null;
 };
 
 export type StickerPreset = {
   slot: number;
   id: number;
+  schema: number;
   wear: number;
   scale: number;
   rotation: number;
   offset_x: number;
   offset_y: number;
   custom_position: boolean;
+};
+
+export type CharmPreset = {
+  id: number;
+  placement_id: number;
+  seed: number;
 };
 
 export type GlovePreset = {
@@ -250,6 +259,7 @@ export type GlovePreset = {
 export type CosmeticsTeam = "ct" | "t";
 
 export type TeamCosmeticLoadout = {
+  agent_model: string;
   default_knife_defindex: number;
   knife_presets: Record<string, KnifePreset>;
   glove: GlovePreset;
@@ -257,7 +267,7 @@ export type TeamCosmeticLoadout = {
 };
 
 export type KnifeCustomizerConfig = {
-  schema_version: 3;
+  schema_version: 5;
   enabled: boolean;
   apply_to_human_players: boolean;
   apply_on_pickup: boolean;
@@ -265,6 +275,8 @@ export type KnifeCustomizerConfig = {
   loadouts: Record<CosmeticsTeam, TeamCosmeticLoadout>;
   shared_weapon_links: Record<string, boolean>;
   stickers_enabled: boolean;
+  charms_enabled: boolean;
+  agents_enabled: boolean;
 };
 
 export type KnifeCustomizerState = {
@@ -318,6 +330,7 @@ export type AppConfig = {
   csgo_path: string | null;
   first_run_done: boolean;
   first_run_step?: string | null;
+  welcome_story_prompt_presented: boolean;
   cosmetics_enabled_before_online?: boolean | null;
   cosmetics_enabled_before_preview?: boolean | null;
   experimental_features_enabled?: boolean;
@@ -596,6 +609,7 @@ export type InstallCheckReport = {
 export const api = {
   getConfig: () => invoke<AppConfig>("get_config"),
   saveConfig: (config: AppConfig) => invoke<void>("save_config", { config }),
+  shouldPresentWelcomeStory: () => invoke<boolean>("should_present_welcome_story"),
   getAppearance: () => invoke<AppearanceConfig>("get_appearance"),
   saveAppearance: (config: AppearanceConfig) => invoke<AppearanceConfig>("save_appearance", { config }),
   exportAppearance: (destination: string) =>
