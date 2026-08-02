@@ -1,0 +1,6 @@
+bin/
+obj/
+stage/
+telemetry.db
+telemetry.db-shm
+telemetry.db-wal

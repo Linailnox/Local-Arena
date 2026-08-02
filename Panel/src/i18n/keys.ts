@@ -8,6 +8,7 @@ export const EN = {
   "match.subtitle": "Build a local 5v5 lineup, choose a map, and challenge the frozen featured-team catalog",
   "match.history": "Match history",
   "match.historySubtitle": "Review completed and interrupted sessions, Demo status, and detailed results",
+  "stats.globalHistory": "Global Match History",
   "match.opponent": "Opponent",
   "match.featured": "Featured team",
   "match.random": "Random",

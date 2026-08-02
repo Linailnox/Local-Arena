@@ -29,7 +29,7 @@ export const DICTS: Record<string, Partial18n> = {
     "experimental.keychains": "已验证位置", "experimental.keychainsDesc": "挂件坐标来自本地只读武器目录",
     "experimental.closeCs2": "修改实验开关或保存饰品前，请先完整关闭 CS2",
     "match.title": "匹配", "match.subtitle": "组建本地 5v5 阵容，选择地图并挑战冻结的精选战队目录",
-    "match.history": "比赛历史", "match.historySubtitle": "集中查看已完成和中断的比赛、Demo 状态与详细赛后数据", "match.opponent": "对手", "match.featured": "精选战队", "match.random": "随机",
+    "match.history": "比赛历史", "match.historySubtitle": "集中查看已完成和中断的比赛、Demo 状态与详细赛后数据", "stats.globalHistory": "全局比赛历史", "match.opponent": "对手", "match.featured": "精选战队", "match.random": "随机",
     "match.team": "战队", "match.randomNote": "将从已安装的人机档案中抽取五名不重复的对手",
     "match.side": "起始阵营", "match.difficulty": "难度", "match.low": "低", "match.medium": "中", "match.high": "高",
     "match.demo": "录制 Demo", "match.demoDesc": "默认关闭 GOTV，优先保证游戏流畅", "match.demoWarning": "GOTV 会在比赛期间增加 CPU 和内存开销，可能降低帧数或造成卡顿。仅在确实需要 Demo 时开启。", "match.rules": "规则", "match.overtime": "半场换边，平局进入 MR3 加时",
