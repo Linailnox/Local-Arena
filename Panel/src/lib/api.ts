@@ -1,4 +1,12 @@
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
+import type {
+  Cs2ssOverviewResponse,
+  Cs2ssMatchSummary,
+  Cs2ssMatchDetailResponse,
+  Cs2ssPlayerDetailResponse,
+  Cs2ssMatchWithStats,
+  Cs2ssConfig,
+} from "../data/cs2ssTypes";
 
 function invoke<T>(command: string, args?: Record<string, unknown>) {
   return tauriInvoke<T>(command, args);
@@ -582,6 +590,29 @@ export type MatchSession = {
   result_path: string | null;
 };
 
+export type MapStatEntry = {
+  map: string;
+  avgRating: number;
+  avgAdr: number;
+  matches: number;
+};
+
+export type RatingTrendPoint = {
+  sessionId: string;
+  map: string;
+  timestamp: number;
+  rating: number;
+  adr: number;
+};
+
+export type MatchHistoryStats = {
+  avgRating: number;
+  avgAdr: number;
+  totalMatches: number;
+  perMap: MapStatEntry[];
+  ratingTrend: RatingTrendPoint[];
+};
+
 export type InstallCheckStatus = "pass" | "warn" | "fail";
 export type InstallCheckItem = {
   code: string;
@@ -648,6 +679,8 @@ export const api = {
     invoke<MatchResult>("get_match_result", { csgo, sessionId }),
   deleteMatch: (csgo: string, sessionId: string, confirmed: boolean) =>
     invoke<void>("delete_match", { csgo, sessionId, confirmed }),
+  getMatchHistoryStats: (csgo: string) =>
+    invoke<MatchHistoryStats>("get_match_history_stats", { csgo }),
   playDemo: (csgo: string, demoPath: string) =>
     invoke<void>("play_demo", { csgo, demoPath }),
   openDemoFolder: (csgo: string, demoPath: string) =>
@@ -695,4 +728,12 @@ export const api = {
   installAllUpdates: (csgo: string | null) =>
     invoke<UpdateBatchResult>("install_all_updates", { csgo }),
   cancelUpdate: () => invoke<void>("cancel_update"),
+  // CS2SS telemetry
+  getCs2ssOverview: (csgo: string) => invoke<Cs2ssOverviewResponse>("get_cs2ss_overview", { csgo }),
+  listCs2ssMatches: (csgo: string) => invoke<Cs2ssMatchSummary[]>("list_cs2ss_matches", { csgo }),
+  getCs2ssMatchDetail: (csgo: string, matchId: number) => invoke<Cs2ssMatchDetailResponse>("get_cs2ss_match_detail", { csgo, matchId }),
+  getCs2ssPlayerDetail: (csgo: string, steamId: string) => invoke<Cs2ssPlayerDetailResponse>("get_cs2ss_player_detail", { csgo, steamId }),
+  listCs2ssMatchesWithStats: (csgo: string) => invoke<Cs2ssMatchWithStats[]>("list_cs2ss_matches_with_stats", { csgo }),
+  getCs2ssConfig: (csgo: string) => invoke<Cs2ssConfig>("get_cs2ss_config", { csgo }),
+  saveCs2ssConfig: (csgo: string, config: Cs2ssConfig) => invoke<void>("save_cs2ss_config", { csgo, config }),
 };

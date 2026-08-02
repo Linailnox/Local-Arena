@@ -1,0 +1,948 @@
+use crate::{AppError, Result};
+use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
+
+fn cs2ss_root(csgo: &str) -> PathBuf {
+    PathBuf::from(csgo).join(".csbip").join("cs2ss")
+}
+
+fn cs2ss_db_path(csgo: &str) -> PathBuf {
+    cs2ss_root(csgo).join("telemetry.db")
+}
+
+fn cs2ss_config_path(csgo: &str) -> PathBuf {
+    cs2ss_root(csgo).join("config.json")
+}
+
+fn open_db(csgo: &str) -> Result<rusqlite::Connection> {
+    let root = cs2ss_root(csgo);
+    std::fs::create_dir_all(&root).ok();
+    let path = cs2ss_db_path(csgo);
+    if !path.exists() {
+        return Err(AppError::invalid(format!(
+            "暂无对局数据 ({}). 安装 CS2SS 插件并完成比赛后即可查看。",
+            path.display()
+        )));
+    }
+    rusqlite::Connection::open(&path)
+        .map_err(|e| AppError::invalid(format!("Cannot open CS2SS database: {e}")))
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Cs2ssPlayerOverview {
+    #[serde(rename = "steamId")]
+    pub steam_id: String,
+    pub name: String,
+    pub matches: i64,
+    pub kills: i64,
+    pub deaths: i64,
+    pub assists: i64,
+    pub damage: i64,
+    pub headshots: i64,
+    #[serde(rename = "totalRounds")]
+    pub total_rounds: i64,
+    #[serde(rename = "kastRounds")]
+    pub kast_rounds: i64,
+    #[serde(rename = "tradeKills")]
+    pub trade_kills: i64,
+    pub multikill2: i64,
+    pub multikill3: i64,
+    pub multikill4: i64,
+    pub multikill5: i64,
+    #[serde(rename = "clutchAttempts")]
+    pub clutch_attempts: i64,
+    #[serde(rename = "clutchesWon")]
+    pub clutches_won: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Cs2ssOverviewResponse {
+    #[serde(rename = "matchCount")]
+    pub match_count: i64,
+    pub players: Vec<Cs2ssPlayerOverview>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Cs2ssMatchSummary {
+    #[serde(rename = "matchId")]
+    pub match_id: i64,
+    pub map: String,
+    #[serde(rename = "startedAt")]
+    pub started_at: String,
+    #[serde(rename = "endedAt")]
+    pub ended_at: Option<String>,
+    #[serde(rename = "endReason")]
+    pub end_reason: Option<String>,
+    #[serde(rename = "roundsPlayed")]
+    pub rounds_played: i64,
+    #[serde(rename = "ctScore")]
+    pub ct_score: i64,
+    #[serde(rename = "tScore")]
+    pub t_score: i64,
+    #[serde(rename = "teamAScore")]
+    pub team_a_score: i64,
+    #[serde(rename = "teamBScore")]
+    pub team_b_score: i64,
+    #[serde(rename = "modeFamily")]
+    pub mode_family: String,
+    pub ruleset: String,
+    #[serde(rename = "gameType")]
+    pub game_type: i64,
+    #[serde(rename = "gameMode")]
+    pub game_mode: i64,
+    #[serde(rename = "durationSeconds")]
+    pub duration_seconds: i64,
+    pub status: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Cs2ssRoundSummary {
+    #[serde(rename = "roundId")]
+    pub round_id: i64,
+    #[serde(rename = "matchId")]
+    pub match_id: i64,
+    #[serde(rename = "roundNumber")]
+    pub round_number: i64,
+    #[serde(rename = "capturedAt")]
+    pub captured_at: String,
+    pub source: String,
+    #[serde(rename = "winnerTeam")]
+    pub winner_team: Option<String>,
+    #[serde(rename = "endReason")]
+    pub end_reason: Option<i64>,
+    #[serde(rename = "ctScore")]
+    pub ct_score: i64,
+    #[serde(rename = "tScore")]
+    pub t_score: i64,
+    #[serde(rename = "teamAScore")]
+    pub team_a_score: i64,
+    #[serde(rename = "teamBScore")]
+    pub team_b_score: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Cs2ssRoundPlayer {
+    #[serde(rename = "roundPlayerId")]
+    pub round_player_id: i64,
+    #[serde(rename = "roundId")]
+    pub round_id: i64,
+    #[serde(rename = "matchId")]
+    pub match_id: i64,
+    #[serde(rename = "steamId")]
+    pub steam_id: String,
+    pub name: String,
+    pub team: String,
+    #[serde(rename = "isBot")]
+    pub is_bot: bool,
+    pub alive: bool,
+    pub health: i64,
+    pub kills: i64,
+    pub deaths: i64,
+    pub assists: i64,
+    pub damage: i64,
+    #[serde(rename = "headshotKills")]
+    pub headshot_kills: i64,
+    #[serde(rename = "totalKills")]
+    pub total_kills: i64,
+    #[serde(rename = "totalDeaths")]
+    pub total_deaths: i64,
+    #[serde(rename = "totalDamage")]
+    pub total_damage: i64,
+    pub score: i64,
+    pub money: i64,
+    pub kast: bool,
+    pub survived: bool,
+    pub traded: bool,
+    #[serde(rename = "tradeKills")]
+    pub trade_kills: i64,
+    #[serde(rename = "eventKills")]
+    pub event_kills: i64,
+    pub multikill: i64,
+    #[serde(rename = "clutchAttempt")]
+    pub clutch_attempt: bool,
+    #[serde(rename = "clutchWon")]
+    pub clutch_won: bool,
+    #[serde(rename = "clutchSize")]
+    pub clutch_size: i64,
+    #[serde(rename = "roundNumber")]
+    pub round_number: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Cs2ssMatchPlayer {
+    #[serde(rename = "matchPlayerId")]
+    pub match_player_id: i64,
+    #[serde(rename = "matchId")]
+    pub match_id: i64,
+    #[serde(rename = "steamId")]
+    pub steam_id: String,
+    pub name: String,
+    pub team: String,
+    #[serde(rename = "isBot")]
+    pub is_bot: bool,
+    pub alive: bool,
+    pub health: i64,
+    #[serde(rename = "totalKills")]
+    pub total_kills: i64,
+    #[serde(rename = "totalDeaths")]
+    pub total_deaths: i64,
+    #[serde(rename = "totalAssists")]
+    pub total_assists: i64,
+    #[serde(rename = "totalDamage")]
+    pub total_damage: i64,
+    #[serde(rename = "totalHeadshotKills")]
+    pub total_headshot_kills: i64,
+    pub score: i64,
+    pub money: i64,
+    #[serde(rename = "kastRounds")]
+    pub kast_rounds: i64,
+    #[serde(rename = "tradeKills")]
+    pub trade_kills: i64,
+    pub multikill2: i64,
+    pub multikill3: i64,
+    pub multikill4: i64,
+    pub multikill5: i64,
+    #[serde(rename = "clutchAttempts")]
+    pub clutch_attempts: i64,
+    #[serde(rename = "clutchesWon")]
+    pub clutches_won: i64,
+    #[serde(rename = "dmSpawnCount")]
+    pub dm_spawn_count: i64,
+    #[serde(rename = "dmCompletedLives")]
+    pub dm_completed_lives: i64,
+    #[serde(rename = "dmMaxKillStreak")]
+    pub dm_max_kill_streak: i64,
+    #[serde(rename = "dmAliveSeconds")]
+    pub dm_alive_seconds: i64,
+    #[serde(rename = "dmLongestLifeSeconds")]
+    pub dm_longest_life_seconds: i64,
+    #[serde(rename = "dmBurst5s2")]
+    pub dm_burst_5s_2: i64,
+    #[serde(rename = "dmBurst5s3")]
+    pub dm_burst_5s_3: i64,
+    #[serde(rename = "dmBurst5s4")]
+    pub dm_burst_5s_4: i64,
+    #[serde(rename = "dmBurst10s2")]
+    pub dm_burst_10s_2: i64,
+    #[serde(rename = "dmBurst10s3")]
+    pub dm_burst_10s_3: i64,
+    #[serde(rename = "dmBurst10s4")]
+    pub dm_burst_10s_4: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Cs2ssDeathmatchLife {
+    #[serde(rename = "lifeId")]
+    pub life_id: i64,
+    #[serde(rename = "matchId")]
+    pub match_id: i64,
+    #[serde(rename = "steamId")]
+    pub steam_id: String,
+    #[serde(rename = "lifeIndex")]
+    pub life_index: i64,
+    #[serde(rename = "spawnedAt")]
+    pub spawned_at: String,
+    #[serde(rename = "endedAt")]
+    pub ended_at: String,
+    #[serde(rename = "endKind")]
+    pub end_kind: String,
+    #[serde(rename = "durationSeconds")]
+    pub duration_seconds: f64,
+    pub kills: i64,
+    pub damage: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Cs2ssMatchDetailResponse {
+    pub r#match: Cs2ssMatchSummary,
+    pub rounds: Vec<Cs2ssRoundSummary>,
+    #[serde(rename = "roundPlayers")]
+    pub round_players: Vec<Cs2ssRoundPlayer>,
+    #[serde(rename = "matchPlayers")]
+    pub match_players: Vec<Cs2ssMatchPlayer>,
+    #[serde(rename = "deathmatchLives")]
+    pub deathmatch_lives: Vec<Cs2ssDeathmatchLife>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Cs2ssPlayerMatchSummary {
+    #[serde(rename = "matchId")]
+    pub match_id: i64,
+    pub map: String,
+    #[serde(rename = "startedAt")]
+    pub started_at: String,
+    #[serde(rename = "roundsPlayed")]
+    pub rounds_played: i64,
+    #[serde(rename = "ctScore")]
+    pub ct_score: i64,
+    #[serde(rename = "tScore")]
+    pub t_score: i64,
+    #[serde(rename = "teamAScore")]
+    pub team_a_score: i64,
+    #[serde(rename = "teamBScore")]
+    pub team_b_score: i64,
+    pub team: String,
+    #[serde(rename = "initialTeam")]
+    pub initial_team: String,
+    #[serde(rename = "totalKills")]
+    pub total_kills: i64,
+    #[serde(rename = "totalDeaths")]
+    pub total_deaths: i64,
+    #[serde(rename = "totalAssists")]
+    pub total_assists: i64,
+    #[serde(rename = "totalDamage")]
+    pub total_damage: i64,
+    #[serde(rename = "totalHeadshotKills")]
+    pub total_headshot_kills: i64,
+    pub score: i64,
+    pub money: i64,
+    #[serde(rename = "kastRounds")]
+    pub kast_rounds: i64,
+    #[serde(rename = "tradeKills")]
+    pub trade_kills: i64,
+    pub multikill2: i64,
+    pub multikill3: i64,
+    pub multikill4: i64,
+    pub multikill5: i64,
+    #[serde(rename = "clutchAttempts")]
+    pub clutch_attempts: i64,
+    #[serde(rename = "clutchesWon")]
+    pub clutches_won: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Cs2ssMapStat {
+    pub map: String,
+    pub matches: i64,
+    pub kills: i64,
+    pub deaths: i64,
+    pub assists: i64,
+    pub damage: i64,
+    pub headshots: i64,
+    pub rounds: i64,
+    #[serde(rename = "kastRounds")]
+    pub kast_rounds: i64,
+    #[serde(rename = "tradeKills")]
+    pub trade_kills: i64,
+    pub multikill2: i64,
+    pub multikill3: i64,
+    pub multikill4: i64,
+    pub multikill5: i64,
+    #[serde(rename = "clutchAttempts")]
+    pub clutch_attempts: i64,
+    #[serde(rename = "clutchesWon")]
+    pub clutches_won: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Cs2ssPlayerTotal {
+    pub kills: i64,
+    pub deaths: i64,
+    pub assists: i64,
+    pub damage: i64,
+    pub headshots: i64,
+    pub rounds: i64,
+    #[serde(rename = "kastRounds")]
+    pub kast_rounds: i64,
+    #[serde(rename = "tradeKills")]
+    pub trade_kills: i64,
+    pub multikill2: i64,
+    pub multikill3: i64,
+    pub multikill4: i64,
+    pub multikill5: i64,
+    #[serde(rename = "clutchAttempts")]
+    pub clutch_attempts: i64,
+    #[serde(rename = "clutchesWon")]
+    pub clutches_won: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Cs2ssPlayerDetailResponse {
+    #[serde(rename = "steamId")]
+    pub steam_id: String,
+    pub name: String,
+    pub total: Cs2ssPlayerTotal,
+    pub matches: Vec<Cs2ssPlayerMatchSummary>,
+    #[serde(rename = "mapStats")]
+    pub map_stats: Vec<Cs2ssMapStat>,
+}
+
+#[tauri::command]
+pub fn get_cs2ss_overview(csgo: String) -> Result<Cs2ssOverviewResponse> {
+    let conn = open_db(&csgo)?;
+
+    let match_count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM matches WHERE status = 'completed' AND mode_family = 'competitive'", [], |row| row.get(0))
+        .unwrap_or(0);
+
+    let mut stmt = conn.prepare(
+        "SELECT mp.steam_id, mp.name,
+            COUNT(DISTINCT mp.match_id) as matches,
+            SUM(mp.total_kills) as kills, SUM(mp.total_deaths) as deaths,
+            SUM(mp.total_assists) as assists, SUM(mp.total_damage) as damage,
+            SUM(mp.total_headshot_kills) as headshots,
+            SUM(m.rounds_played) as total_rounds,
+            SUM(mp.kast_rounds) as kast_rounds, SUM(mp.trade_kills) as trade_kills,
+            SUM(mp.multikill_2) as mk2, SUM(mp.multikill_3) as mk3,
+            SUM(mp.multikill_4) as mk4, SUM(mp.multikill_5) as mk5,
+            SUM(mp.clutch_attempts) as ca, SUM(mp.clutches_won) as cw
+         FROM match_players mp
+         JOIN matches m ON mp.match_id = m.match_id
+         WHERE m.status = 'completed' AND m.mode_family = 'competitive'
+         GROUP BY mp.steam_id, mp.name
+         ORDER BY matches DESC"
+    ).map_err(|e| AppError::invalid(format!("Query error: {e}")))?;
+
+    let players: Vec<Cs2ssPlayerOverview> = stmt
+        .query_map([], |row| {
+            Ok(Cs2ssPlayerOverview {
+                steam_id: row.get(0)?,
+                name: row.get(1)?,
+                matches: row.get(2)?,
+                kills: row.get(3)?,
+                deaths: row.get(4)?,
+                assists: row.get(5)?,
+                damage: row.get(6)?,
+                headshots: row.get(7)?,
+                total_rounds: row.get(8)?,
+                kast_rounds: row.get(9)?,
+                trade_kills: row.get(10)?,
+                multikill2: row.get(11)?,
+                multikill3: row.get(12)?,
+                multikill4: row.get(13)?,
+                multikill5: row.get(14)?,
+                clutch_attempts: row.get(15)?,
+                clutches_won: row.get(16)?,
+            })
+        })
+        .map_err(|e| AppError::invalid(format!("Query error: {e}")))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    Ok(Cs2ssOverviewResponse {
+        match_count,
+        players,
+    })
+}
+
+#[tauri::command]
+pub fn list_cs2ss_matches(csgo: String) -> Result<Vec<Cs2ssMatchSummary>> {
+    let conn = open_db(&csgo)?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT match_id, map, started_at, ended_at, end_reason, rounds_played,
+                    ct_score, t_score, team_a_score, team_b_score,
+                    mode_family, ruleset, game_type, game_mode, duration_seconds, status
+             FROM matches
+             ORDER BY started_at DESC"
+        )
+        .map_err(|e| AppError::invalid(format!("Query error: {e}")))?;
+
+    let matches: Vec<Cs2ssMatchSummary> = stmt
+        .query_map([], |row| {
+            Ok(Cs2ssMatchSummary {
+                match_id: row.get(0)?,
+                map: row.get(1)?,
+                started_at: row.get(2)?,
+                ended_at: row.get(3)?,
+                end_reason: row.get(4)?,
+                rounds_played: row.get(5)?,
+                ct_score: row.get(6)?,
+                t_score: row.get(7)?,
+                team_a_score: row.get(8)?,
+                team_b_score: row.get(9)?,
+                mode_family: row.get(10)?,
+                ruleset: row.get(11)?,
+                game_type: row.get(12)?,
+                game_mode: row.get(13)?,
+                duration_seconds: row.get(14)?,
+                status: row.get(15)?,
+            })
+        })
+        .map_err(|e| AppError::invalid(format!("Query error: {e}")))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    Ok(matches)
+}
+
+#[tauri::command]
+pub fn get_cs2ss_match_detail(csgo: String, match_id: i64) -> Result<Cs2ssMatchDetailResponse> {
+    let conn = open_db(&csgo)?;
+
+    let m: Cs2ssMatchSummary = conn
+        .query_row(
+            "SELECT match_id, map, started_at, ended_at, end_reason, rounds_played,
+                    ct_score, t_score, team_a_score, team_b_score,
+                    mode_family, ruleset, game_type, game_mode, duration_seconds, status
+             FROM matches WHERE match_id = ?1",
+            [match_id],
+            |row| {
+                Ok(Cs2ssMatchSummary {
+                    match_id: row.get(0)?,
+                    map: row.get(1)?,
+                    started_at: row.get(2)?,
+                    ended_at: row.get(3)?,
+                    end_reason: row.get(4)?,
+                    rounds_played: row.get(5)?,
+                    ct_score: row.get(6)?,
+                    t_score: row.get(7)?,
+                    team_a_score: row.get(8)?,
+                    team_b_score: row.get(9)?,
+                    mode_family: row.get(10)?,
+                    ruleset: row.get(11)?,
+                    game_type: row.get(12)?,
+                    game_mode: row.get(13)?,
+                    duration_seconds: row.get(14)?,
+                    status: row.get(15)?,
+                })
+            },
+        )
+        .map_err(|e| AppError::invalid(format!("Match {match_id} not found: {e}")))?;
+
+    let mut rs = conn
+        .prepare(
+            "SELECT round_id, match_id, round_number, captured_at, source,
+                    winner_team, end_reason, ct_score, t_score, team_a_score, team_b_score
+             FROM rounds WHERE match_id = ?1 ORDER BY round_number"
+        )
+        .map_err(|e| AppError::invalid(format!("Query error: {e}")))?;
+
+    let rounds: Vec<Cs2ssRoundSummary> = rs
+        .query_map([match_id], |row| {
+            Ok(Cs2ssRoundSummary {
+                round_id: row.get(0)?,
+                match_id: row.get(1)?,
+                round_number: row.get(2)?,
+                captured_at: row.get(3)?,
+                source: row.get(4)?,
+                winner_team: row.get(5)?,
+                end_reason: row.get(6)?,
+                ct_score: row.get(7)?,
+                t_score: row.get(8)?,
+                team_a_score: row.get(9)?,
+                team_b_score: row.get(10)?,
+            })
+        })
+        .map_err(|e| AppError::invalid(format!("Query error: {e}")))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    let mut rps = conn
+        .prepare(
+            "SELECT rp.round_player_id, rp.round_id, rp.match_id, rp.steam_id, rp.name, rp.team, rp.is_bot,
+                    rp.alive, rp.health, rp.kills, rp.deaths, rp.assists, rp.damage, rp.headshot_kills,
+                    rp.total_kills, rp.total_deaths, rp.total_damage, rp.score, rp.money,
+                    rp.kast, rp.survived, rp.traded, rp.trade_kills, rp.event_kills, rp.multikill,
+                    rp.clutch_attempt, rp.clutch_won, rp.clutch_size, r.round_number
+             FROM round_players rp JOIN rounds r ON rp.round_id = r.round_id
+             WHERE rp.match_id = ?1 ORDER BY r.round_number"
+        )
+        .map_err(|e| AppError::invalid(format!("Query error: {e}")))?;
+
+    let round_players: Vec<Cs2ssRoundPlayer> = rps
+        .query_map([match_id], |row| {
+            Ok(Cs2ssRoundPlayer {
+                round_player_id: row.get(0)?,
+                round_id: row.get(1)?,
+                match_id: row.get(2)?,
+                steam_id: row.get(3)?,
+                name: row.get(4)?,
+                team: row.get(5)?,
+                is_bot: row.get(6)?,
+                alive: row.get(7)?,
+                health: row.get(8)?,
+                kills: row.get(9)?,
+                deaths: row.get(10)?,
+                assists: row.get(11)?,
+                damage: row.get(12)?,
+                headshot_kills: row.get(13)?,
+                total_kills: row.get(14)?,
+                total_deaths: row.get(15)?,
+                total_damage: row.get(16)?,
+                score: row.get(17)?,
+                money: row.get(18)?,
+                kast: row.get(19)?,
+                survived: row.get(20)?,
+                traded: row.get(21)?,
+                trade_kills: row.get(22)?,
+                event_kills: row.get(23)?,
+                multikill: row.get(24)?,
+                clutch_attempt: row.get(25)?,
+                clutch_won: row.get(26)?,
+                clutch_size: row.get(27)?,
+                round_number: row.get(28)?,
+            })
+        })
+        .map_err(|e| AppError::invalid(format!("Query error: {e}")))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    let mut mps = conn
+        .prepare(
+            "SELECT match_player_id, match_id, steam_id, name, team, is_bot, alive, health,
+                    total_kills, total_deaths, total_assists, total_damage, total_headshot_kills,
+                    score, money, kast_rounds, trade_kills,
+                    multikill_2, multikill_3, multikill_4, multikill_5,
+                    clutch_attempts, clutches_won,
+                    dm_spawn_count, dm_completed_lives, dm_max_kill_streak,
+                    dm_alive_seconds, dm_longest_life_seconds,
+                    dm_burst_5s_2, dm_burst_5s_3, dm_burst_5s_4,
+                    dm_burst_10s_2, dm_burst_10s_3, dm_burst_10s_4
+             FROM match_players WHERE match_id = ?1"
+        )
+        .map_err(|e| AppError::invalid(format!("Query error: {e}")))?;
+
+    let match_players: Vec<Cs2ssMatchPlayer> = mps
+        .query_map([match_id], |row| {
+            Ok(Cs2ssMatchPlayer {
+                match_player_id: row.get(0)?,
+                match_id: row.get(1)?,
+                steam_id: row.get(2)?,
+                name: row.get(3)?,
+                team: row.get(4)?,
+                is_bot: row.get(5)?,
+                alive: row.get(6)?,
+                health: row.get(7)?,
+                total_kills: row.get(8)?,
+                total_deaths: row.get(9)?,
+                total_assists: row.get(10)?,
+                total_damage: row.get(11)?,
+                total_headshot_kills: row.get(12)?,
+                score: row.get(13)?,
+                money: row.get(14)?,
+                kast_rounds: row.get(15)?,
+                trade_kills: row.get(16)?,
+                multikill2: row.get(17)?,
+                multikill3: row.get(18)?,
+                multikill4: row.get(19)?,
+                multikill5: row.get(20)?,
+                clutch_attempts: row.get(21)?,
+                clutches_won: row.get(22)?,
+                dm_spawn_count: row.get(23)?,
+                dm_completed_lives: row.get(24)?,
+                dm_max_kill_streak: row.get(25)?,
+                dm_alive_seconds: row.get(26)?,
+                dm_longest_life_seconds: row.get(27)?,
+                dm_burst_5s_2: row.get(28)?,
+                dm_burst_5s_3: row.get(29)?,
+                dm_burst_5s_4: row.get(30)?,
+                dm_burst_10s_2: row.get(31)?,
+                dm_burst_10s_3: row.get(32)?,
+                dm_burst_10s_4: row.get(33)?,
+            })
+        })
+        .map_err(|e| AppError::invalid(format!("Query error: {e}")))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    let mut dls = conn
+        .prepare(
+            "SELECT life_id, match_id, steam_id, life_index, spawned_at, ended_at,
+                    end_kind, duration_seconds, kills, damage
+             FROM deathmatch_lives WHERE match_id = ?1 ORDER BY life_index"
+        )
+        .map_err(|e| AppError::invalid(format!("Query error: {e}")))?;
+
+    let deathmatch_lives: Vec<Cs2ssDeathmatchLife> = dls
+        .query_map([match_id], |row| {
+            Ok(Cs2ssDeathmatchLife {
+                life_id: row.get(0)?,
+                match_id: row.get(1)?,
+                steam_id: row.get(2)?,
+                life_index: row.get(3)?,
+                spawned_at: row.get(4)?,
+                ended_at: row.get(5)?,
+                end_kind: row.get(6)?,
+                duration_seconds: row.get(7)?,
+                kills: row.get(8)?,
+                damage: row.get(9)?,
+            })
+        })
+        .map_err(|e| AppError::invalid(format!("Query error: {e}")))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    Ok(Cs2ssMatchDetailResponse {
+        r#match: m,
+        rounds,
+        round_players,
+        match_players,
+        deathmatch_lives,
+    })
+}
+
+#[tauri::command]
+pub fn get_cs2ss_player_detail(csgo: String, steam_id: String) -> Result<Cs2ssPlayerDetailResponse> {
+    let conn = open_db(&csgo)?;
+
+    let (name, total): (String, Cs2ssPlayerTotal) = conn
+        .query_row(
+            "SELECT mp.name,
+                    SUM(mp.total_kills) as kills, SUM(mp.total_deaths) as deaths,
+                    SUM(mp.total_assists) as assists, SUM(mp.total_damage) as damage,
+                    SUM(mp.total_headshot_kills) as hs,
+                    SUM(m.rounds_played) as rounds,
+                    SUM(mp.kast_rounds) as kast_r, SUM(mp.trade_kills) as tk,
+                    SUM(mp.multikill_2) as mk2, SUM(mp.multikill_3) as mk3,
+                    SUM(mp.multikill_4) as mk4, SUM(mp.multikill_5) as mk5,
+                    SUM(mp.clutch_attempts) as ca, SUM(mp.clutches_won) as cw
+             FROM match_players mp
+             JOIN matches m ON mp.match_id = m.match_id
+             WHERE mp.steam_id = ?1 AND m.mode_family = 'competitive'
+             GROUP BY mp.name",
+            [&steam_id],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    Cs2ssPlayerTotal {
+                        kills: row.get(1)?,
+                        deaths: row.get(2)?,
+                        assists: row.get(3)?,
+                        damage: row.get(4)?,
+                        headshots: row.get(5)?,
+                        rounds: row.get(6)?,
+                        kast_rounds: row.get(7)?,
+                        trade_kills: row.get(8)?,
+                        multikill2: row.get(9)?,
+                        multikill3: row.get(10)?,
+                        multikill4: row.get(11)?,
+                        multikill5: row.get(12)?,
+                        clutch_attempts: row.get(13)?,
+                        clutches_won: row.get(14)?,
+                    },
+                ))
+            },
+        )
+        .map_err(|e| AppError::invalid(format!("Player {steam_id} not found: {e}")))?;
+
+    let mut ms = conn
+        .prepare(
+            "SELECT mp.match_id, m.map, m.started_at, m.rounds_played,
+                    m.ct_score, m.t_score, m.team_a_score, m.team_b_score, mp.team,
+                    COALESCE((SELECT rp0.team FROM round_players rp0 WHERE rp0.steam_id = mp.steam_id AND rp0.match_id = m.match_id ORDER BY rp0.round_player_id LIMIT 1), mp.team, '') as initial_team,
+                    mp.total_kills, mp.total_deaths, mp.total_assists,
+                    mp.total_damage, mp.total_headshot_kills, mp.score, mp.money,
+                    mp.kast_rounds, mp.trade_kills,
+                    mp.multikill_2, mp.multikill_3, mp.multikill_4, mp.multikill_5,
+                    mp.clutch_attempts, mp.clutches_won
+             FROM match_players mp
+             JOIN matches m ON mp.match_id = m.match_id
+             WHERE mp.steam_id = ?1 AND m.status = 'completed' AND m.mode_family = 'competitive'
+             ORDER BY m.started_at DESC"
+        )
+        .map_err(|e| AppError::invalid(format!("Query error: {e}")))?;
+
+    let player_matches: Vec<Cs2ssPlayerMatchSummary> = ms
+        .query_map([&steam_id], |row| {
+            Ok(Cs2ssPlayerMatchSummary {
+                match_id: row.get(0)?,
+                map: row.get(1)?,
+                started_at: row.get(2)?,
+                rounds_played: row.get(3)?,
+                ct_score: row.get(4)?,
+                t_score: row.get(5)?,
+                team_a_score: row.get(6)?,
+                team_b_score: row.get(7)?,
+                team: row.get(8)?,
+                initial_team: row.get(9)?,
+                total_kills: row.get(10)?,
+                total_deaths: row.get(11)?,
+                total_assists: row.get(12)?,
+                total_damage: row.get(13)?,
+                total_headshot_kills: row.get(14)?,
+                score: row.get(15)?,
+                money: row.get(16)?,
+                kast_rounds: row.get(17)?,
+                trade_kills: row.get(18)?,
+                multikill2: row.get(19)?,
+                multikill3: row.get(20)?,
+                multikill4: row.get(21)?,
+                multikill5: row.get(22)?,
+                clutch_attempts: row.get(23)?,
+                clutches_won: row.get(24)?,
+            })
+        })
+        .map_err(|e| AppError::invalid(format!("Query error: {e}")))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    let mut maps = conn
+        .prepare(
+            "SELECT m.map, COUNT(DISTINCT m.match_id) as matches,
+                    SUM(mp.total_kills), SUM(mp.total_deaths), SUM(mp.total_assists),
+                    SUM(mp.total_damage), SUM(mp.total_headshot_kills),
+                    SUM(m.rounds_played) as rounds,
+                    SUM(mp.kast_rounds), SUM(mp.trade_kills),
+                    SUM(mp.multikill_2), SUM(mp.multikill_3), SUM(mp.multikill_4), SUM(mp.multikill_5),
+                    SUM(mp.clutch_attempts), SUM(mp.clutches_won)
+             FROM match_players mp
+             JOIN matches m ON mp.match_id = m.match_id
+             WHERE mp.steam_id = ?1 AND m.status = 'completed' AND m.mode_family = 'competitive'
+             GROUP BY m.map
+             ORDER BY matches DESC"
+        )
+        .map_err(|e| AppError::invalid(format!("Query error: {e}")))?;
+
+    let map_stats: Vec<Cs2ssMapStat> = maps
+        .query_map([&steam_id], |row| {
+            Ok(Cs2ssMapStat {
+                map: row.get(0)?,
+                matches: row.get(1)?,
+                kills: row.get(2)?,
+                deaths: row.get(3)?,
+                assists: row.get(4)?,
+                damage: row.get(5)?,
+                headshots: row.get(6)?,
+                rounds: row.get(7)?,
+                kast_rounds: row.get(8)?,
+                trade_kills: row.get(9)?,
+                multikill2: row.get(10)?,
+                multikill3: row.get(11)?,
+                multikill4: row.get(12)?,
+                multikill5: row.get(13)?,
+                clutch_attempts: row.get(14)?,
+                clutches_won: row.get(15)?,
+            })
+        })
+        .map_err(|e| AppError::invalid(format!("Query error: {e}")))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    Ok(Cs2ssPlayerDetailResponse {
+        steam_id: steam_id.clone(),
+        name,
+        total,
+        matches: player_matches,
+        map_stats,
+    })
+}
+
+// ---- Match list with player stats (single query, no N+1) ----
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Cs2ssMatchWithStats {
+    #[serde(flatten)]
+    pub match_summary: Cs2ssMatchSummary,
+    #[serde(rename = "playerTeam")]
+    pub player_team: String,
+    #[serde(rename = "playerInitialTeam")]
+    pub player_initial_team: String,
+    #[serde(rename = "playerKills")]
+    pub player_kills: i64,
+    #[serde(rename = "playerDeaths")]
+    pub player_deaths: i64,
+    #[serde(rename = "playerAssists")]
+    pub player_assists: i64,
+    #[serde(rename = "playerDamage")]
+    pub player_damage: i64,
+    #[serde(rename = "playerHeadshots")]
+    pub player_headshots: i64,
+    #[serde(rename = "playerScore")]
+    pub player_score: i64,
+    #[serde(rename = "playerKastRounds")]
+    pub player_kast_rounds: i64,
+    #[serde(rename = "playerTradeKills")]
+    pub player_trade_kills: i64,
+    #[serde(rename = "playerMk2")]
+    pub player_mk2: i64,
+    #[serde(rename = "playerMk3")]
+    pub player_mk3: i64,
+    #[serde(rename = "playerMk4")]
+    pub player_mk4: i64,
+    #[serde(rename = "playerMk5")]
+    pub player_mk5: i64,
+    #[serde(rename = "playerClutchAttempts")]
+    pub player_clutch_attempts: i64,
+    #[serde(rename = "playerClutchesWon")]
+    pub player_clutches_won: i64,
+    #[serde(rename = "playerDmSpawnCount")]
+    pub player_dm_spawn_count: i64,
+    #[serde(rename = "playerDmMaxKillStreak")]
+    pub player_dm_max_kill_streak: i64,
+}
+
+#[tauri::command]
+pub fn list_cs2ss_matches_with_stats(csgo: String) -> Result<Vec<Cs2ssMatchWithStats>> {
+    let conn = open_db(&csgo)?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT m.match_id, m.map, m.started_at, m.ended_at, m.end_reason,
+                    m.rounds_played, m.ct_score, m.t_score, m.team_a_score, m.team_b_score,
+                    m.mode_family, m.ruleset, m.game_type, m.game_mode, m.duration_seconds, m.status,
+                    COALESCE(mp.team, '') as player_team,
+                    COALESCE((SELECT rp0.team FROM round_players rp0 WHERE rp0.steam_id = mp.steam_id AND rp0.match_id = m.match_id ORDER BY rp0.round_player_id LIMIT 1), mp.team, '') as player_initial_team,
+                    COALESCE(mp.total_kills, 0), COALESCE(mp.total_deaths, 0),
+                    COALESCE(mp.total_assists, 0), COALESCE(mp.total_damage, 0),
+                    COALESCE(mp.total_headshot_kills, 0), COALESCE(mp.score, 0),
+                    COALESCE(mp.kast_rounds, 0), COALESCE(mp.trade_kills, 0),
+                    COALESCE(mp.multikill_2, 0), COALESCE(mp.multikill_3, 0),
+                    COALESCE(mp.multikill_4, 0), COALESCE(mp.multikill_5, 0),
+                    COALESCE(mp.clutch_attempts, 0), COALESCE(mp.clutches_won, 0),
+                    COALESCE(mp.dm_spawn_count, 0), COALESCE(mp.dm_max_kill_streak, 0)
+             FROM matches m
+             LEFT JOIN match_players mp ON m.match_id = mp.match_id AND mp.is_bot = 0
+             ORDER BY m.started_at DESC"
+        )
+        .map_err(|e| AppError::invalid(format!("Query error: {e}")))?;
+
+    let list: Vec<Cs2ssMatchWithStats> = stmt
+        .query_map([], |row| {
+            Ok(Cs2ssMatchWithStats {
+                match_summary: Cs2ssMatchSummary {
+                    match_id: row.get(0)?, map: row.get(1)?, started_at: row.get(2)?,
+                    ended_at: row.get(3)?, end_reason: row.get(4)?, rounds_played: row.get(5)?,
+                    ct_score: row.get(6)?, t_score: row.get(7)?, team_a_score: row.get(8)?,
+                    team_b_score: row.get(9)?, mode_family: row.get(10)?, ruleset: row.get(11)?,
+                    game_type: row.get(12)?, game_mode: row.get(13)?, duration_seconds: row.get(14)?,
+                    status: row.get(15)?,
+                },
+                player_team: row.get(16)?,
+                player_initial_team: row.get(17)?,
+                player_kills: row.get(18)?, player_deaths: row.get(19)?,
+                player_assists: row.get(20)?, player_damage: row.get(21)?,
+                player_headshots: row.get(22)?, player_score: row.get(23)?,
+                player_kast_rounds: row.get(24)?, player_trade_kills: row.get(25)?,
+                player_mk2: row.get(26)?, player_mk3: row.get(27)?,
+                player_mk4: row.get(28)?, player_mk5: row.get(29)?,
+                player_clutch_attempts: row.get(30)?,
+                player_clutches_won: row.get(31)?,
+                player_dm_spawn_count: row.get(32)?,
+                player_dm_max_kill_streak: row.get(33)?,
+            })
+        })
+        .map_err(|e| AppError::invalid(format!("Query error: {e}")))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    Ok(list)
+}
+
+// ---- Steam ID config ----
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct Cs2ssConfig {
+    #[serde(rename = "steamId", default)]
+    pub steam_id: String,
+}
+
+#[tauri::command]
+pub fn get_cs2ss_config(csgo: String) -> Result<Cs2ssConfig> {
+    let path = cs2ss_config_path(&csgo);
+    if path.exists() {
+        let bytes = std::fs::read_to_string(&path).unwrap_or_default();
+        Ok(serde_json::from_str::<Cs2ssConfig>(&bytes).unwrap_or_default())
+    } else {
+        Ok(Cs2ssConfig::default())
+    }
+}
+
+#[tauri::command]
+pub fn save_cs2ss_config(csgo: String, config: Cs2ssConfig) -> Result<()> {
+    let path = cs2ss_config_path(&csgo);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).ok();
+    }
+    let bytes = serde_json::to_string_pretty(&config).map_err(|e| AppError::invalid(e.to_string()))?;
+    std::fs::write(&path, bytes).map_err(|e| AppError::invalid(e.to_string()))
+}
