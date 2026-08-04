@@ -33,10 +33,6 @@ export default function StatsDMDetail({ data, steamId, onBack }: Props) {
         <div style={{ position: "relative", zIndex: 1 }}><span className="dm-tag" style={{ fontSize: 13, padding: "4px 14px" }}>DM</span></div>
       </div>
 
-      <div style={{ padding: "12px 16px", borderRadius: 10, border: "1px solid rgba(223,107,53,0.2)", background: "rgba(223,107,53,0.04)", color: "#c14e21", fontSize: 12, fontWeight: 600, textAlign: "center" }}>
-        ⚠️ 死斗数据展示功能尚未完善，部分统计可能不准确。
-      </div>
-
       {me && (
         <div className="stats-snapshot">
           <div className="stats-snapshot__lead" style={{ background: "linear-gradient(135deg, #d65c2c, #f18a45)" }}>
@@ -44,7 +40,7 @@ export default function StatsDMDetail({ data, steamId, onBack }: Props) {
             <strong style={{ color: "#fff", fontSize: 38 }}>{me.score}</strong>
             <small>pts</small>
           </div>
-          {[["K/D", `${me.totalKills}/${me.totalDeaths}`], ["KPM", rows.find(r => r.p.steamId === me.steamId)?.kpm.toFixed(2) ?? "0"], ["DPM", String(Math.round(rows.find(r => r.p.steamId === me.steamId)?.dpm ?? 0))], ["Max Streak", String(me.dmMaxKillStreak)], ["Longest", `${Math.round(me.dmLongestLifeSeconds)}s`]].map(([l, v]) => (
+          {[["K/D", `${me.totalKills}/${me.totalDeaths}`], ["KPM", rows.find(r => r.p.steamId === me.steamId)?.kpm.toFixed(2) ?? "0"], ["DPM", String(Math.round(rows.find(r => r.p.steamId === me.steamId)?.dpm ?? 0))], ["Max Streak", String(me.dmMaxKillStreak)], ["最长生命", `${Math.round(me.dmLongestLifeSeconds)}s`]].map(([l, v]) => (
             <div key={l}><span>{l}</span><b>{v}</b></div>
           ))}
         </div>
@@ -62,7 +58,7 @@ export default function StatsDMDetail({ data, steamId, onBack }: Props) {
         <div style={{ padding: "20px 24px 0" }}><span style={{ color: "#df6b35", fontSize: 10, fontWeight: 900, letterSpacing: ".18em" }}>LEADERBOARD</span><h2 style={{ margin: "4px 0 16px", fontSize: 18, fontWeight: 700 }}>Session Ranking</h2></div>
         <div style={{ overflowX: "auto" }}>
           <table className="stats-table" style={{ minWidth: 860 }}>
-            <thead><tr><th>#</th><th>Player</th><th style={{ textAlign: "right" }}>Score</th><th style={{ textAlign: "right" }}>K</th><th style={{ textAlign: "right" }}>D</th><th style={{ textAlign: "right" }}>K/D</th><th style={{ textAlign: "right" }}>KPM</th><th style={{ textAlign: "right" }}>DPM</th><th style={{ textAlign: "right" }}>HS%</th><th style={{ textAlign: "right" }}>Streak</th></tr></thead>
+            <thead><tr><th>#</th><th>Player</th><th style={{ textAlign: "right" }}>Score</th><th style={{ textAlign: "right" }}>K</th><th style={{ textAlign: "right" }}>D</th><th style={{ textAlign: "right" }}>K/D</th><th style={{ textAlign: "right" }}>KPM</th><th style={{ textAlign: "right" }}>DPM</th><th style={{ textAlign: "right" }}>HS%</th><th style={{ textAlign: "right" }}>连杀</th></tr></thead>
             <tbody>
               {rows.map(({ p, kd, hs, kpm, dpm }, i) => (
                 <tr key={p.steamId} style={p.steamId === me?.steamId ? { background: "rgba(223,107,53,.07)" } : undefined}>
