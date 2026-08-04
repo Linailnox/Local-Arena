@@ -66,7 +66,7 @@ public class OfflineMatchTelemetryPlugin : BasePlugin
             ?? ModuleDirectory ?? Directory.GetCurrentDirectory();
 
         // Store under <csgo>/.csbip/cs2ss/ — same .csbip root used by the Local Arena Panel
-        var csgoDir = Path.GetFullPath(Path.Combine(pluginDir, "..", "..", ".."));
+        var csgoDir = Path.GetFullPath(Path.Combine(pluginDir, "..", "..", "..", ".."));
         var dataDir = Path.Combine(csgoDir, ".csbip", "cs2ss");
         Directory.CreateDirectory(dataDir);
         _databasePath = Path.Combine(dataDir, "telemetry.db");
