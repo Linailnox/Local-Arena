@@ -222,6 +222,54 @@ export interface Cs2ssConfig {
   steamId: string;
 }
 
+export interface Cs2ssDmMapStat {
+  map: string;
+  sessions: number;
+  avgKpm: number;
+  avgDpm: number;
+  avgKd: number;
+  maxStreak: number;
+}
+
+export interface Cs2ssDmSessionPoint {
+  matchId: number;
+  map: string;
+  ruleset: string;
+  kills: number;
+  deaths: number;
+  damage: number;
+  score: number;
+  kpm: number;
+  dpm: number;
+  kd: number;
+  headshotPct: number;
+  streak: number;
+  durationSeconds: number;
+  startedAt: string;
+}
+
+export interface Cs2ssDmOverview {
+  sessionCount: number;
+  totalKills: number;
+  totalDeaths: number;
+  totalDamage: number;
+  totalHeadshots: number;
+  totalScore: number;
+  totalSpawns: number;
+  totalAliveSec: number;
+  totalSessionSec: number;
+  maxStreak: number;
+  maxLongestLife: number;
+  totalBurst5_2: number;
+  totalBurst5_3: number;
+  totalBurst5_4: number;
+  totalBurst10_2: number;
+  totalBurst10_3: number;
+  totalBurst10_4: number;
+  perMap: Cs2ssDmMapStat[];
+  sessions: Cs2ssDmSessionPoint[];
+}
+
 export interface Cs2ssMatchWithStats extends Cs2ssMatchSummary {
   playerTeam: string;
   playerInitialTeam: string;

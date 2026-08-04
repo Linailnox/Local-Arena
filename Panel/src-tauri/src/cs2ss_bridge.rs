@@ -425,6 +425,148 @@ pub fn get_cs2ss_overview(csgo: String) -> Result<Cs2ssOverviewResponse> {
     })
 }
 
+// ---- Deathmatch Overview ----
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Cs2ssDmMapStat {
+    pub map: String,
+    pub sessions: i64,
+    #[serde(rename = "avgKpm")]
+    pub avg_kpm: f64,
+    #[serde(rename = "avgDpm")]
+    pub avg_dpm: f64,
+    #[serde(rename = "avgKd")]
+    pub avg_kd: f64,
+    #[serde(rename = "maxStreak")]
+    pub max_streak: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Cs2ssDmSessionPoint {
+    #[serde(rename = "matchId")]
+    pub match_id: i64,
+    pub map: String,
+    pub ruleset: String,
+    pub kills: i64,
+    pub deaths: i64,
+    pub damage: i64,
+    pub score: i64,
+    pub kpm: f64,
+    pub dpm: f64,
+    pub kd: f64,
+    #[serde(rename = "headshotPct")]
+    pub headshot_pct: f64,
+    pub streak: i64,
+    #[serde(rename = "durationSeconds")]
+    pub duration_seconds: i64,
+    #[serde(rename = "startedAt")]
+    pub started_at: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Cs2ssDmOverview {
+    #[serde(rename = "sessionCount")]
+    pub session_count: i64,
+    #[serde(rename = "totalKills")]
+    pub total_kills: i64,
+    #[serde(rename = "totalDeaths")]
+    pub total_deaths: i64,
+    #[serde(rename = "totalDamage")]
+    pub total_damage: i64,
+    #[serde(rename = "totalHeadshots")]
+    pub total_headshots: i64,
+    #[serde(rename = "totalScore")]
+    pub total_score: i64,
+    #[serde(rename = "totalSpawns")]
+    pub total_spawns: i64,
+    #[serde(rename = "totalAliveSec")]
+    pub total_alive_sec: i64,
+    #[serde(rename = "totalSessionSec")]
+    pub total_session_sec: i64,
+    #[serde(rename = "maxStreak")]
+    pub max_streak: i64,
+    #[serde(rename = "maxLongestLife")]
+    pub max_longest_life: i64,
+    #[serde(rename = "totalBurst5_2")]
+    pub total_burst5_2: i64,
+    #[serde(rename = "totalBurst5_3")]
+    pub total_burst5_3: i64,
+    #[serde(rename = "totalBurst5_4")]
+    pub total_burst5_4: i64,
+    #[serde(rename = "totalBurst10_2")]
+    pub total_burst10_2: i64,
+    #[serde(rename = "totalBurst10_3")]
+    pub total_burst10_3: i64,
+    #[serde(rename = "totalBurst10_4")]
+    pub total_burst10_4: i64,
+    #[serde(rename = "perMap")]
+    pub per_map: Vec<Cs2ssDmMapStat>,
+    pub sessions: Vec<Cs2ssDmSessionPoint>,
+}
+
+#[tauri::command]
+pub fn get_cs2ss_dm_overview(csgo: String, steam_id: String) -> Result<Cs2ssDmOverview> {
+    let conn = open_db(&csgo)?;
+    let cnt = conn.query_row(
+        "SELECT COUNT(*), COALESCE(SUM(mp.total_kills),0), COALESCE(SUM(mp.total_deaths),0),
+                COALESCE(SUM(mp.total_damage),0), COALESCE(SUM(mp.total_headshot_kills),0),
+                COALESCE(SUM(mp.score),0), COALESCE(SUM(mp.dm_spawn_count),0),
+                COALESCE(SUM(mp.dm_alive_seconds),0), COALESCE(SUM(m.duration_seconds),0),
+                COALESCE(MAX(mp.dm_max_kill_streak),0), COALESCE(MAX(mp.dm_longest_life_seconds),0),
+                COALESCE(SUM(mp.dm_burst_5s_2),0), COALESCE(SUM(mp.dm_burst_5s_3),0),
+                COALESCE(SUM(mp.dm_burst_5s_4),0), COALESCE(SUM(mp.dm_burst_10s_2),0),
+                COALESCE(SUM(mp.dm_burst_10s_3),0), COALESCE(SUM(mp.dm_burst_10s_4),0)
+         FROM match_players mp JOIN matches m ON mp.match_id = m.match_id
+         WHERE mp.steam_id = ?1 AND m.mode_family = 'deathmatch' AND m.status = 'completed'",
+        [&steam_id],
+        |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?,row.get(5)?,
+                 row.get(6)?,row.get(7)?,row.get(8)?,row.get(9)?,row.get(10)?,row.get(11)?,
+                 row.get(12)?,row.get(13)?,row.get(14)?,row.get(15)?,row.get(16)?,))
+    ).unwrap_or((0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0));
+
+    let mut pm = conn.prepare(
+        "SELECT m.map, COUNT(*), AVG(1.0*mp.total_kills/MAX(m.duration_seconds,1)*60),
+                AVG(1.0*mp.total_damage/MAX(m.duration_seconds,1)*60),
+                AVG(1.0*mp.total_kills/MAX(mp.total_deaths,1)), MAX(mp.dm_max_kill_streak)
+         FROM match_players mp JOIN matches m ON mp.match_id = m.match_id
+         WHERE mp.steam_id = ?1 AND m.mode_family = 'deathmatch' AND m.status = 'completed'
+         GROUP BY m.map ORDER BY COUNT(*) DESC"
+    ).unwrap();
+    let per_map: Vec<Cs2ssDmMapStat> = pm.query_map([&steam_id], |row| Ok(Cs2ssDmMapStat {
+        map: row.get(0)?, sessions: row.get(1)?, avg_kpm: row.get(2)?, avg_dpm: row.get(3)?,
+        avg_kd: row.get(4)?, max_streak: row.get(5)?,
+    })).unwrap().filter_map(|r| r.ok()).collect();
+
+    let mut ss = conn.prepare(
+        "SELECT m.match_id, m.map, m.ruleset, mp.total_kills, mp.total_deaths,
+                mp.total_damage, mp.score,
+                1.0*mp.total_kills/MAX(m.duration_seconds,1)*60,
+                1.0*mp.total_damage/MAX(m.duration_seconds,1)*60,
+                1.0*mp.total_kills/MAX(mp.total_deaths,1),
+                1.0*mp.total_headshot_kills/MAX(mp.total_kills,1)*100,
+                mp.dm_max_kill_streak, m.duration_seconds, m.started_at
+         FROM match_players mp JOIN matches m ON mp.match_id = m.match_id
+         WHERE mp.steam_id = ?1 AND m.mode_family = 'deathmatch' AND m.status = 'completed'
+         ORDER BY m.started_at DESC"
+    ).unwrap();
+    let sessions: Vec<Cs2ssDmSessionPoint> = ss.query_map([&steam_id], |row| Ok(Cs2ssDmSessionPoint {
+        match_id: row.get(0)?, map: row.get(1)?, ruleset: row.get(2)?, kills: row.get(3)?,
+        deaths: row.get(4)?, damage: row.get(5)?, score: row.get(6)?, kpm: row.get(7)?,
+        dpm: row.get(8)?, kd: row.get(9)?, headshot_pct: row.get(10)?, streak: row.get(11)?,
+        duration_seconds: row.get(12)?, started_at: row.get(13)?,
+    })).unwrap().filter_map(|r| r.ok()).collect();
+
+    Ok(Cs2ssDmOverview {
+        session_count: cnt.0, total_kills: cnt.1, total_deaths: cnt.2,
+        total_damage: cnt.3, total_headshots: cnt.4, total_score: cnt.5,
+        total_spawns: cnt.6, total_alive_sec: cnt.7, total_session_sec: cnt.8,
+        max_streak: cnt.9, max_longest_life: cnt.10,
+        total_burst5_2: cnt.11, total_burst5_3: cnt.12, total_burst5_4: cnt.13,
+        total_burst10_2: cnt.14, total_burst10_3: cnt.15, total_burst10_4: cnt.16,
+        per_map, sessions,
+    })
+}
+
 #[tauri::command]
 pub fn list_cs2ss_matches(csgo: String) -> Result<Vec<Cs2ssMatchSummary>> {
     let conn = open_db(&csgo)?;
