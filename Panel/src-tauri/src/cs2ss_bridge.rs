@@ -882,6 +882,7 @@ pub fn list_cs2ss_matches_with_stats(csgo: String) -> Result<Vec<Cs2ssMatchWithS
                     COALESCE(mp.dm_spawn_count, 0), COALESCE(mp.dm_max_kill_streak, 0)
              FROM matches m
              LEFT JOIN match_players mp ON m.match_id = mp.match_id AND mp.is_bot = 0
+             WHERE m.status = 'completed'
              ORDER BY m.started_at DESC"
         )
         .map_err(|e| AppError::invalid(format!("Query error: {e}")))?;
@@ -945,4 +946,242 @@ pub fn save_cs2ss_config(csgo: String, config: Cs2ssConfig) -> Result<()> {
     }
     let bytes = serde_json::to_string_pretty(&config).map_err(|e| AppError::invalid(e.to_string()))?;
     std::fs::write(&path, bytes).map_err(|e| AppError::invalid(e.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn test_root() -> std::path::PathBuf {
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("cs2ss-test-{suffix}"))
+    }
+
+    fn setup_test_db(root: &std::path::Path) {
+        let db_dir = root.join(".csbip").join("cs2ss");
+        std::fs::create_dir_all(&db_dir).unwrap();
+        let db_path = db_dir.join("telemetry.db");
+        let conn = rusqlite::Connection::open(&db_path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE matches (
+                match_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                map TEXT NOT NULL,
+                started_at TEXT NOT NULL,
+                ended_at TEXT,
+                end_reason TEXT,
+                rounds_played INTEGER,
+                ct_score INTEGER NOT NULL DEFAULT 0,
+                t_score INTEGER NOT NULL DEFAULT 0,
+                team_a_score INTEGER NOT NULL DEFAULT 0,
+                team_b_score INTEGER NOT NULL DEFAULT 0,
+                mode_family TEXT NOT NULL DEFAULT 'competitive',
+                ruleset TEXT NOT NULL DEFAULT 'round_based',
+                game_type INTEGER NOT NULL DEFAULT 0,
+                game_mode INTEGER NOT NULL DEFAULT 1,
+                duration_seconds INTEGER NOT NULL DEFAULT 0,
+                status TEXT NOT NULL DEFAULT 'in_progress'
+            );
+            CREATE TABLE match_players (
+                match_player_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                match_id INTEGER NOT NULL REFERENCES matches(match_id),
+                steam_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                team TEXT NOT NULL,
+                is_bot INTEGER NOT NULL,
+                alive INTEGER NOT NULL,
+                health INTEGER NOT NULL,
+                total_kills INTEGER NOT NULL,
+                total_deaths INTEGER NOT NULL,
+                total_assists INTEGER NOT NULL,
+                total_damage INTEGER NOT NULL,
+                total_headshot_kills INTEGER NOT NULL,
+                score INTEGER NOT NULL,
+                money INTEGER NOT NULL,
+                kast_rounds INTEGER NOT NULL DEFAULT 0,
+                trade_kills INTEGER NOT NULL DEFAULT 0,
+                multikill_2 INTEGER NOT NULL DEFAULT 0,
+                multikill_3 INTEGER NOT NULL DEFAULT 0,
+                multikill_4 INTEGER NOT NULL DEFAULT 0,
+                multikill_5 INTEGER NOT NULL DEFAULT 0,
+                clutch_attempts INTEGER NOT NULL DEFAULT 0,
+                clutches_won INTEGER NOT NULL DEFAULT 0,
+                dm_spawn_count INTEGER NOT NULL DEFAULT 0,
+                dm_max_kill_streak INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE TABLE rounds (
+                round_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                match_id INTEGER NOT NULL REFERENCES matches(match_id),
+                round_number INTEGER NOT NULL,
+                captured_at TEXT NOT NULL,
+                source TEXT NOT NULL,
+                winner_team TEXT,
+                end_reason INTEGER,
+                ct_score INTEGER NOT NULL,
+                t_score INTEGER NOT NULL,
+                team_a_score INTEGER NOT NULL DEFAULT 0,
+                team_b_score INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE TABLE round_players (
+                round_player_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                round_id INTEGER NOT NULL,
+                match_id INTEGER NOT NULL,
+                steam_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                team TEXT NOT NULL,
+                is_bot INTEGER NOT NULL,
+                alive INTEGER NOT NULL,
+                health INTEGER NOT NULL,
+                kills INTEGER NOT NULL,
+                deaths INTEGER NOT NULL,
+                assists INTEGER NOT NULL,
+                damage INTEGER NOT NULL,
+                headshot_kills INTEGER NOT NULL,
+                total_kills INTEGER NOT NULL,
+                total_deaths INTEGER NOT NULL,
+                total_damage INTEGER NOT NULL,
+                score INTEGER NOT NULL,
+                money INTEGER NOT NULL,
+                kast INTEGER NOT NULL DEFAULT 0,
+                survived INTEGER NOT NULL DEFAULT 0,
+                traded INTEGER NOT NULL DEFAULT 0,
+                trade_kills INTEGER NOT NULL DEFAULT 0,
+                event_kills INTEGER NOT NULL DEFAULT 0,
+                multikill INTEGER NOT NULL DEFAULT 0,
+                clutch_attempt INTEGER NOT NULL DEFAULT 0,
+                clutch_won INTEGER NOT NULL DEFAULT 0,
+                clutch_size INTEGER NOT NULL DEFAULT 0,
+                round_number INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE TABLE deathmatch_lives (
+                life_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                match_id INTEGER NOT NULL,
+                steam_id TEXT NOT NULL,
+                life_index INTEGER NOT NULL,
+                spawned_at TEXT NOT NULL,
+                ended_at TEXT NOT NULL,
+                end_kind TEXT NOT NULL,
+                duration_seconds REAL NOT NULL,
+                kills INTEGER NOT NULL,
+                damage INTEGER NOT NULL
+            );"
+        ).unwrap();
+    }
+
+    fn insert_completed_match(conn: &rusqlite::Connection) -> i64 {
+        conn.execute(
+            "INSERT INTO matches (map, started_at, ended_at, status, rounds_played, ct_score, t_score, mode_family, ruleset, game_type, game_mode, duration_seconds)
+             VALUES ('de_dust2', '2025-01-01T00:00:00Z', '2025-01-01T00:30:00Z', 'completed', 24, 13, 11, 'competitive', 'round_based', 0, 1, 1800)",
+            [],
+        ).unwrap();
+        conn.last_insert_rowid()
+    }
+
+    fn insert_player(conn: &rusqlite::Connection, match_id: i64, steam_id: &str, name: &str) {
+        conn.execute(
+            "INSERT INTO match_players (match_id, steam_id, name, team, is_bot, alive, health, total_kills, total_deaths, total_assists, total_damage, total_headshot_kills, score, money)
+             VALUES (?1, ?2, ?3, 'CT', 0, 1, 100, 20, 15, 5, 1800, 8, 45, 16000)",
+            rusqlite::params![match_id, steam_id, name],
+        ).unwrap();
+    }
+
+    #[test]
+    fn list_with_stats_filters_out_in_progress() {
+        let root = test_root();
+        setup_test_db(&root);
+        let csgo = root.to_str().unwrap().to_string();
+
+        let conn = open_db(&csgo).unwrap();
+        conn.execute(
+            "INSERT INTO matches (map, started_at, status, mode_family, ruleset, game_type, game_mode) VALUES ('de_inferno', '2025-02-01T00:00:00Z', 'in_progress', 'competitive', 'round_based', 0, 1)",
+            [],
+        ).unwrap();
+
+        let result = list_cs2ss_matches_with_stats(csgo).unwrap();
+        assert!(result.is_empty(), "in_progress matches should be excluded");
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn list_with_stats_includes_completed() {
+        let root = test_root();
+        setup_test_db(&root);
+        let csgo = root.to_str().unwrap().to_string();
+
+        let conn = open_db(&csgo).unwrap();
+        let match_id = insert_completed_match(&conn);
+        insert_player(&conn, match_id, "76561198000000001", "Player1");
+
+        let result = list_cs2ss_matches_with_stats(csgo.clone()).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].match_summary.map, "de_dust2");
+        assert_eq!(result[0].match_summary.status, "completed");
+        assert_eq!(result[0].player_kills, 20);
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn list_with_stats_handles_empty_match_players() {
+        let root = test_root();
+        setup_test_db(&root);
+        let csgo = root.to_str().unwrap().to_string();
+
+        let conn = open_db(&csgo).unwrap();
+        conn.execute(
+            "INSERT INTO matches (map, started_at, ended_at, status, rounds_played, ct_score, t_score, mode_family, ruleset, game_type, game_mode, duration_seconds) VALUES ('de_nuke', '2025-03-01T00:00:00Z', '2025-03-01T00:30:00Z', 'completed', 30, 16, 14, 'competitive', 'round_based', 0, 1, 2000)",
+            [],
+        ).unwrap();
+
+        let result = list_cs2ss_matches_with_stats(csgo.clone()).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].player_kills, 0);
+        assert_eq!(result[0].player_team, "");
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn list_with_stats_handles_abandoned_cleanup() {
+        let root = test_root();
+        setup_test_db(&root);
+        let csgo = root.to_str().unwrap().to_string();
+
+        let conn = open_db(&csgo).unwrap();
+        conn.execute(
+            "INSERT INTO matches (map, started_at, status, mode_family, ruleset, game_type, game_mode) VALUES ('de_ancient', '2025-04-01T00:00:00Z', 'abandoned', 'competitive', 'round_based', 0, 1)",
+            [],
+        ).unwrap();
+
+        let result = list_cs2ss_matches_with_stats(csgo).unwrap();
+        assert!(result.is_empty(), "abandoned matches should be excluded");
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn match_detail_handles_in_progress() {
+        let root = test_root();
+        setup_test_db(&root);
+        let csgo = root.to_str().unwrap().to_string();
+
+        let conn = open_db(&csgo).unwrap();
+        conn.execute(
+            "INSERT INTO matches (map, started_at, status, mode_family, ruleset, game_type, game_mode) VALUES ('de_mirage', '2025-05-01T00:00:00Z', 'in_progress', 'competitive', 'round_based', 0, 1)",
+            [],
+        ).unwrap();
+        let match_id = conn.last_insert_rowid();
+
+        let detail = get_cs2ss_match_detail(csgo, match_id).unwrap();
+        assert_eq!(detail.match.match_id, match_id);
+        assert_eq!(detail.match.status, "in_progress");
+        assert!(detail.match_players.is_empty());
+        assert!(detail.rounds.is_empty());
+
+        std::fs::remove_dir_all(&root).ok();
+    }
 }

@@ -34,7 +34,18 @@ export default function StatsMatchDetail({ csgo, matchId, onBack }: Props) {
 
   useEffect(() => {
     api.getCs2ssMatchDetail(csgo, matchId).then(d => {
-      if (d) { setData(d); const self = d.matchPlayers.find(mp => !mp.isBot) ?? d.matchPlayers[0]; const initTeamOf = (sid: string) => d.roundPlayers.find(rp => rp.steamId === sid)?.team ?? d.matchPlayers.find(p => p.steamId === sid)?.team; const selfInit = initTeamOf(self.steamId); const ns = new Set<string>(); ns.add(self.steamId); const topEnemy = d.matchPlayers.filter(p => initTeamOf(p.steamId) !== selfInit).sort((a, b) => (b.totalKills + b.totalAssists) - (a.totalKills + a.totalAssists))[0]; if (topEnemy) ns.add(topEnemy.steamId); setSel(ns); }
+      if (d) {
+        setData(d);
+        if (d.matchPlayers.length > 0) {
+          const self = d.matchPlayers.find(mp => !mp.isBot) ?? d.matchPlayers[0];
+          const initTeamOf = (sid: string) => d.roundPlayers.find(rp => rp.steamId === sid)?.team ?? d.matchPlayers.find(p => p.steamId === sid)?.team;
+          const selfInit = initTeamOf(self.steamId);
+          const ns = new Set<string>(); ns.add(self.steamId);
+          const topEnemy = d.matchPlayers.filter(p => initTeamOf(p.steamId) !== selfInit).sort((a, b) => (b.totalKills + b.totalAssists) - (a.totalKills + a.totalAssists))[0];
+          if (topEnemy) ns.add(topEnemy.steamId);
+          setSel(ns);
+        }
+      }
       setLoading(false);
     }).catch(e => { setErr(String(e)); setLoading(false); reportError(e); });
   }, [matchId, reportError]);
@@ -42,6 +53,9 @@ export default function StatsMatchDetail({ csgo, matchId, onBack }: Props) {
   const c = useMemo(() => {
     if (!data) return null;
     const { match, matchPlayers: mps, roundPlayers: rps, rounds: rs } = data;
+
+    if (mps.length === 0) return { empty: true, match, status: match.status } as const;
+
     const s = mps.find(p => !p.isBot) ?? mps[0];
     const myTeam = rps.find(rp => rp.steamId === s.steamId)?.team ?? s.team;
     const hf = match.teamAScore + match.teamBScore === match.roundsPlayed;
@@ -71,6 +85,19 @@ export default function StatsMatchDetail({ csgo, matchId, onBack }: Props) {
   if (loading) return <div className="stats-panel"><div className="stats-panel__loading">Loading…</div></div>;
   if (err) return <div className="stats-panel"><div className="stats-panel__error">{err}</div></div>;
   if (!c) return <div className="stats-panel"><div className="stats-panel__empty">No data</div></div>;
+  if ("empty" in c) return (
+    <div className="stats-panel">
+      <button className="stats-back" onClick={onBack}>← Back</button>
+      <div className="stats-panel__empty" style={{ marginTop: 24, textAlign: "center" }}>
+        <h2 style={{ color: "var(--text-secondary)" }}>对局 #{c.match.matchId}</h2>
+        <p style={{ color: "var(--text-tertiary)", marginTop: 8 }}>
+          {c.status === "in_progress" ? "本场对局尚未结束, 暂无玩家数据。" :
+           c.status === "abandoned" ? "本场对局因游戏异常退出而中断, 数据未记录。" :
+           "暂无玩家数据。"}
+        </p>
+      </div>
+    </div>
+  );
 
   const { match, s, pw, ow, rows, hl, tl } = c;
   if (match.modeFamily === "deathmatch") return <StatsDMDetail data={data!} steamId={s.steamId} onBack={onBack} />;

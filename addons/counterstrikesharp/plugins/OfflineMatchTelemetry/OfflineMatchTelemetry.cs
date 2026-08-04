@@ -73,6 +73,7 @@ public class OfflineMatchTelemetryPlugin : BasePlugin
 
         _sqliteNativeLibrary = NativeLibrary.Load(Path.Combine(pluginDir, "e_sqlite3.dll"));
         InitializeDatabases();
+        CleanOrphanedMatches();
         Log("Database: {Database}", _databasePath);
         RegisterEventHandler<EventRoundStart>(OnRoundStart);
         RegisterEventHandler<EventRoundEnd>(OnRoundEnd);
@@ -586,7 +587,7 @@ public class OfflineMatchTelemetryPlugin : BasePlugin
                 rounds_played INTEGER,
                 ct_score INTEGER NOT NULL DEFAULT 0,
                 t_score INTEGER NOT NULL DEFAULT 0,
-                status TEXT NOT NULL CHECK (status IN ('in_progress', 'completed'))
+                status TEXT NOT NULL CHECK (status IN ('in_progress', 'completed', 'abandoned'))
             );
             CREATE TABLE IF NOT EXISTS rounds (
                 round_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -712,6 +713,42 @@ public class OfflineMatchTelemetryPlugin : BasePlugin
         alter.ExecuteNonQuery();
     }
 
+    private void CleanOrphanedMatches()
+    {
+        try
+        {
+            using var connection = OpenConnection();
+            using var command = connection.CreateCommand();
+            command.CommandText = """
+                UPDATE matches
+                SET status = 'abandoned', ended_at = $now, end_reason = 'INTERRUPTED'
+                WHERE status = 'in_progress';
+                """;
+            command.Parameters.AddWithValue("$now", DateTimeOffset.UtcNow.ToString("O"));
+            command.ExecuteNonQuery();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "[OMT] CleanOrphanedMatches failed; may be an older DB schema");
+            try
+            {
+                using var connection = OpenConnection();
+                using var command = connection.CreateCommand();
+                command.CommandText = """
+                    UPDATE matches
+                    SET status = 'completed', ended_at = $now, end_reason = 'ABANDONED'
+                    WHERE status = 'in_progress';
+                    """;
+                command.Parameters.AddWithValue("$now", DateTimeOffset.UtcNow.ToString("O"));
+                command.ExecuteNonQuery();
+            }
+            catch (Exception ex2)
+            {
+                Logger.LogError(ex2, "[OMT] CleanOrphanedMatches fallback also failed");
+            }
+        }
+    }
+
     private SqliteConnection OpenConnection()
     {
         var connection = new SqliteConnection(new SqliteConnectionStringBuilder
@@ -725,6 +762,12 @@ public class OfflineMatchTelemetryPlugin : BasePlugin
 
     public override void Unload(bool hotReload)
     {
+        if (_matchActive)
+        {
+            try { FinalizeMatch("PLUGIN_UNLOAD"); }
+            catch (Exception ex) { Logger.LogError(ex, "[OMT] Unload finalize error"); }
+        }
+
         if (_sqliteNativeLibrary != IntPtr.Zero)
         {
             NativeLibrary.Free(_sqliteNativeLibrary);
