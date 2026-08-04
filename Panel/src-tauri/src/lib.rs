@@ -3955,7 +3955,8 @@ pub fn run() {
             cs2ss_bridge::get_cs2ss_overview, cs2ss_bridge::list_cs2ss_matches,
             cs2ss_bridge::get_cs2ss_match_detail, cs2ss_bridge::get_cs2ss_player_detail,
             cs2ss_bridge::list_cs2ss_matches_with_stats,
-            cs2ss_bridge::get_cs2ss_config, cs2ss_bridge::save_cs2ss_config])
+            cs2ss_bridge::get_cs2ss_config, cs2ss_bridge::save_cs2ss_config,
+            cs2ss_bridge::get_cs2ss_dm_overview])
         .run(tauri::generate_context!())
         .expect("error while running CS2BotImproverPlus");
 }
