@@ -6,6 +6,7 @@ import type {
   Cs2ssPlayerDetailResponse,
   Cs2ssMatchWithStats,
   Cs2ssConfig,
+  Cs2ssDmOverview,
 } from "../data/cs2ssTypes";
 
 function invoke<T>(command: string, args?: Record<string, unknown>) {
@@ -736,4 +737,5 @@ export const api = {
   listCs2ssMatchesWithStats: (csgo: string) => invoke<Cs2ssMatchWithStats[]>("list_cs2ss_matches_with_stats", { csgo }),
   getCs2ssConfig: (csgo: string) => invoke<Cs2ssConfig>("get_cs2ss_config", { csgo }),
   saveCs2ssConfig: (csgo: string, config: Cs2ssConfig) => invoke<void>("save_cs2ss_config", { csgo, config }),
+  getCs2ssDmOverview: (csgo: string, steamId: string) => invoke<Cs2ssDmOverview>("get_cs2ss_dm_overview", { csgo, steamId }),
 };

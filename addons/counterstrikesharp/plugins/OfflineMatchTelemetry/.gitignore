@@ -1,6 +1,6 @@
 bin/
 obj/
-stage/
+stage
 telemetry.db
 telemetry.db-shm
 telemetry.db-wal
