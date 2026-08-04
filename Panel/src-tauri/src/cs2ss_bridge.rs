@@ -1152,7 +1152,16 @@ mod tests {
                 clutch_attempts INTEGER NOT NULL DEFAULT 0,
                 clutches_won INTEGER NOT NULL DEFAULT 0,
                 dm_spawn_count INTEGER NOT NULL DEFAULT 0,
-                dm_max_kill_streak INTEGER NOT NULL DEFAULT 0
+                dm_completed_lives INTEGER NOT NULL DEFAULT 0,
+                dm_max_kill_streak INTEGER NOT NULL DEFAULT 0,
+                dm_alive_seconds INTEGER NOT NULL DEFAULT 0,
+                dm_longest_life_seconds INTEGER NOT NULL DEFAULT 0,
+                dm_burst_5s_2 INTEGER NOT NULL DEFAULT 0,
+                dm_burst_5s_3 INTEGER NOT NULL DEFAULT 0,
+                dm_burst_5s_4 INTEGER NOT NULL DEFAULT 0,
+                dm_burst_10s_2 INTEGER NOT NULL DEFAULT 0,
+                dm_burst_10s_3 INTEGER NOT NULL DEFAULT 0,
+                dm_burst_10s_4 INTEGER NOT NULL DEFAULT 0
             );
             CREATE TABLE rounds (
                 round_id INTEGER PRIMARY KEY AUTOINCREMENT,
