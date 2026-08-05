@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Settings2 } from "lucide-react";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis, Bar, BarChart, Cell } from "recharts";
 import { api } from "../lib/api";
 import type { Cs2ssOverviewResponse, Cs2ssMatchSummary, Cs2ssPlayerDetailResponse, Cs2ssDmOverview } from "../data/cs2ssTypes";
@@ -7,22 +8,25 @@ import { cs2ssMapLabel } from "../data/cs2ssMaps";
 import StatsMatchHistory from "./StatsMatchHistory";
 import StatsMatchDetail from "./StatsMatchDetail";
 import { useStore } from "../state/store";
+import { useT } from "../i18n";
 import "./StatsPanel.css";
 
 type SubView = "dashboard" | "history" | "matchDetail";
 const HI = "#20b486", MID = "#e67e22", LO = "#e05d75";
 function rcol(r: number) { return r >= 1.1 ? HI : r >= 0.9 ? MID : LO; }
 function fmtD(iso: string) { try { const d = new Date(iso); return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; } catch { return iso; } }
+function validSteamId64(value: string) { return /^7656119\d{10}$/.test(value.trim()); }
 
 export default function StatsDashboard() {
   const { reportError, directory } = useStore();
+  const t = useT();
   const csgo = directory?.valid ? directory.selected ?? "" : "";
   const [sub, setSub] = useState<SubView>("dashboard");
   const [selMatch, setSelMatch] = useState(0);
   const [data, setData] = useState<Cs2ssOverviewResponse | null>(null);
   const [matches, setMatches] = useState<Cs2ssMatchSummary[]>([]);
   const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState("");
+  const [err, setErr] = useState(false);
   const [mode, setMode] = useState<"competitive" | "deathmatch">("competitive");
   const [pid, setPid] = useState("");
   const [pd, setPd] = useState<Cs2ssPlayerDetailResponse | null>(null);
@@ -30,6 +34,9 @@ export default function StatsDashboard() {
   const [cfgOpen, setCfgOpen] = useState(false);
   const [cfgInput, setCfgInput] = useState("");
   const [cfgSaving, setCfgSaving] = useState(false);
+  const comp = matches.filter(m => m.modeFamily === "competitive");
+  const dms = matches.filter(m => m.modeFamily === "deathmatch");
+  const cfgValid = validSteamId64(cfgInput);
 
   useEffect(() => {
     if (!csgo) return;
@@ -50,7 +57,7 @@ export default function StatsDashboard() {
           setMatches([]);
         }
       } catch (e) {
-        if (!c) setErr("无法连接数据。请确认 CS2SS 插件已安装。");
+        if (!c) setErr(true);
         reportError(e);
       } finally { if (!c) setLoading(false); }
     })();
@@ -67,8 +74,14 @@ export default function StatsDashboard() {
     api.getCs2ssDmOverview(csgo, pid).then(setDm).catch(() => setDm(null));
   }, [pid, csgo]);
 
+  useEffect(() => {
+    if (comp.length === 0 && (dms.length > 0 || (dm?.sessionCount ?? 0) > 0)) {
+      setMode("deathmatch");
+    }
+  }, [comp.length, dm?.sessionCount, dms.length]);
+
   const saveCfg = async () => {
-    if (!cfgInput.trim() || !csgo) return;
+    if (!cfgValid || !csgo) return;
     setCfgSaving(true);
     try {
       await api.saveCs2ssConfig(csgo, { steamId: cfgInput.trim() });
@@ -85,46 +98,36 @@ export default function StatsDashboard() {
     finally { setCfgSaving(false); }
   };
 
+  const openConfig = () => {
+    setCfgInput(pid);
+    setCfgOpen(true);
+  };
+
   if (cfgOpen) return (
-    <div className="stats-panel" style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ maxWidth: 440, width: "100%", padding: "32px 28px", borderRadius: 18, background: "var(--card)", border: "1px solid var(--line)", boxShadow: "var(--sh-pop)", textAlign: "center" }}>
-        <div style={{ fontSize: 24, fontWeight: 800, color: "var(--c-accent)", marginBottom: 8 }}>⚙️ 首次配置</div>
-        <p style={{ color: "var(--text-secondary)", fontSize: 13, lineHeight: 1.6, marginBottom: 20 }}>
-          打开 Steam 个人资料页面，浏览器地址栏中
-          <br />
-          <code style={{ background: "var(--bg)", padding: "2px 6px", borderRadius: 4, fontSize: 12 }}>https://steamcommunity.com/profiles/<b>XXXXXX</b>/</code>
-          <br />
-          里的 <b>XXXXXX</b> 即为您的 Steam ID，将其粘贴到下方即可。
-        </p>
+    <div className="stats-panel stats-config">
+      <div className="stats-config__card">
+        <div className="stats-config__title"><Settings2 size={22} />{t("stats.configTitle")}</div>
+        <p>{t("stats.configDescription")}</p>
+        <code>https://steamcommunity.com/profiles/<b>XXXXXX</b>/</code>
         <input
           value={cfgInput}
           onChange={e => setCfgInput(e.target.value)}
           placeholder="7656119XXXXXXXXXX"
           autoFocus
-          style={{
-            width: "100%", padding: "10px 14px", border: "1px solid var(--line-strong)", borderRadius: 10,
-            background: "var(--bg)", color: "var(--text-primary)", fontSize: 15, fontFamily: "monospace",
-            textAlign: "center", outline: "none", marginBottom: 16,
-          }}
-          onKeyDown={e => { if (e.key === "Enter") saveCfg(); }}
+          aria-invalid={cfgInput.length > 0 && !cfgValid}
+          onKeyDown={e => { if (e.key === "Enter" && cfgValid) void saveCfg(); }}
         />
-        <button
-          disabled={!cfgInput.trim() || cfgSaving}
-          onClick={saveCfg}
-          style={{
-            width: "100%", padding: "10px 0", borderRadius: 10, border: "none",
-            background: "var(--c-accent)", color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer",
-            opacity: cfgInput.trim() ? 1 : 0.5,
-          }}
-        >
-          {cfgSaving ? "保存中…" : "确定"}
-        </button>
+        {cfgInput.length > 0 && !cfgValid && <span className="stats-config__error">{t("stats.steamIdInvalid")}</span>}
+        <div className="stats-config__actions">
+          {pid && <button type="button" onClick={() => setCfgOpen(false)}>{t("stats.cancel")}</button>}
+          <button type="button" className="primary" disabled={!cfgValid || cfgSaving} onClick={() => void saveCfg()}>
+            {cfgSaving ? t("stats.saving") : t("stats.save")}
+          </button>
+        </div>
       </div>
     </div>
   );
 
-  const comp = matches.filter(m => m.modeFamily === "competitive");
-  const dms = matches.filter(m => m.modeFamily === "deathmatch");
   const po = data?.players.find(p => p.steamId === pid) ?? null;
   const tr = po?.totalRounds ?? 0;
   const tk = po?.kills ?? 0, td = po?.deaths ?? 0, ta = po?.assists ?? 0, tdm = po?.damage ?? 0, ths = po?.headshots ?? 0;
@@ -142,22 +145,29 @@ export default function StatsDashboard() {
     const ow = initTeam === "CT" ? m.teamBScore : m.teamAScore;
     return { ...m, r, pw, ow };
   });
+  const highScoreSession = (dm?.sessions ?? []).reduce<Cs2ssDmOverview["sessions"][number] | null>(
+    (best, session) => !best || session.score > best.score ? session : best,
+    null,
+  );
+  const hasCompetitive = data ? data.matchCount > 0 || data.players.length > 0 || comp.length > 0 : false;
+  const hasDeathmatch = dms.length > 0 || (dm?.sessionCount ?? 0) > 0;
 
   if (sub === "matchDetail" && selMatch > 0) return <StatsMatchDetail csgo={csgo} matchId={selMatch} onBack={() => setSub("dashboard")} />;
   if (sub === "history") return <StatsMatchHistory csgo={csgo} onOpenMatch={id => { setSelMatch(id); setSub("matchDetail"); }} onBack={() => setSub("dashboard")} />;
-  if (loading) return <div className="stats-panel"><div className="stats-panel__loading">Loading…</div></div>;
-  if (err && !data) return <div className="stats-panel"><div className="stats-panel__empty">{err}</div></div>;
-  if (!data) return <div className="stats-panel"><div className="stats-panel__loading">Loading…</div></div>;
+  if (loading) return <div className="stats-panel"><div className="stats-panel__loading">{t("stats.loading")}</div></div>;
+  if (err && !data) return <div className="stats-panel"><div className="stats-panel__empty">{t("stats.connectionError")}</div></div>;
+  if (!data) return <div className="stats-panel"><div className="stats-panel__loading">{t("stats.loading")}</div></div>;
 
-  if (data.matchCount === 0 && data.players.length === 0) return (
+  if (!hasCompetitive && !hasDeathmatch) return (
     <div className="stats-panel">
       <div className="stats-mode-switch">
-        <button className="active">Competitive<small>0</small></button>
-        <button className="">Deathmatch<small>0</small></button>
+        <button className="active" onClick={() => setMode("competitive")}>{t("stats.competitive")}<small>0</small></button>
+        <button onClick={() => setMode("deathmatch")}>{t("stats.deathmatch")}<small>0</small></button>
+        <button className="stats-mode-switch__settings" onClick={openConfig} title={t("stats.editSteamId")} aria-label={t("stats.editSteamId")}><Settings2 size={16} /></button>
       </div>
       <div className="stats-panel-block">
         <div className="stats-panel__empty" style={{ padding: "60px 0", textAlign: "center" }}>
-          暂无对局数据。安装 CS2SS 插件并完成至少一场比赛后，数据将在此展示。
+          {t("stats.emptyAll")}
         </div>
       </div>
     </div>
@@ -166,40 +176,41 @@ export default function StatsDashboard() {
   return (
     <div className="stats-panel">
       <div className="stats-mode-switch">
-        <button className={mode === "competitive" ? "active" : ""} onClick={() => setMode("competitive")}>Competitive<small>{comp.length}</small></button>
-        <button className={mode === "deathmatch" ? "active" : ""} onClick={() => setMode("deathmatch")}>Deathmatch<small>{dms.length}</small></button>
-        <button style={{ marginLeft: 12, fontWeight: 600, color: "var(--c-accent)" }} onClick={() => setSub("history")}>All Matches →</button>
+        <button className={mode === "competitive" ? "active" : ""} onClick={() => setMode("competitive")}>{t("stats.competitive")}<small>{comp.length}</small></button>
+        <button className={mode === "deathmatch" ? "active" : ""} onClick={() => setMode("deathmatch")}>{t("stats.deathmatch")}<small>{dms.length}</small></button>
+        <button className="stats-mode-switch__all" onClick={() => setSub("history")}>{t("stats.allMatches")} →</button>
+        <button className="stats-mode-switch__settings" onClick={openConfig} title={t("stats.editSteamId")} aria-label={t("stats.editSteamId")}><Settings2 size={16} /></button>
       </div>
 
-      {mode === "competitive" && pid ? (<>
+      {mode === "competitive" && pid && hasCompetitive ? (<>
         <div className="stats-hero">
-          <div><span className="stats-hero__eyebrow">PLAYER DOSSIER</span><h1>{po?.name ?? pid}</h1></div>
-          <div className="stats-hero__rating"><small>OFFLINE RATING 2.0</small><strong style={{ color: rcol(rating) }}>{rating.toFixed(2)}</strong></div>
+          <div><span className="stats-hero__eyebrow">{t("stats.playerDossier")}</span><h1>{po?.name ?? pid}</h1></div>
+          <div className="stats-hero__rating"><small>{t("stats.offlineRating")}</small><strong style={{ color: rcol(rating) }}>{rating.toFixed(2)}</strong></div>
         </div>
         <div className="stats-cards">
-          {[["Matches", po?.matches ?? 0], ["KAST", `${kast}%`, kast >= 75 ? HI : kast >= 65 ? MID : LO], ["ADR", adr.toFixed(1), adr >= 85 ? HI : adr >= 70 ? MID : LO], ["K/D", (tk / Math.max(1, td)).toFixed(2), (tk / Math.max(1, td)) >= 1.2 ? HI : (tk / Math.max(1, td)) >= 1 ? MID : LO], ["KDA", ((tk + ta) / Math.max(1, td)).toFixed(2)], ["KPR", (tr > 0 ? (tk / tr).toFixed(2) : "0.00")], ["HS%", `${(tk > 0 ? Math.round(ths / tk * 100) : 0)}%`], ["Clutches", `${po?.clutchesWon ?? 0}/${po?.clutchAttempts ?? 0}`]].map(([l, v, c]) => (
+          {[[t("stats.matches"), po?.matches ?? 0], ["KAST", `${kast}%`, kast >= 75 ? HI : kast >= 65 ? MID : LO], ["ADR", adr.toFixed(1), adr >= 85 ? HI : adr >= 70 ? MID : LO], ["K/D", (tk / Math.max(1, td)).toFixed(2), (tk / Math.max(1, td)) >= 1.2 ? HI : (tk / Math.max(1, td)) >= 1 ? MID : LO], ["KDA", ((tk + ta) / Math.max(1, td)).toFixed(2)], ["KPR", (tr > 0 ? (tk / tr).toFixed(2) : "0.00")], ["HS%", `${(tk > 0 ? Math.round(ths / tk * 100) : 0)}%`], [t("stats.clutches"), `${po?.clutchesWon ?? 0}/${po?.clutchAttempts ?? 0}`]].map(([l, v, c]) => (
             <div className="stats-card" key={l}><span className="stats-card__label">{l}</span><span className="stats-card__value" style={c ? { color: c } as React.CSSProperties : undefined}>{v}</span></div>
           ))}
         </div>
         <div className="stats-impact">
-          {[["Trade Kills", po?.tradeKills ?? 0], ["2K Rounds", po?.multikill2 ?? 0], ["3K Rounds", po?.multikill3 ?? 0], ["4K Rounds", po?.multikill4 ?? 0], ["Ace", po?.multikill5 ?? 0]].map(([l, v]) => (
+          {[[t("stats.tradeKills"), po?.tradeKills ?? 0], [t("stats.twoKillRounds"), po?.multikill2 ?? 0], [t("stats.threeKillRounds"), po?.multikill3 ?? 0], [t("stats.fourKillRounds"), po?.multikill4 ?? 0], [t("stats.ace"), po?.multikill5 ?? 0]].map(([l, v]) => (
             <div key={l}><span>{l}</span><b>{String(v)}</b></div>
           ))}
         </div>
         <div className="stats-charts">
           <div className="stats-panel-block">
-            <div className="stats-panel-block__title"><div><span>TREND</span><h2>Rating Trend</h2></div></div>
-            {trend.length > 0 ? <ResponsiveContainer width="100%" height={200}><LineChart data={trend}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="i" tick={{ fontSize: 11 }} /><YAxis domain={[0, "auto"]} tick={{ fontSize: 11 }} /><Tooltip /><Line type="monotone" dataKey="r" stroke="#8e5cb8" strokeWidth={2.2} dot={{ r: 3, fill: "#8e5cb8" }} /></LineChart></ResponsiveContainer> : <p style={{ color: "var(--text-secondary)", textAlign: "center", padding: 32 }}>Not enough data</p>}
+            <div className="stats-panel-block__title"><div><span>{t("stats.trend")}</span><h2>{t("stats.ratingTrend")}</h2></div></div>
+            {trend.length > 0 ? <ResponsiveContainer width="100%" height={200}><LineChart data={trend}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="i" tick={{ fontSize: 11 }} /><YAxis domain={[0, "auto"]} tick={{ fontSize: 11 }} /><Tooltip /><Line type="monotone" dataKey="r" stroke="#8e5cb8" strokeWidth={2.2} dot={{ r: 3, fill: "#8e5cb8" }} /></LineChart></ResponsiveContainer> : <p style={{ color: "var(--text-secondary)", textAlign: "center", padding: 32 }}>{t("stats.insufficientData")}</p>}
           </div>
           <div className="stats-panel-block">
-            <div className="stats-panel-block__title"><div><span>MAPS</span><h2>Map Performance</h2></div></div>
-            {mpperf.length > 0 ? <ResponsiveContainer width="100%" height={200}><BarChart data={mpperf} layout="vertical"><CartesianGrid strokeDasharray="3 3" /><XAxis type="number" domain={[0, "auto"]} tick={{ fontSize: 11 }} /><YAxis type="category" dataKey="map" tick={{ fontSize: 11 }} width={72} /><Tooltip /><Bar dataKey="r" radius={[0, 4, 4, 0]}>{mpperf.map((_entry, i) => <Cell key={i} fill={["#5d9cec","#3498db","#2ecc71","#f39c12","#9b59b6"][i % 5]} />)}</Bar></BarChart></ResponsiveContainer> : <p style={{ color: "var(--text-secondary)", textAlign: "center", padding: 32 }}>No map data</p>}
+            <div className="stats-panel-block__title"><div><span>{t("stats.maps")}</span><h2>{t("stats.mapPerformance")}</h2></div></div>
+            {mpperf.length > 0 ? <ResponsiveContainer width="100%" height={200}><BarChart data={mpperf} layout="vertical"><CartesianGrid strokeDasharray="3 3" /><XAxis type="number" domain={[0, "auto"]} tick={{ fontSize: 11 }} /><YAxis type="category" dataKey="map" tick={{ fontSize: 11 }} width={72} /><Tooltip /><Bar dataKey="r" radius={[0, 4, 4, 0]}>{mpperf.map((_entry, i) => <Cell key={i} fill={["#5d9cec","#3498db","#2ecc71","#f39c12","#9b59b6"][i % 5]} />)}</Bar></BarChart></ResponsiveContainer> : <p style={{ color: "var(--text-secondary)", textAlign: "center", padding: 32 }}>{t("stats.noMapData")}</p>}
           </div>
         </div>
         <div className="stats-panel-block">
-          <div className="stats-panel-block__title"><div><span>RECENT</span><h2>Recent Matches</h2></div></div>
+          <div className="stats-panel-block__title"><div><span>{t("stats.recent")}</span><h2>{t("stats.recentMatches")}</h2></div></div>
           {recent.length > 0 ? (
-            <table className="stats-table"><thead><tr><th>Map</th><th>Date</th><th>Score</th><th>K/D/A</th><th>ADR</th><th>Rating</th></tr></thead>
+            <table className="stats-table"><thead><tr><th>{t("stats.map")}</th><th>{t("stats.date")}</th><th>{t("stats.score")}</th><th>K/D/A</th><th>ADR</th><th>{t("stats.rating")}</th></tr></thead>
               <tbody>{recent.map(m => (
                 <tr key={m.matchId} onClick={() => { setSelMatch(m.matchId); setSub("matchDetail"); }} style={{ cursor: "pointer" }}>
                   <td style={{ fontWeight: 600 }}>{cs2ssMapLabel(m.map)}</td><td style={{ color: "var(--text-secondary)", fontSize: 12 }}>{fmtD(m.startedAt)}</td>
@@ -208,34 +219,34 @@ export default function StatsDashboard() {
                   <td><span style={{ fontWeight: 700, color: rcol(m.r) }}>{m.r.toFixed(2)}</span></td>
                 </tr>
               ))}</tbody></table>
-          ) : <div className="stats-panel__empty">No matches yet.</div>}
+          ) : <div className="stats-panel__empty">{t("stats.noMatches")}</div>}
         </div>
       </>) : mode === "deathmatch" && dm ? (<>
         <div className="stats-hero" style={{ background: "linear-gradient(125deg, #151923, #283448 58%, #df6b35)" }}>
           <div>
-            <span className="stats-hero__eyebrow">DEATHMATCH TRAINING LOG</span>
-            <h1>{dm.sessionCount} sessions</h1>
+            <span className="stats-hero__eyebrow">{t("stats.dmTrainingLog")}</span>
+            <h1>{dm.sessionCount} {t("stats.sessions")}</h1>
             <p style={{ color: "rgba(255,255,255,.65)", fontSize: 13 }}>
-              {Math.round(dm.totalSessionSec / 60)} min total · KPM {dm.totalKills > 0 ? (dm.totalKills / Math.max(1, dm.totalSessionSec) * 60).toFixed(2) : "0"} · DPM {dm.totalDamage > 0 ? Math.round(dm.totalDamage / Math.max(1, dm.totalSessionSec) * 60) : 0}
+              {t("stats.totalMinutes", { minutes: Math.round(dm.totalSessionSec / 60) })} · KPM {dm.totalKills > 0 ? (dm.totalKills / Math.max(1, dm.totalSessionSec) * 60).toFixed(2) : "0"} · DPM {dm.totalDamage > 0 ? Math.round(dm.totalDamage / Math.max(1, dm.totalSessionSec) * 60) : 0}
             </p>
           </div>
           <div className="stats-hero__rating">
-            <small>HIGH SCORE</small>
-            <strong style={{ color: "#f29968" }}>{dm.sessions[0]?.score ?? 0}</strong>
-            <p style={{ color: "rgba(255,255,255,.65)", fontSize: 11, margin: 0 }}>{dm.sessions[0] ? cs2ssMapLabel(dm.sessions[0].map) : ""}</p>
+            <small>{t("stats.highScore")}</small>
+            <strong style={{ color: "#f29968" }}>{highScoreSession?.score ?? 0}</strong>
+            <p style={{ color: "rgba(255,255,255,.65)", fontSize: 11, margin: 0 }}>{highScoreSession ? cs2ssMapLabel(highScoreSession.map) : ""}</p>
           </div>
         </div>
 
         <div className="stats-cards">
           {[
-            ["场次", dm.sessionCount],
-            ["场均 KPM", (dm.totalKills / Math.max(1, dm.totalSessionSec) * 60).toFixed(2)],
-            ["场均 DPM", Math.round(dm.totalDamage / Math.max(1, dm.totalSessionSec) * 60)],
-            ["场均 K/D", dm.totalDeaths > 0 ? (dm.totalKills / dm.totalDeaths).toFixed(2) : dm.totalKills],
+            [t("stats.matches"), dm.sessionCount],
+            [t("stats.averageKpm"), (dm.totalKills / Math.max(1, dm.totalSessionSec) * 60).toFixed(2)],
+            [t("stats.averageDpm"), Math.round(dm.totalDamage / Math.max(1, dm.totalSessionSec) * 60)],
+            [t("stats.averageKd"), dm.totalDeaths > 0 ? (dm.totalKills / dm.totalDeaths).toFixed(2) : dm.totalKills],
             ["HS%", dm.totalKills > 0 ? Math.round(dm.totalHeadshots / dm.totalKills * 100) + "%" : "0%"],
-            ["最高连杀", dm.maxStreak],
-            ["最长生命", Math.round(dm.maxLongestLife) + "s"],
-            ["平均生命", dm.totalSpawns > 0 ? (dm.totalAliveSec / dm.totalSpawns).toFixed(1) + "s" : "0s"],
+            [t("stats.maxStreak"), dm.maxStreak],
+            [t("stats.longestLife"), Math.round(dm.maxLongestLife) + "s"],
+            [t("stats.averageLife"), dm.totalSpawns > 0 ? (dm.totalAliveSec / dm.totalSpawns).toFixed(1) + "s" : "0s"],
           ].map(([l, v]: any) => (
             <div className="stats-card" key={l as string}>
               <span className="stats-card__label">{l as string}</span>
@@ -248,8 +259,8 @@ export default function StatsDashboard() {
           {[
             ["5s 2K", dm.totalBurst5_2 ?? 0], ["5s 3K", dm.totalBurst5_3 ?? 0], ["5s 4K+", dm.totalBurst5_4 ?? 0],
             ["10s 2K", dm.totalBurst10_2 ?? 0], ["10s 3K", dm.totalBurst10_3 ?? 0], ["10s 4K+", dm.totalBurst10_4 ?? 0],
-            ["场均击杀", Math.round((dm.totalKills ?? 0) / Math.max(1, dm.sessionCount))], ["场均死亡", Math.round((dm.totalDeaths ?? 0) / Math.max(1, dm.sessionCount))],
-            ["场均分", Math.round((dm.totalScore ?? 0) / Math.max(1, dm.sessionCount))], ["HS%", ((dm.totalHeadshots ?? 0) / Math.max(1, dm.totalKills ?? 1) * 100).toFixed(0) + "%"]
+            [t("stats.averageKills"), Math.round((dm.totalKills ?? 0) / Math.max(1, dm.sessionCount))], [t("stats.averageDeaths"), Math.round((dm.totalDeaths ?? 0) / Math.max(1, dm.sessionCount))],
+            [t("stats.averageScore"), Math.round((dm.totalScore ?? 0) / Math.max(1, dm.sessionCount))], ["HS%", ((dm.totalHeadshots ?? 0) / Math.max(1, dm.totalKills ?? 1) * 100).toFixed(0) + "%"]
           ].map(([l, v]: any) => (
             <div key={l as string}><span>{l as string}</span><b>{String(v)}</b></div>
           ))}
@@ -257,7 +268,7 @@ export default function StatsDashboard() {
 
         <div className="stats-charts">
           <div className="stats-panel-block">
-            <div className="stats-panel-block__title"><div><span>TREND</span><h2>KPM Trend</h2></div></div>
+            <div className="stats-panel-block__title"><div><span>{t("stats.trend")}</span><h2>{t("stats.kpmTrend")}</h2></div></div>
             {[...(dm.sessions ?? [])].reverse().slice(-20).length > 0 ? (
               <ResponsiveContainer width="100%" height={200}>
                 <LineChart data={[...(dm.sessions ?? [])].reverse().slice(-20).map((s, i) => ({ i: i + 1, kpm: s.kpm, kd: s.kd }))}>
@@ -268,10 +279,10 @@ export default function StatsDashboard() {
                   <Line type="monotone" dataKey="kpm" stroke="#df6b35" strokeWidth={2.2} dot={{ r: 3, fill: "#df6b35" }} />
                 </LineChart>
               </ResponsiveContainer>
-            ) : <p style={{ color: "var(--text-secondary)", textAlign: "center", padding: 32 }}>No data</p>}
+            ) : <p style={{ color: "var(--text-secondary)", textAlign: "center", padding: 32 }}>{t("stats.noData")}</p>}
           </div>
           <div className="stats-panel-block">
-            <div className="stats-panel-block__title"><div><span>MAPS</span><h2>Score by Map</h2></div></div>
+            <div className="stats-panel-block__title"><div><span>{t("stats.maps")}</span><h2>{t("stats.scoreByMap")}</h2></div></div>
             {(dm.perMap ?? []).length > 0 ? (
               <ResponsiveContainer width="100%" height={200}>
                 <BarChart data={(dm.perMap ?? []).map(m => ({ map: cs2ssMapLabel(m.map), score: m.avgKpm }))} layout="vertical">
@@ -282,14 +293,14 @@ export default function StatsDashboard() {
                   <Bar dataKey="score" radius={[0, 4, 4, 0]} fill="#df6b35" />
                 </BarChart>
               </ResponsiveContainer>
-            ) : <p style={{ color: "var(--text-secondary)", textAlign: "center", padding: 32 }}>No map data</p>}
+            ) : <p style={{ color: "var(--text-secondary)", textAlign: "center", padding: 32 }}>{t("stats.noMapData")}</p>}
           </div>
         </div>
 
         <div className="stats-panel-block">
-          <div className="stats-panel-block__title"><div><span>SESSIONS</span><h2>DM Sessions</h2></div><p>{(dm.sessions ?? []).length} sessions</p></div>
+          <div className="stats-panel-block__title"><div><span>{t("stats.sessions")}</span><h2>{t("stats.dmSessions")}</h2></div><p>{(dm.sessions ?? []).length} {t("stats.sessions")}</p></div>
           {(dm.sessions ?? []).length > 0 ? (
-            <table className="stats-table"><thead><tr><th>Map</th><th>Date</th><th>Mode</th><th>Score</th><th style={{ textAlign: "right" }}>K/D</th><th style={{ textAlign: "right" }}>KPM</th><th style={{ textAlign: "right" }}>DPM</th><th style={{ textAlign: "right" }}>HS%</th><th style={{ textAlign: "right" }}>Streak</th></tr></thead>
+            <table className="stats-table"><thead><tr><th>{t("stats.map")}</th><th>{t("stats.date")}</th><th>{t("stats.mode")}</th><th>{t("stats.score")}</th><th style={{ textAlign: "right" }}>K/D</th><th style={{ textAlign: "right" }}>KPM</th><th style={{ textAlign: "right" }}>DPM</th><th style={{ textAlign: "right" }}>HS%</th><th style={{ textAlign: "right" }}>{t("stats.streak")}</th></tr></thead>
               <tbody>{(dm.sessions ?? []).map(s => (
                 <tr key={s.matchId} onClick={() => { setSelMatch(s.matchId); setSub("matchDetail"); }} style={{ cursor: "pointer" }}>
                   <td style={{ fontWeight: 600 }}>{cs2ssMapLabel(s.map)} <span className="dm-tag">DM</span></td>
@@ -303,11 +314,13 @@ export default function StatsDashboard() {
                   <td style={{ textAlign: "right", fontWeight: 600 }}>{s.streak}</td>
                 </tr>
               ))}</tbody></table>
-          ) : <div className="stats-panel__empty">No DM sessions.</div>}
+          ) : <div className="stats-panel__empty">{t("stats.noDmSessions")}</div>}
         </div>
       </>) : mode === "deathmatch" ? (
-        <div className="stats-panel-block"><div className="stats-panel__empty" style={{ padding: "60px 0", textAlign: "center" }}>暂无死斗数据。</div></div>
-      ) : null}
+        <div className="stats-panel-block"><div className="stats-panel__empty" style={{ padding: "60px 0", textAlign: "center" }}>{t("stats.emptyDeathmatch")}</div></div>
+      ) : (
+        <div className="stats-panel-block"><div className="stats-panel__empty" style={{ padding: "60px 0", textAlign: "center" }}>{t("stats.emptyCompetitive")}</div></div>
+      )}
     </div>
   );
 }

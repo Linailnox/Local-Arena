@@ -160,7 +160,7 @@ fn prepare_legacy_config_for_portable_state(mut config: AppConfig) -> AppConfig 
 fn apply_release_feature_gates(_config: &mut AppConfig) {
 }
 
-const WELCOME_STORY_RELEASE_VERSION: &str = "1.4.3.2";
+const WELCOME_STORY_RELEASE_VERSION: &str = "1.4.3.3";
 
 fn welcome_story_release_eligible(release_build: bool, display_version: &str) -> bool {
     release_build && display_version == WELCOME_STORY_RELEASE_VERSION
@@ -3326,11 +3326,11 @@ mod tests {
     }
 
     #[test]
-    fn welcome_story_is_limited_to_the_1432_release_build() {
-        assert!(welcome_story_release_eligible(true, "1.4.3.2"));
-        assert!(!welcome_story_release_eligible(false, "1.4.3.2"));
+    fn welcome_story_is_limited_to_the_1433_release_build() {
+        assert!(welcome_story_release_eligible(true, "1.4.3.3"));
+        assert!(!welcome_story_release_eligible(false, "1.4.3.3"));
         assert!(!welcome_story_release_eligible(true, "1.4.3.1"));
-        assert!(!welcome_story_release_eligible(true, "1.4.3.3"));
+        assert!(!welcome_story_release_eligible(true, "1.4.3.2"));
     }
 
     #[test]

@@ -1,4 +1,4 @@
-use crate::{AppError, Result};
+use crate::{write_json_atomic, AppError, Result};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -522,7 +522,7 @@ pub fn get_cs2ss_dm_overview(csgo: String, steam_id: String) -> Result<Cs2ssDmOv
         |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?,row.get(5)?,
                  row.get(6)?,row.get(7)?,row.get(8)?,row.get(9)?,row.get(10)?,row.get(11)?,
                  row.get(12)?,row.get(13)?,row.get(14)?,row.get(15)?,row.get(16)?,))
-    ).unwrap_or((0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0));
+    ).map_err(|e| AppError::invalid(format!("Cannot query CS2SS deathmatch totals: {e}")))?;
 
     let mut pm = conn.prepare(
         "SELECT m.map, COUNT(*), AVG(1.0*mp.total_kills/MAX(m.duration_seconds,1)*60),
@@ -531,11 +531,14 @@ pub fn get_cs2ss_dm_overview(csgo: String, steam_id: String) -> Result<Cs2ssDmOv
          FROM match_players mp JOIN matches m ON mp.match_id = m.match_id
          WHERE mp.steam_id = ?1 AND m.mode_family = 'deathmatch' AND m.status = 'completed'
          GROUP BY m.map ORDER BY COUNT(*) DESC"
-    ).unwrap();
-    let per_map: Vec<Cs2ssDmMapStat> = pm.query_map([&steam_id], |row| Ok(Cs2ssDmMapStat {
+    ).map_err(|e| AppError::invalid(format!("Cannot prepare CS2SS deathmatch map query: {e}")))?;
+    let per_map = pm.query_map([&steam_id], |row| Ok(Cs2ssDmMapStat {
         map: row.get(0)?, sessions: row.get(1)?, avg_kpm: row.get(2)?, avg_dpm: row.get(3)?,
         avg_kd: row.get(4)?, max_streak: row.get(5)?,
-    })).unwrap().filter_map(|r| r.ok()).collect();
+    }))
+        .map_err(|e| AppError::invalid(format!("Cannot query CS2SS deathmatch maps: {e}")))?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|e| AppError::invalid(format!("Cannot read CS2SS deathmatch map row: {e}")))?;
 
     let mut ss = conn.prepare(
         "SELECT m.match_id, m.map, m.ruleset, mp.total_kills, mp.total_deaths,
@@ -548,13 +551,16 @@ pub fn get_cs2ss_dm_overview(csgo: String, steam_id: String) -> Result<Cs2ssDmOv
          FROM match_players mp JOIN matches m ON mp.match_id = m.match_id
          WHERE mp.steam_id = ?1 AND m.mode_family = 'deathmatch' AND m.status = 'completed'
          ORDER BY m.started_at DESC"
-    ).unwrap();
-    let sessions: Vec<Cs2ssDmSessionPoint> = ss.query_map([&steam_id], |row| Ok(Cs2ssDmSessionPoint {
+    ).map_err(|e| AppError::invalid(format!("Cannot prepare CS2SS deathmatch session query: {e}")))?;
+    let sessions = ss.query_map([&steam_id], |row| Ok(Cs2ssDmSessionPoint {
         match_id: row.get(0)?, map: row.get(1)?, ruleset: row.get(2)?, kills: row.get(3)?,
         deaths: row.get(4)?, damage: row.get(5)?, score: row.get(6)?, kpm: row.get(7)?,
         dpm: row.get(8)?, kd: row.get(9)?, headshot_pct: row.get(10)?, streak: row.get(11)?,
         duration_seconds: row.get(12)?, started_at: row.get(13)?,
-    })).unwrap().filter_map(|r| r.ok()).collect();
+    }))
+        .map_err(|e| AppError::invalid(format!("Cannot query CS2SS deathmatch sessions: {e}")))?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|e| AppError::invalid(format!("Cannot read CS2SS deathmatch session row: {e}")))?;
 
     Ok(Cs2ssDmOverview {
         session_count: cnt.0, total_kills: cnt.1, total_deaths: cnt.2,
@@ -1069,25 +1075,39 @@ pub struct Cs2ssConfig {
     pub steam_id: String,
 }
 
+fn is_valid_steam_id64(value: &str) -> bool {
+    value.len() == 17
+        && value.starts_with("7656119")
+        && value.bytes().all(|byte| byte.is_ascii_digit())
+}
+
 #[tauri::command]
 pub fn get_cs2ss_config(csgo: String) -> Result<Cs2ssConfig> {
     let path = cs2ss_config_path(&csgo);
     if path.exists() {
-        let bytes = std::fs::read_to_string(&path).unwrap_or_default();
-        Ok(serde_json::from_str::<Cs2ssConfig>(&bytes).unwrap_or_default())
+        let bytes = std::fs::read_to_string(&path)
+            .map_err(|e| AppError::invalid(format!("Cannot read CS2SS config: {e}")))?;
+        serde_json::from_str::<Cs2ssConfig>(&bytes)
+            .map_err(|e| AppError::invalid(format!("Cannot parse CS2SS config: {e}")))
     } else {
         Ok(Cs2ssConfig::default())
     }
 }
 
 #[tauri::command]
-pub fn save_cs2ss_config(csgo: String, config: Cs2ssConfig) -> Result<()> {
+pub fn save_cs2ss_config(csgo: String, mut config: Cs2ssConfig) -> Result<()> {
+    config.steam_id = config.steam_id.trim().to_string();
+    if !is_valid_steam_id64(&config.steam_id) {
+        return Err(AppError::invalid(
+            "SteamID64 must be 17 digits and start with 7656119".to_string(),
+        ));
+    }
     let path = cs2ss_config_path(&csgo);
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).ok();
+        std::fs::create_dir_all(parent)
+            .map_err(|e| AppError::invalid(format!("Cannot create CS2SS config directory: {e}")))?;
     }
-    let bytes = serde_json::to_string_pretty(&config).map_err(|e| AppError::invalid(e.to_string()))?;
-    std::fs::write(&path, bytes).map_err(|e| AppError::invalid(e.to_string()))
+    write_json_atomic(&path, &config)
 }
 
 #[cfg(test)]
@@ -1332,6 +1352,97 @@ mod tests {
         assert_eq!(detail.r#match.status, "in_progress");
         assert!(detail.match_players.is_empty());
         assert!(detail.rounds.is_empty());
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn dm_overview_returns_data_without_panicking() {
+        let root = test_root();
+        setup_test_db(&root);
+        let csgo = root.to_str().unwrap().to_string();
+        let conn = open_db(&csgo).unwrap();
+        conn.execute(
+            "INSERT INTO matches (map, started_at, ended_at, status, rounds_played, ct_score, t_score, mode_family, ruleset, game_type, game_mode, duration_seconds)
+             VALUES ('de_dust2', '2025-06-01T00:00:00Z', '2025-06-01T00:10:00Z', 'completed', 0, 0, 0, 'deathmatch', 'ffa', 1, 2, 600)",
+            [],
+        ).unwrap();
+        let match_id = conn.last_insert_rowid();
+        conn.execute(
+            "INSERT INTO match_players (
+                match_id, steam_id, name, team, is_bot, alive, health,
+                total_kills, total_deaths, total_assists, total_damage,
+                total_headshot_kills, score, money, dm_spawn_count,
+                dm_max_kill_streak, dm_alive_seconds, dm_longest_life_seconds
+             ) VALUES (?1, '76561198000000001', 'Player1', 'CT', 0, 1, 100,
+                42, 20, 0, 5600, 21, 1200, 0, 21, 8, 480, 44)",
+            [match_id],
+        ).unwrap();
+
+        let result = get_cs2ss_dm_overview(csgo, "76561198000000001".to_string()).unwrap();
+        assert_eq!(result.session_count, 1);
+        assert_eq!(result.total_kills, 42);
+        assert_eq!(result.sessions.len(), 1);
+        assert_eq!(result.per_map.len(), 1);
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn dm_overview_returns_error_for_legacy_schema() {
+        let root = test_root();
+        let db_dir = root.join(".csbip").join("cs2ss");
+        std::fs::create_dir_all(&db_dir).unwrap();
+        let conn = rusqlite::Connection::open(db_dir.join("telemetry.db")).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE matches (
+                match_id INTEGER PRIMARY KEY,
+                map TEXT NOT NULL,
+                started_at TEXT NOT NULL,
+                mode_family TEXT NOT NULL,
+                status TEXT NOT NULL,
+                duration_seconds INTEGER NOT NULL
+            );
+            CREATE TABLE match_players (
+                match_id INTEGER NOT NULL,
+                steam_id TEXT NOT NULL,
+                total_kills INTEGER NOT NULL,
+                total_deaths INTEGER NOT NULL,
+                total_damage INTEGER NOT NULL,
+                total_headshot_kills INTEGER NOT NULL,
+                score INTEGER NOT NULL
+            );"
+        ).unwrap();
+        drop(conn);
+
+        let result = get_cs2ss_dm_overview(
+            root.to_str().unwrap().to_string(),
+            "76561198000000001".to_string(),
+        );
+        assert!(result.is_err(), "legacy schemas must return an AppError instead of panicking");
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn steam_id_config_is_validated_and_roundtrips() {
+        assert!(is_valid_steam_id64("76561198000000001"));
+        assert!(!is_valid_steam_id64("player-name"));
+        assert!(!is_valid_steam_id64("7656119800000000"));
+
+        let root = test_root();
+        let csgo = root.to_str().unwrap().to_string();
+        let invalid = save_cs2ss_config(
+            csgo.clone(),
+            Cs2ssConfig { steam_id: "player-name".to_string() },
+        );
+        assert!(invalid.is_err());
+
+        save_cs2ss_config(
+            csgo.clone(),
+            Cs2ssConfig { steam_id: " 76561198000000001 ".to_string() },
+        ).unwrap();
+        assert_eq!(get_cs2ss_config(csgo).unwrap().steam_id, "76561198000000001");
 
         std::fs::remove_dir_all(&root).ok();
     }

@@ -3,8 +3,8 @@ name: Build signed release
 on:
   push:
     tags:
-      - "v1.4.3.2"
-      - "v1.4.3.2-Preview.*"
+      - "v1.4.3.3"
+      - "v1.4.3.3-Preview.*"
 
 permissions:
   contents: write

@@ -30,7 +30,7 @@
 
 <div align="center">
 
-The current `main` branch targets **1.4.3.2**
+The current `main` branch targets **1.4.3.3**
 
 Update codename: **Richer Cosmetics**
 
