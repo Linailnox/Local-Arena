@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Settings2 } from "lucide-react";
+import { BarChart3, Settings2 } from "lucide-react";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis, Bar, BarChart, Cell } from "recharts";
 import { api } from "../lib/api";
 import type { Cs2ssOverviewResponse, Cs2ssMatchSummary, Cs2ssPlayerDetailResponse, Cs2ssDmOverview } from "../data/cs2ssTypes";
@@ -140,10 +140,7 @@ export default function StatsDashboard() {
 
   const recent = (pd?.matches ?? []).slice(0, 10).map(m => {
     const r = m.roundsPlayed > 0 ? cs2ssCalcRating(m.totalKills, m.totalDeaths, m.totalAssists, m.totalDamage, m.totalHeadshotKills, m.roundsPlayed, { kastRounds: m.kastRounds, tradeKills: m.tradeKills, multikill2: m.multikill2, multikill3: m.multikill3, multikill4: m.multikill4, multikill5: m.multikill5, clutchAttempts: m.clutchAttempts, clutchesWon: m.clutchesWon }) : 0;
-    const initTeam = m.initialTeam || m.team;
-    const pw = initTeam === "CT" ? m.teamAScore : m.teamBScore;
-    const ow = initTeam === "CT" ? m.teamBScore : m.teamAScore;
-    return { ...m, r, pw, ow };
+    return { ...m, r };
   });
   const highScoreSession = (dm?.sessions ?? []).reduce<Cs2ssDmOverview["sessions"][number] | null>(
     (best, session) => !best || session.score > best.score ? session : best,
@@ -160,26 +157,32 @@ export default function StatsDashboard() {
 
   if (!hasCompetitive && !hasDeathmatch) return (
     <div className="stats-panel">
-      <div className="stats-mode-switch">
-        <button className="active" onClick={() => setMode("competitive")}>{t("stats.competitive")}<small>0</small></button>
-        <button onClick={() => setMode("deathmatch")}>{t("stats.deathmatch")}<small>0</small></button>
-        <button className="stats-mode-switch__settings" onClick={openConfig} title={t("stats.editSteamId")} aria-label={t("stats.editSteamId")}><Settings2 size={16} /></button>
-      </div>
-      <div className="stats-panel-block">
-        <div className="stats-panel__empty" style={{ padding: "60px 0", textAlign: "center" }}>
-          {t("stats.emptyAll")}
+      <div className="stats-board-header">
+        <h1>{t("stats.globalHistory")}</h1>
+        <div className="stats-mode-switch">
+          <button className="active" onClick={() => setMode("competitive")}>{t("stats.competitive")}<small>0</small></button>
+          <button onClick={() => setMode("deathmatch")}>{t("stats.deathmatch")}<small>0</small></button>
+          <button className="stats-mode-switch__settings" onClick={openConfig} title={t("stats.editSteamId")} aria-label={t("stats.editSteamId")}><Settings2 size={16} /></button>
         </div>
+      </div>
+      <div className="stats-empty-board">
+        <BarChart3 size={28} aria-hidden="true" />
+        <strong>{t("stats.noData")}</strong>
+        <span>{t("stats.emptyAll")}</span>
       </div>
     </div>
   );
 
   return (
     <div className="stats-panel">
-      <div className="stats-mode-switch">
-        <button className={mode === "competitive" ? "active" : ""} onClick={() => setMode("competitive")}>{t("stats.competitive")}<small>{comp.length}</small></button>
-        <button className={mode === "deathmatch" ? "active" : ""} onClick={() => setMode("deathmatch")}>{t("stats.deathmatch")}<small>{dms.length}</small></button>
-        <button className="stats-mode-switch__all" onClick={() => setSub("history")}>{t("stats.allMatches")} →</button>
-        <button className="stats-mode-switch__settings" onClick={openConfig} title={t("stats.editSteamId")} aria-label={t("stats.editSteamId")}><Settings2 size={16} /></button>
+      <div className="stats-board-header">
+        <h1>{t("stats.globalHistory")}</h1>
+        <div className="stats-mode-switch">
+          <button className={mode === "competitive" ? "active" : ""} onClick={() => setMode("competitive")}>{t("stats.competitive")}<small>{comp.length}</small></button>
+          <button className={mode === "deathmatch" ? "active" : ""} onClick={() => setMode("deathmatch")}>{t("stats.deathmatch")}<small>{dms.length}</small></button>
+          <button className="stats-mode-switch__all" onClick={() => setSub("history")}>{t("stats.allMatches")} →</button>
+          <button className="stats-mode-switch__settings" onClick={openConfig} title={t("stats.editSteamId")} aria-label={t("stats.editSteamId")}><Settings2 size={16} /></button>
+        </div>
       </div>
 
       {mode === "competitive" && pid && hasCompetitive ? (<>
@@ -214,7 +217,7 @@ export default function StatsDashboard() {
               <tbody>{recent.map(m => (
                 <tr key={m.matchId} onClick={() => { setSelMatch(m.matchId); setSub("matchDetail"); }} style={{ cursor: "pointer" }}>
                   <td style={{ fontWeight: 600 }}>{cs2ssMapLabel(m.map)}</td><td style={{ color: "var(--text-secondary)", fontSize: 12 }}>{fmtD(m.startedAt)}</td>
-                  <td><span style={{ color: "var(--st-green)", fontWeight: 600 }}>{m.pw}</span><span style={{ color: "var(--text-secondary)" }}> : </span><span style={{ color: "var(--st-red)", fontWeight: 600 }}>{m.ow}</span><span style={{ marginLeft: 8, fontWeight: 700, fontSize: 12, color: m.pw > m.ow ? "var(--st-green)" : "var(--st-red)" }}>{m.pw > m.ow ? "W" : "L"}</span></td>
+                  <td className="stats-table__score">{m.teamAScore} : {m.teamBScore}</td>
                   <td>{m.totalKills}/{m.totalDeaths}/{m.totalAssists}</td><td>{cs2ssCalcAdr(m.totalDamage, m.roundsPlayed).toFixed(1)}</td>
                   <td><span style={{ fontWeight: 700, color: rcol(m.r) }}>{m.r.toFixed(2)}</span></td>
                 </tr>

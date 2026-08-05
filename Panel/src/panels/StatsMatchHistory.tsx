@@ -63,10 +63,6 @@ export default function StatsMatchHistory({ csgo, onOpenMatch, onBack }: Props) 
               <tr><td colSpan={7} style={{ textAlign: "center", padding: 40, color: "var(--text-secondary)" }}>{t("stats.noFilteredMatches")}</td></tr>
             ) : filtered.map(m => {
               const dm = m.modeFamily === "deathmatch";
-              const it = m.playerInitialTeam || m.playerTeam;
-              const pw = it === "CT" ? m.teamAScore : m.teamBScore;
-              const ow = it === "CT" ? m.teamBScore : m.teamAScore;
-              const won = !dm && pw > ow; const lost = !dm && pw < ow;
 
               // Competitive stats
               const rating = !dm && m.roundsPlayed > 0
@@ -91,8 +87,7 @@ export default function StatsMatchHistory({ csgo, onOpenMatch, onBack }: Props) 
                     {dm ? (
                       <span style={{ color: "#df6b35", fontWeight: 700 }}>{t("stats.minutesShort", { count: Math.round(m.durationSeconds / 60) })}</span>
                     ) : (
-                      <><span style={{ color: "var(--st-green)", fontWeight: 600 }}>{pw}</span><span style={{ color: "var(--text-secondary)" }}> : </span><span style={{ color: "var(--st-red)", fontWeight: 600 }}>{ow}</span>
-                        <span style={{ marginLeft: 8, fontWeight: 700, fontSize: 12, color: won ? "var(--st-green)" : lost ? "var(--st-red)" : "var(--text-secondary)" }}>{won ? "W" : lost ? "L" : "D"}</span></>
+                      <span className="stats-table__score">{m.teamAScore} : {m.teamBScore}</span>
                     )}
                   </td>
                   <td>{dm ? t("stats.minutesShort", { count: Math.round(m.durationSeconds / 60) }) : t("stats.roundsShort", { count: m.roundsPlayed })}</td>
