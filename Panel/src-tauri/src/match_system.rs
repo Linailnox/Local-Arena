@@ -628,6 +628,118 @@ pub fn watch(app: AppHandle, csgo: &Path) -> Result<()> {
     Ok(())
 }
 
+// ---- Aggregated match history stats ----
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct MapStatEntry {
+    pub map: String,
+    #[serde(rename = "avgRating")]
+    pub avg_rating: f64,
+    #[serde(rename = "avgAdr")]
+    pub avg_adr: f64,
+    pub matches: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct RatingTrendPoint {
+    #[serde(rename = "sessionId")]
+    pub session_id: String,
+    pub map: String,
+    pub timestamp: u64,
+    pub rating: f64,
+    pub adr: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct MatchHistoryStats {
+    #[serde(rename = "avgRating")]
+    pub avg_rating: f64,
+    #[serde(rename = "avgAdr")]
+    pub avg_adr: f64,
+    #[serde(rename = "totalMatches")]
+    pub total_matches: usize,
+    #[serde(rename = "perMap")]
+    pub per_map: Vec<MapStatEntry>,
+    #[serde(rename = "ratingTrend")]
+    pub rating_trend: Vec<RatingTrendPoint>,
+}
+
+fn extract_player_rating(players: &[serde_json::Value]) -> Option<(f64, f64)> {
+    let human = players.iter().find(|p| p.get("kind").and_then(|v| v.as_str()) == Some("human"));
+    match human {
+        Some(p) => {
+            let rating = p.get("rating").and_then(|r| {
+                r.get("open_rating").and_then(|v| v.as_f64())
+                    .or_else(|| r.get("rating_plus").and_then(|v| v.as_f64()))
+            });
+            let adr = p.get("adr").and_then(|v| v.as_f64());
+            match (rating, adr) {
+                (Some(r), Some(a)) => Some((r, a)),
+                _ => None,
+            }
+        }
+        None => None,
+    }
+}
+
+pub fn aggregated_stats(csgo: &Path) -> Result<MatchHistoryStats> {
+    let sessions = history(csgo)?;
+    let finished: Vec<_> = sessions.iter().filter(|s| matches!(s.state, MatchState::Finished | MatchState::Interrupted)).collect();
+
+    let mut ratings: Vec<f64> = Vec::new();
+    let mut adrs: Vec<f64> = Vec::new();
+    let mut map_entries: BTreeMap<String, (Vec<f64>, Vec<f64>)> = BTreeMap::new();
+    let mut trend: Vec<RatingTrendPoint> = Vec::new();
+
+    for session in &finished {
+        let result_path = match &session.result_path {
+            Some(p) => PathBuf::from(p),
+            None => continue,
+        };
+        if !result_path.is_file() { continue; }
+
+        if let Ok(result) = read_json::<MatchResult>(&result_path) {
+            if let Some((rating, adr)) = extract_player_rating(&result.players) {
+                ratings.push(rating);
+                adrs.push(adr);
+                let entry = map_entries.entry(result.map_id.clone()).or_insert((Vec::new(), Vec::new()));
+                entry.0.push(rating);
+                entry.1.push(adr);
+                trend.push(RatingTrendPoint {
+                    session_id: result.session_id.clone(),
+                    map: result.map_id.clone(),
+                    timestamp: result.finished_at_unix.max(result.started_at_unix),
+                    rating,
+                    adr,
+                });
+            }
+        }
+    }
+
+    trend.sort_by_key(|p| p.timestamp);
+
+    let avg_rating = if ratings.is_empty() { 0.0 } else { ratings.iter().sum::<f64>() / ratings.len() as f64 };
+    let avg_adr = if adrs.is_empty() { 0.0 } else { adrs.iter().sum::<f64>() / adrs.len() as f64 };
+
+    let per_map: Vec<MapStatEntry> = map_entries.into_iter().map(|(map, (rts, as_))| {
+        let n = rts.len();
+        MapStatEntry {
+            map,
+            avg_rating: rts.iter().sum::<f64>() / n as f64,
+            avg_adr: as_.iter().sum::<f64>() / n as f64,
+            matches: n,
+        }
+    }).collect();
+
+    Ok(MatchHistoryStats {
+        avg_rating,
+        avg_adr,
+        total_matches: finished.len(),
+        per_map,
+        rating_trend: trend,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

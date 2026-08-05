@@ -206,8 +206,9 @@ $upstreamPluginBuilds = @(
     @{ Name = "BotControllerImpl"; Framework = "net10.0" },
     @{ Name = "BotRandomizer"; Framework = "net10.0" },
     @{ Name = "NadeSystem"; Framework = "net10.0" },
-    @{ Name = "RoundDamageRecap"; Framework = "net10.0" }
-    @{ Name = "PlusMatchCoordinator"; Framework = "net8.0" }
+    @{ Name = "RoundDamageRecap"; Framework = "net10.0" },
+    @{ Name = "PlusMatchCoordinator"; Framework = "net8.0" },
+    @{ Name = "OfflineMatchTelemetry"; Framework = "net8.0" }
 )
 foreach ($plugin in $upstreamPluginBuilds) {
     $build = Join-Path $repo "addons\counterstrikesharp\plugins\$($plugin.Name)\bin\Release\$($plugin.Framework)"
