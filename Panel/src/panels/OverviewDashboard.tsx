@@ -21,7 +21,7 @@ import { MAP_IMAGES, MAP_LABELS } from "../data/maps";
 import { useT, type I18nKey } from "../i18n";
 
 export type DashboardTarget =
-  | "match" | "matchHistory" | "settings" | "presets" | "commands" | "weaponPresets" | "guide";
+  | "match" | "matchHistory" | "stats" | "settings" | "presets" | "commands" | "weaponPresets" | "guide";
 
 type Tile = { view: DashboardTarget; key: I18nKey; icon: LucideIcon };
 
