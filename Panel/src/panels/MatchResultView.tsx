@@ -7,8 +7,6 @@ import { MAP_IMAGES, MAP_LABELS } from "../data/maps";
 import { assignPlayerAvatarPaths, playerAvatarPath } from "../data/matchVisuals";
 import "./MatchPanel.css";
 
-type Outcome = "won" | "lost" | "draw" | "interrupted";
-
 function formatBytes(value: number) {
   if (!value) return "0 B";
   const units = ["B", "KB", "MB", "GB"];
@@ -48,13 +46,7 @@ export default function MatchResultView({ result, onClose, t, csgo }: { result: 
   const groups = ["ct", "t"] as const;
   const avatarPaths = useMemo(() => assignPlayerAvatarPaths(result.players), [result.players]);
 
-  const outcome: Outcome = result.state === "interrupted"
-    ? "interrupted"
-    : result.player_score > result.opponent_score
-      ? "won"
-      : result.player_score < result.opponent_score
-        ? "lost"
-        : "draw";
+  const status = result.state === "interrupted" ? "interrupted" : "finished";
 
   const mvp = maxBy(result.players, (p) => openRatingValue(p.rating));
   const topAdr = maxBy(result.players, (p) => p.adr);
@@ -91,10 +83,10 @@ export default function MatchResultView({ result, onClose, t, csgo }: { result: 
       <button className="match-history-button" onClick={onClose}><X size={16} />{t("match.backToLobby")}</button>
     </header>
 
-    <section className={`mr-hero is-${outcome}`}>
+    <section className="mr-hero">
       {MAP_IMAGES[result.map_id] && <img className="mr-hero__bg" src={MAP_IMAGES[result.map_id]} alt="" aria-hidden="true" />}
       <div className="mr-hero__overlay">
-        <span className={`mr-badge is-${outcome}`}>{t(`match.${outcome}`)}</span>
+        <span className={`mr-badge is-${status}`}>{t(`match.${status}`)}</span>
         <div className="mr-hero__score">
           <div><small>{t("match.yourTeam")}</small><strong>{result.player_score}</strong></div>
           <span>:</span>

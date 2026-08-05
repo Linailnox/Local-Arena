@@ -1,7 +1,7 @@
 {
   "name": "cs2-bot-improver-plus-panel",
   "private": true,
-  "version": "1.4.3+2",
+  "version": "1.4.3+3",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -16,7 +16,8 @@
     "@tauri-apps/plugin-opener": "^2.2.5",
     "lucide-react": "1.24.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "recharts": "^3.9.0"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.4",

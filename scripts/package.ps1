@@ -7,7 +7,7 @@ param(
     [string]$LlvmBin,
     [string]$XwinCache,
     [string]$OutputDirectory,
-    [string]$ReleaseVersion = "1.4.3.2",
+    [string]$ReleaseVersion = "1.4.3.3",
     [string]$MinimumPanelVersion = "1.4.2.4",
     [switch]$SkipBuild,
     [switch]$SkipNpmInstall
@@ -206,7 +206,7 @@ $upstreamPluginBuilds = @(
     @{ Name = "BotControllerImpl"; Framework = "net10.0" },
     @{ Name = "BotRandomizer"; Framework = "net10.0" },
     @{ Name = "NadeSystem"; Framework = "net10.0" },
-    @{ Name = "RoundDamageRecap"; Framework = "net10.0" }
+    @{ Name = "RoundDamageRecap"; Framework = "net10.0" },
     @{ Name = "PlusMatchCoordinator"; Framework = "net8.0" }
 )
 foreach ($plugin in $upstreamPluginBuilds) {
@@ -216,6 +216,26 @@ foreach ($plugin in $upstreamPluginBuilds) {
     }
     Copy-Tree $build (Join-Path $payload "addons\counterstrikesharp\plugins\$($plugin.Name)")
 }
+$telemetryStage = Join-Path $repo "addons\counterstrikesharp\plugins\OfflineMatchTelemetry\stage\game\csgo\addons\counterstrikesharp\plugins\OfflineMatchTelemetry"
+$telemetryExpectedFiles = @(
+    "OfflineMatchTelemetry.dll",
+    "OfflineMatchTelemetry.deps.json",
+    "OfflineMatchTelemetry.pdb",
+    "Microsoft.Data.Sqlite.dll",
+    "SQLitePCLRaw.batteries_v2.dll",
+    "SQLitePCLRaw.core.dll",
+    "SQLitePCLRaw.provider.e_sqlite3.dll",
+    "e_sqlite3.dll"
+)
+if (-not (Test-Path -LiteralPath $telemetryStage)) {
+    throw "OfflineMatchTelemetry staged deployment was not produced: $telemetryStage"
+}
+$telemetryStageFiles = @(Get-ChildItem -LiteralPath $telemetryStage -File | ForEach-Object Name | Sort-Object)
+$telemetryDifference = @(Compare-Object ($telemetryExpectedFiles | Sort-Object) $telemetryStageFiles)
+if ($telemetryDifference.Count -gt 0) {
+    throw "OfflineMatchTelemetry staged deployment does not match the release allowlist."
+}
+Copy-Tree $telemetryStage (Join-Path $payload "addons\counterstrikesharp\plugins\OfflineMatchTelemetry")
 $botControllerApiBuild = Join-Path $repo "addons\counterstrikesharp\shared\BotControllerApi\bin\Release\net10.0"
 if (-not (Test-Path -LiteralPath (Join-Path $botControllerApiBuild "BotControllerApi.dll"))) {
     throw "Expected BotController shared API build output was not produced: $botControllerApiBuild"
@@ -298,11 +318,11 @@ if ($isPreview) {
     $packageReadme = Join-Path $releaseRoot "README.md"
     $packageReadmeZh = Join-Path $releaseRoot "README.zh-CN.md"
     (Get-Content -LiteralPath $packageReadme -Raw).Replace(
-        "The current ``main`` branch targets **1.4.3.2**",
+        "The current ``main`` branch targets **1.4.3.3**",
         "This local test package is **$displayVersion** (preview; may contain bugs; please report problems)"
     ) | Set-Content -LiteralPath $packageReadme -Encoding utf8
     (Get-Content -LiteralPath $packageReadmeZh -Raw).Replace(
-        "当前 ``main`` 分支源码版本为 **1.4.3.2**",
+        "当前 ``main`` 分支源码版本为 **1.4.3.3**",
         "当前本地测试包版本为 **$displayVersion**（预览版本，可能包含 Bug，请反馈）"
     ) | Set-Content -LiteralPath $packageReadmeZh -Encoding utf8
     @"
@@ -324,6 +344,7 @@ $manifestEntries = foreach ($topLevel in @("addons", "cfg", "overrides")) {
         $plusOwned = $relative -like "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/*" -or
             $relative -like "addons/counterstrikesharp/plugins/BotHiderImpl/*" -or
             $relative -like "addons/counterstrikesharp/plugins/PlusMatchCoordinator/*" -or
+            $relative -like "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/*" -or
             $relative -like "addons/counterstrikesharp/shared/BotHiderApi/*" -or
             $relative -in @("cfg/my_bot_ffa_config.cfg", "cfg/my_bot_normal_config.cfg")
         $component = if ($relative -like "addons/counterstrikesharp/plugins/*") {
