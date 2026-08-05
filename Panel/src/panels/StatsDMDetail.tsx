@@ -1,10 +1,12 @@
 import { cs2ssMapLabel } from "../data/cs2ssMaps";
 import type { Cs2ssMatchDetailResponse } from "../data/cs2ssTypes";
+import { useT } from "../i18n";
 import "./StatsPanel.css";
 
 interface Props { data: Cs2ssMatchDetailResponse; steamId: string; onBack: () => void; }
 
 export default function StatsDMDetail({ data, steamId, onBack }: Props) {
+  const t = useT();
   const { match, matchPlayers: mps, deathmatchLives: dls } = data;
   const min = Math.max(1 / 60, match.durationSeconds / 60);
   const me = mps.find(p => p.steamId === steamId) ?? mps[0];
@@ -22,13 +24,13 @@ export default function StatsDMDetail({ data, steamId, onBack }: Props) {
 
   return (
     <div className="stats-panel">
-      <button className="stats-back" onClick={onBack}>← Back</button>
+      <button className="stats-back" onClick={onBack}>← {t("stats.back")}</button>
 
       <div className="stats-hero" style={{ background: "linear-gradient(125deg, #151923, #283448 58%, #df6b35)" }}>
         <div>
           <span className="stats-hero__eyebrow">DEATHMATCH · {ruleset}</span>
           <h1>{cs2ssMapLabel(match.map)}</h1>
-          <p style={{ color: "rgba(255,255,255,.65)", fontSize: 13 }}>{Math.round(match.durationSeconds / 60)} min · game_type {match.gameType} / game_mode {match.gameMode}</p>
+          <p style={{ color: "rgba(255,255,255,.65)", fontSize: 13 }}>{t("stats.minutesShort", { count: Math.round(match.durationSeconds / 60) })} · game_type {match.gameType} / game_mode {match.gameMode}</p>
         </div>
         <div style={{ position: "relative", zIndex: 1 }}><span className="dm-tag" style={{ fontSize: 13, padding: "4px 14px" }}>DM</span></div>
       </div>
@@ -36,11 +38,11 @@ export default function StatsDMDetail({ data, steamId, onBack }: Props) {
       {me && (
         <div className="stats-snapshot">
           <div className="stats-snapshot__lead" style={{ background: "linear-gradient(135deg, #d65c2c, #f18a45)" }}>
-            <span>YOUR SCORE</span>
+            <span>{t("stats.yourScore")}</span>
             <strong style={{ color: "#fff", fontSize: 38 }}>{me.score}</strong>
-            <small>pts</small>
+            <small>{t("stats.points")}</small>
           </div>
-          {[["K/D", `${me.totalKills}/${me.totalDeaths}`], ["KPM", rows.find(r => r.p.steamId === me.steamId)?.kpm.toFixed(2) ?? "0"], ["DPM", String(Math.round(rows.find(r => r.p.steamId === me.steamId)?.dpm ?? 0))], ["Max Streak", String(me.dmMaxKillStreak)], ["最长生命", `${Math.round(me.dmLongestLifeSeconds)}s`]].map(([l, v]) => (
+          {[["K/D", `${me.totalKills}/${me.totalDeaths}`], ["KPM", rows.find(r => r.p.steamId === me.steamId)?.kpm.toFixed(2) ?? "0"], ["DPM", String(Math.round(rows.find(r => r.p.steamId === me.steamId)?.dpm ?? 0))], [t("stats.maxStreak"), String(me.dmMaxKillStreak)], [t("stats.longestLife"), `${Math.round(me.dmLongestLifeSeconds)}s`]].map(([l, v]) => (
             <div key={l}><span>{l}</span><b>{v}</b></div>
           ))}
         </div>
@@ -48,17 +50,17 @@ export default function StatsDMDetail({ data, steamId, onBack }: Props) {
 
       {me && (
         <div className="stats-metrics">
-          {[["Avg Life", `${(me.dmAliveSeconds / Math.max(1, me.dmSpawnCount)).toFixed(1)}s`], ["Kills/Life", (me.totalKills / Math.max(1, me.dmSpawnCount)).toFixed(2)], ["DMG/Life", String(Math.round(me.totalDamage / Math.max(1, me.dmSpawnCount)))], ["Alive %", `${((me.dmAliveSeconds / Math.max(1, match.durationSeconds)) * 100).toFixed(1)}%`]].map(([l, v]) => (
+          {[[t("stats.averageLifeShort"), `${(me.dmAliveSeconds / Math.max(1, me.dmSpawnCount)).toFixed(1)}s`], [t("stats.killsPerLife"), (me.totalKills / Math.max(1, me.dmSpawnCount)).toFixed(2)], [t("stats.damagePerLife"), String(Math.round(me.totalDamage / Math.max(1, me.dmSpawnCount)))], [t("stats.alivePercent"), `${((me.dmAliveSeconds / Math.max(1, match.durationSeconds)) * 100).toFixed(1)}%`]].map(([l, v]) => (
             <div className="stats-metric-card" key={l}><span>{l}</span><b>{v}</b></div>
           ))}
         </div>
       )}
 
       <div className="stats-panel-block" style={{ padding: 0 }}>
-        <div style={{ padding: "20px 24px 0" }}><span style={{ color: "#df6b35", fontSize: 10, fontWeight: 900, letterSpacing: ".18em" }}>LEADERBOARD</span><h2 style={{ margin: "4px 0 16px", fontSize: 18, fontWeight: 700 }}>Session Ranking</h2></div>
+        <div style={{ padding: "20px 24px 0" }}><span style={{ color: "#df6b35", fontSize: 10, fontWeight: 900, letterSpacing: ".18em" }}>{t("stats.leaderboard")}</span><h2 style={{ margin: "4px 0 16px", fontSize: 18, fontWeight: 700 }}>{t("stats.sessionRanking")}</h2></div>
         <div style={{ overflowX: "auto" }}>
           <table className="stats-table" style={{ minWidth: 860 }}>
-            <thead><tr><th>#</th><th>Player</th><th style={{ textAlign: "right" }}>Score</th><th style={{ textAlign: "right" }}>K</th><th style={{ textAlign: "right" }}>D</th><th style={{ textAlign: "right" }}>K/D</th><th style={{ textAlign: "right" }}>KPM</th><th style={{ textAlign: "right" }}>DPM</th><th style={{ textAlign: "right" }}>HS%</th><th style={{ textAlign: "right" }}>连杀</th></tr></thead>
+            <thead><tr><th>#</th><th>{t("stats.player")}</th><th style={{ textAlign: "right" }}>{t("stats.score")}</th><th style={{ textAlign: "right" }}>K</th><th style={{ textAlign: "right" }}>D</th><th style={{ textAlign: "right" }}>K/D</th><th style={{ textAlign: "right" }}>KPM</th><th style={{ textAlign: "right" }}>DPM</th><th style={{ textAlign: "right" }}>HS%</th><th style={{ textAlign: "right" }}>{t("stats.streak")}</th></tr></thead>
             <tbody>
               {rows.map(({ p, kd, hs, kpm, dpm }, i) => (
                 <tr key={p.steamId} style={p.steamId === me?.steamId ? { background: "rgba(223,107,53,.07)" } : undefined}>
@@ -82,7 +84,7 @@ export default function StatsDMDetail({ data, steamId, onBack }: Props) {
       {me && (
         <div className="stats-charts">
           <div className="stats-panel-block">
-            <div className="stats-panel-block__title"><div><span>BURST</span><h2>Burst Firepower</h2></div></div>
+            <div className="stats-panel-block__title"><div><span>{t("stats.burst")}</span><h2>{t("stats.burstFirepower")}</h2></div></div>
             {[["5 sec", me.dmBurst5s2, me.dmBurst5s3, me.dmBurst5s4], ["10 sec", me.dmBurst10s2, me.dmBurst10s3, me.dmBurst10s4]].map(([l, v2, v3, v4]) => (
               <div key={String(l)} style={{ display: "grid", gridTemplateColumns: "60px repeat(3, 1fr)", alignItems: "center", gap: 8, padding: "12px 0", borderBottom: "1px solid var(--border-color, var(--line))" }}>
                 <small style={{ color: "#d85f2e", fontWeight: 900 }}>{l}</small>
@@ -94,11 +96,11 @@ export default function StatsDMDetail({ data, steamId, onBack }: Props) {
           </div>
 
           <div className="stats-panel-block">
-            <div className="stats-panel-block__title"><div><span>LIVES</span><h2>Best Lives</h2></div><p>{myLives.length} records</p></div>
+            <div className="stats-panel-block__title"><div><span>{t("stats.life")}</span><h2>{t("stats.bestLives")}</h2></div><p>{t("stats.records", { count: myLives.length })}</p></div>
             <div className="stats-life-list">
               {bestLives.map(l => (
                 <div key={l.lifeId} className="stats-life-row">
-                  <b>#{l.lifeIndex}</b><span>{l.kills}K</span><span>{l.damage} DMG</span><span>{l.durationSeconds.toFixed(1)}s</span><small>{l.endKind === "death" ? "Died" : "Survived"}</small>
+                  <b>#{l.lifeIndex}</b><span>{l.kills}K</span><span>{l.damage} DMG</span><span>{l.durationSeconds.toFixed(1)}s</span><small>{l.endKind === "death" ? t("stats.died") : t("stats.survived")}</small>
                 </div>
               ))}
             </div>

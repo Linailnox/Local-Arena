@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$PackageRoot,
-    [string]$ExpectedPackageVersion = "1.4.3.2"
+    [string]$ExpectedPackageVersion = "1.4.3.3"
 )
 
 $ErrorActionPreference = "Stop"
@@ -488,7 +488,12 @@ if ($PackageRoot) {
         "addons/counterstrikesharp/plugins/PlusMatchCoordinator/profiles/Medium/botprofile.db",
         "addons/counterstrikesharp/plugins/PlusMatchCoordinator/profiles/High/botprofile.db",
         "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/OfflineMatchTelemetry.dll",
+        "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/OfflineMatchTelemetry.deps.json",
+        "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/OfflineMatchTelemetry.pdb",
         "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/Microsoft.Data.Sqlite.dll",
+        "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/SQLitePCLRaw.batteries_v2.dll",
+        "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/SQLitePCLRaw.core.dll",
+        "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/SQLitePCLRaw.provider.e_sqlite3.dll",
         "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/e_sqlite3.dll",
         "addons/counterstrikesharp/shared/0Harmony/0Harmony.dll",
         "addons/counterstrikesharp/shared/BotHiderApi/BotHiderApi.dll",
@@ -501,6 +506,25 @@ if ($PackageRoot) {
     )
     foreach ($relative in $requiredPackageFiles) {
         Assert-File (Join-Path $package $relative) "package file $relative"
+    }
+    $telemetryPackageRoot = Join-Path $package "addons/counterstrikesharp/plugins/OfflineMatchTelemetry"
+    $expectedTelemetryFiles = @(
+        "OfflineMatchTelemetry.dll",
+        "OfflineMatchTelemetry.deps.json",
+        "OfflineMatchTelemetry.pdb",
+        "Microsoft.Data.Sqlite.dll",
+        "SQLitePCLRaw.batteries_v2.dll",
+        "SQLitePCLRaw.core.dll",
+        "SQLitePCLRaw.provider.e_sqlite3.dll",
+        "e_sqlite3.dll"
+    ) | Sort-Object
+    $packagedTelemetryFiles = @(
+        Get-ChildItem -LiteralPath $telemetryPackageRoot -File -ErrorAction SilentlyContinue |
+            ForEach-Object Name |
+            Sort-Object
+    )
+    if (@(Compare-Object $expectedTelemetryFiles $packagedTelemetryFiles).Count -gt 0) {
+        Add-Failure "Packaged OfflineMatchTelemetry file set does not match the release allowlist."
     }
     $packagedNadeDataRoot = Join-Path $package "addons/counterstrikesharp/plugins/NadeSystem/grenades"
     $packagedNadeDataFiles = @(

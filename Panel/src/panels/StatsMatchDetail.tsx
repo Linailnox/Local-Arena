@@ -6,6 +6,7 @@ import { cs2ssCalcRating, cs2ssCalcAdr, cs2ssCalcKast } from "../data/cs2ssRatin
 import { cs2ssMapLabel } from "../data/cs2ssMaps";
 import { cs2ssRoundEndReasonLabel } from "../data/cs2ssReasons";
 import { useStore } from "../state/store";
+import { useT } from "../i18n";
 import StatsDMDetail from "./StatsDMDetail";
 import "./StatsPanel.css";
 
@@ -16,17 +17,18 @@ interface Props { csgo: string; matchId: number; onBack: () => void; }
 function rcol(r: number) { return r >= 1.1 ? "#20b486" : r >= 0.9 ? "#e67e22" : "#e05d75"; }
 function fmtT(iso: string) { try { const d = new Date(iso); return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; } catch { return iso; } }
 
-function badges(p: Cs2ssRoundPlayer) {
+function badges(p: Cs2ssRoundPlayer, t: ReturnType<typeof useT>) {
   const bs: { l: string; t: string }[] = [];
   if (p.multikill >= 3) bs.push({ l: p.multikill >= 5 ? "ACE" : `${p.multikill}K`, t: "kill" });
-  if (p.tradeKills > 0) bs.push({ l: `Trade x${p.tradeKills}`, t: "trade" });
-  if (p.traded) bs.push({ l: "Traded", t: "support" });
-  if (p.clutchAttempt) bs.push({ l: `1v${p.clutchSize} ${p.clutchWon ? "Won" : "Lost"}`, t: p.clutchWon ? "clutchWin" : "clutch" });
+  if (p.tradeKills > 0) bs.push({ l: t("stats.trade", { count: p.tradeKills }), t: "trade" });
+  if (p.traded) bs.push({ l: t("stats.traded"), t: "support" });
+  if (p.clutchAttempt) bs.push({ l: t(p.clutchWon ? "stats.clutchWon" : "stats.clutchLost", { size: p.clutchSize }), t: p.clutchWon ? "clutchWin" : "clutch" });
   return bs;
 }
 
 export default function StatsMatchDetail({ csgo, matchId, onBack }: Props) {
   const { reportError } = useStore();
+  const t = useT();
   const [data, setData] = useState<Cs2ssMatchDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
@@ -48,7 +50,7 @@ export default function StatsMatchDetail({ csgo, matchId, onBack }: Props) {
       }
       setLoading(false);
     }).catch(e => { setErr(String(e)); setLoading(false); reportError(e); });
-  }, [matchId, reportError]);
+  }, [csgo, matchId, reportError]);
 
   const c = useMemo(() => {
     if (!data) return null;
@@ -68,7 +70,7 @@ export default function StatsMatchDetail({ csgo, matchId, onBack }: Props) {
       return { mp, side: mpInitTeam === myTeam ? "mine" : "enemy", r, adr: cs2ssCalcAdr(mp.totalDamage, match.roundsPlayed), kast: cs2ssCalcKast(mp.kastRounds, match.roundsPlayed) };
     }).sort((a, b) => b.r - a.r);
 
-    const hl = rps.filter(p => badges(p).length > 0).sort((a, b) => a.roundNumber - b.roundNumber);
+    const hl = rps.filter(p => badges(p, t).length > 0).sort((a, b) => a.roundNumber - b.roundNumber);
 
     let rp = 0, ro = 0;
     const tl = rs.map(r => {
@@ -80,20 +82,20 @@ export default function StatsMatchDetail({ csgo, matchId, onBack }: Props) {
     });
 
     return { match, s, pw, ow, rows, hl, tl, myTeam };
-  }, [data]);
+  }, [data, t]);
 
-  if (loading) return <div className="stats-panel"><div className="stats-panel__loading">Loading…</div></div>;
+  if (loading) return <div className="stats-panel"><div className="stats-panel__loading">{t("stats.loading")}</div></div>;
   if (err) return <div className="stats-panel"><div className="stats-panel__error">{err}</div></div>;
-  if (!c) return <div className="stats-panel"><div className="stats-panel__empty">No data</div></div>;
+  if (!c) return <div className="stats-panel"><div className="stats-panel__empty">{t("stats.noData")}</div></div>;
   if ("empty" in c) return (
     <div className="stats-panel">
-      <button className="stats-back" onClick={onBack}>← Back</button>
+      <button className="stats-back" onClick={onBack}>← {t("stats.back")}</button>
       <div className="stats-panel__empty" style={{ marginTop: 24, textAlign: "center" }}>
-        <h2 style={{ color: "var(--text-secondary)" }}>对局 #{c.match.matchId}</h2>
+        <h2 style={{ color: "var(--text-secondary)" }}>{t("stats.matchNumber", { id: c.match.matchId })}</h2>
         <p style={{ color: "var(--text-tertiary)", marginTop: 8 }}>
-          {c.status === "in_progress" ? "本场对局尚未结束, 暂无玩家数据。" :
-           c.status === "abandoned" ? "本场对局因游戏异常退出而中断, 数据未记录。" :
-           "暂无玩家数据。"}
+          {c.status === "in_progress" ? t("stats.inProgressNoPlayers") :
+           c.status === "abandoned" ? t("stats.abandonedNoPlayers") :
+           t("stats.noPlayers")}
         </p>
       </div>
     </div>
@@ -121,14 +123,14 @@ export default function StatsMatchDetail({ csgo, matchId, onBack }: Props) {
       <div className="stats-team-block__head">{label} <span>{score}</span></div>
       <div style={{ border: "1px solid var(--line)", borderRadius: 11, overflow: "hidden" }}>
         <div style={{ display: "grid", gridTemplateColumns: "minmax(100px, 1.5fr) repeat(7, 1fr)", alignItems: "center", borderBottom: "1px solid var(--line)", cursor: "default", background: "rgba(0,0,0,0.02)" }}>
-          <div style={{ fontWeight: 600, fontSize: 10, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: ".05em", padding: "6px 10px" }}>玩家</div>
+          <div style={{ fontWeight: 600, fontSize: 10, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: ".05em", padding: "6px 10px" }}>{t("stats.player")}</div>
           <div style={{ textAlign: "center", fontWeight: 600, fontSize: 10, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: ".05em", padding: "6px 4px" }}>K-D</div>
           <div style={{ textAlign: "center", fontWeight: 600, fontSize: 10, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: ".05em", padding: "6px 4px" }}>ADR</div>
           <div style={{ textAlign: "center", fontWeight: 600, fontSize: 10, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: ".05em", padding: "6px 4px" }}>KAST</div>
-          <div style={{ textAlign: "center", fontWeight: 600, fontSize: 10, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: ".05em", padding: "6px 4px" }}>补枪</div>
-          <div style={{ textAlign: "center", fontWeight: 600, fontSize: 10, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: ".05em", padding: "6px 4px" }}>多杀</div>
-          <div style={{ textAlign: "center", fontWeight: 600, fontSize: 10, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: ".05em", padding: "6px 4px" }}>残局</div>
-          <div style={{ textAlign: "center", fontWeight: 600, fontSize: 10, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: ".05em", padding: "6px 6px" }}>Rating</div>
+          <div style={{ textAlign: "center", fontWeight: 600, fontSize: 10, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: ".05em", padding: "6px 4px" }}>{t("stats.tradeKills")}</div>
+          <div style={{ textAlign: "center", fontWeight: 600, fontSize: 10, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: ".05em", padding: "6px 4px" }}>{t("stats.multikills")}</div>
+          <div style={{ textAlign: "center", fontWeight: 600, fontSize: 10, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: ".05em", padding: "6px 4px" }}>{t("stats.clutches")}</div>
+          <div style={{ textAlign: "center", fontWeight: 600, fontSize: 10, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: ".05em", padding: "6px 6px" }}>{t("stats.rating")}</div>
         </div>
         {players.map(({ mp, r, adr, kast }) => {
           const iss = mp.steamId === s.steamId;
@@ -154,23 +156,23 @@ export default function StatsMatchDetail({ csgo, matchId, onBack }: Props) {
 
   return (
     <div className="stats-panel">
-      <button className="stats-back" onClick={onBack}>← Back</button>
+      <button className="stats-back" onClick={onBack}>← {t("stats.back")}</button>
 
       <div className="stats-hero" style={{ background: won ? "linear-gradient(125deg, #102a25, #175b4c 58%, #20a27e)" : "linear-gradient(125deg, #2b1820, #6e2938 58%, #b7495e)" }}>
         <div>
-          <span className="stats-hero__eyebrow">MATCH #{match.matchId} · {fmtT(match.startedAt)}</span>
+          <span className="stats-hero__eyebrow">{t("stats.matchNumber", { id: match.matchId })} · {fmtT(match.startedAt)}</span>
           <h1>{cs2ssMapLabel(match.map)}</h1>
-          <p style={{ color: "rgba(255,255,255,.68)", fontSize: 13 }}>{match.roundsPlayed} 回合 · {Math.round(match.durationSeconds / 60)} 分钟</p>
+          <p style={{ color: "rgba(255,255,255,.68)", fontSize: 13 }}>{t("stats.roundsShort", { count: match.roundsPlayed })} · {t("stats.minutesShort", { count: Math.round(match.durationSeconds / 60) })}</p>
         </div>
         <div className="stats-hero__rating">
-          <small>{won ? "VICTORY" : "DEFEAT"}</small>
+          <small>{won ? t("stats.won") : t("stats.lost")}</small>
           <strong style={{ color: won ? "#20b486" : "#e05d75" }}>{pw}:{ow}</strong>
         </div>
       </div>
 
       <div className="stats-snapshot">
         <div className="stats-snapshot__lead">
-          <span>你的贡献</span>
+          <span>{t("stats.yourContribution")}</span>
           <strong style={{ color: "#fff" }}>{myR.toFixed(2)}</strong>
           <small>Rating 2.0</small>
         </div>
@@ -178,8 +180,8 @@ export default function StatsMatchDetail({ csgo, matchId, onBack }: Props) {
           ["K/D/A", `${s.totalKills}/${s.totalDeaths}/${s.totalAssists}`],
           ["ADR", cs2ssCalcAdr(s.totalDamage, match.roundsPlayed).toFixed(1)],
           ["KAST", `${cs2ssCalcKast(s.kastRounds, match.roundsPlayed).toFixed(1)}%`],
-          ["补枪", String(s.tradeKills)],
-          ["残局", `${s.clutchesWon}/${s.clutchAttempts}`],
+          [t("stats.tradeKills"), String(s.tradeKills)],
+          [t("stats.clutches"), `${s.clutchesWon}/${s.clutchAttempts}`],
         ].map(([l, v]: string[]) => (
           <div key={l}><span>{l}</span><b>{v}</b></div>
         ))}
@@ -187,29 +189,29 @@ export default function StatsMatchDetail({ csgo, matchId, onBack }: Props) {
 
       <div>
         <div className="stats-panel-block__title" style={{ marginBottom: 12 }}>
-          <div><span>计分板</span><h2>玩家表现</h2></div>
-          <p>点击可切换伤害曲线</p>
+          <div><span>{t("stats.scoreboard")}</span><h2>{t("stats.playerPerformance")}</h2></div>
+          <p>{t("stats.toggleDamage")}</p>
         </div>
-        {renderTeam("我方", myRows, pw)}
-        {renderTeam("敌方", en, ow)}
+        {renderTeam(t("stats.ourTeam"), myRows, pw)}
+        {renderTeam(t("stats.enemyTeam"), en, ow)}
       </div>
 
       <div className="stats-charts">
         <div className="stats-panel-block">
-          <div className="stats-panel-block__title"><div><span>高光时刻</span><h2>本场高光</h2></div></div>
+          <div className="stats-panel-block__title"><div><span>{t("stats.highlights")}</span><h2>{t("stats.matchHighlights")}</h2></div></div>
           <div className="stats-highlights">
             {hl.length > 0 ? hl.map((p, i) => (
               <div className="stats-highlight" key={`${p.roundPlayerId}-${i}`}>
                 <span className="stats-highlight__r">R{p.roundNumber + 1}</span>
                 <div><span className="stats-highlight__name">{p.name}</span> <span className="stats-highlight__team">{p.team}</span></div>
-                <div className="stats-badges">{badges(p).map(b => <span key={b.l} className={`stats-badge ${b.t}`}>{b.l}</span>)}</div>
+                <div className="stats-badges">{badges(p, t).map(b => <span key={b.l} className={`stats-badge ${b.t}`}>{b.l}</span>)}</div>
               </div>
-            )) : <p style={{ color: "var(--text-secondary)", textAlign: "center" }}>无高光事件</p>}
+            )) : <p style={{ color: "var(--text-secondary)", textAlign: "center" }}>{t("stats.noHighlights")}</p>}
           </div>
         </div>
 
         <div className="stats-panel-block">
-          <div className="stats-panel-block__title"><div><span>伤害流动</span><h2>逐回合伤害</h2></div></div>
+          <div className="stats-panel-block__title"><div><span>{t("stats.damageFlow")}</span><h2>{t("stats.roundDamage")}</h2></div></div>
           <ResponsiveContainer width="100%" height={240}>
             <LineChart data={dmgData}>
               <CartesianGrid strokeDasharray="3 3" />
@@ -224,15 +226,15 @@ export default function StatsMatchDetail({ csgo, matchId, onBack }: Props) {
       </div>
 
       <div className="stats-panel-block">
-        <div className="stats-panel-block__title"><div><span>回合日志</span><h2>回合时间线</h2></div></div>
+        <div className="stats-panel-block__title"><div><span>{t("stats.roundLog")}</span><h2>{t("stats.roundTimeline")}</h2></div></div>
         <div className="stats-round-grid">
           {tl.map(({ r, pr, w, ps, os }) => (
             <div key={r.roundId} className={`stats-round-card ${w ? "w" : "l"}`}>
               <div className="stats-round-card__top"><b>R{r.roundNumber + 1}</b><span>{ps}:{os}</span></div>
-              <div className="stats-round-card__result">{w ? "WON" : "LOST"} <span className={pr?.team === "CT" ? "ct" : "t"} style={{ float: "right" }}>{pr?.team}</span></div>
+              <div className="stats-round-card__result">{w ? t("stats.won") : t("stats.lost")} <span className={pr?.team === "CT" ? "ct" : "t"} style={{ float: "right" }}>{pr?.team}</span></div>
               <p>{cs2ssRoundEndReasonLabel(r.endReason)}</p>
-              <div className="stats-round-card__stats"><span>{pr?.kills ?? 0}K</span><span>{pr?.damage ?? 0} DMG</span><span>{pr?.survived ? "SURVIVED" : `${pr?.deaths ?? 0}D`}</span></div>
-              {pr && badges(pr).length > 0 && <div className="stats-badges">{badges(pr).map(b => <span key={b.l} className={`stats-badge ${b.t}`}>{b.l}</span>)}</div>}
+              <div className="stats-round-card__stats"><span>{pr?.kills ?? 0}K</span><span>{pr?.damage ?? 0} DMG</span><span>{pr?.survived ? t("stats.survived") : `${pr?.deaths ?? 0}D`}</span></div>
+              {pr && badges(pr, t).length > 0 && <div className="stats-badges">{badges(pr, t).map(b => <span key={b.l} className={`stats-badge ${b.t}`}>{b.l}</span>)}</div>}
             </div>
           ))}
         </div>
