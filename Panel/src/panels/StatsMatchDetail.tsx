@@ -72,13 +72,9 @@ export default function StatsMatchDetail({ csgo, matchId, onBack }: Props) {
 
     const hl = rps.filter(p => badges(p, t).length > 0).sort((a, b) => a.roundNumber - b.roundNumber);
 
-    let rp = 0, ro = 0;
     const tl = rs.map(r => {
       const pr = rps.find(rp => rp.roundNumber === r.roundNumber && rp.steamId === s.steamId);
-      const w = pr?.team === r.winnerTeam;
-      if (hf) { rp = myTeam === "CT" ? r.teamAScore : r.teamBScore; ro = myTeam === "CT" ? r.teamBScore : r.teamAScore; }
-      else { if (w) rp++; else ro++; }
-      return { r, pr, w, ps: rp, os: ro };
+      return { r, pr };
     });
 
     return { match, s, pw, ow, rows, hl, tl, myTeam };
@@ -104,7 +100,6 @@ export default function StatsMatchDetail({ csgo, matchId, onBack }: Props) {
   const { match, s, pw, ow, rows, hl, tl } = c;
   if (match.modeFamily === "deathmatch") return <StatsDMDetail data={data!} steamId={s.steamId} onBack={onBack} />;
 
-  const won = pw > ow;
   const myRows = rows.filter(r => r.side === "mine");
   const en = rows.filter(r => r.side === "enemy");
   const sArr = [...sel].slice(0, 8);
@@ -158,15 +153,15 @@ export default function StatsMatchDetail({ csgo, matchId, onBack }: Props) {
     <div className="stats-panel">
       <button className="stats-back" onClick={onBack}>← {t("stats.back")}</button>
 
-      <div className="stats-hero" style={{ background: won ? "linear-gradient(125deg, #102a25, #175b4c 58%, #20a27e)" : "linear-gradient(125deg, #2b1820, #6e2938 58%, #b7495e)" }}>
+      <div className="stats-hero">
         <div>
           <span className="stats-hero__eyebrow">{t("stats.matchNumber", { id: match.matchId })} · {fmtT(match.startedAt)}</span>
           <h1>{cs2ssMapLabel(match.map)}</h1>
           <p style={{ color: "rgba(255,255,255,.68)", fontSize: 13 }}>{t("stats.roundsShort", { count: match.roundsPlayed })} · {t("stats.minutesShort", { count: Math.round(match.durationSeconds / 60) })}</p>
         </div>
         <div className="stats-hero__rating">
-          <small>{won ? t("stats.won") : t("stats.lost")}</small>
-          <strong style={{ color: won ? "#20b486" : "#e05d75" }}>{pw}:{ow}</strong>
+          <small>{t("match.finished")}</small>
+          <strong style={{ color: "#fff" }}>{match.teamAScore}:{match.teamBScore}</strong>
         </div>
       </div>
 
@@ -228,10 +223,10 @@ export default function StatsMatchDetail({ csgo, matchId, onBack }: Props) {
       <div className="stats-panel-block">
         <div className="stats-panel-block__title"><div><span>{t("stats.roundLog")}</span><h2>{t("stats.roundTimeline")}</h2></div></div>
         <div className="stats-round-grid">
-          {tl.map(({ r, pr, w, ps, os }) => (
-            <div key={r.roundId} className={`stats-round-card ${w ? "w" : "l"}`}>
-              <div className="stats-round-card__top"><b>R{r.roundNumber + 1}</b><span>{ps}:{os}</span></div>
-              <div className="stats-round-card__result">{w ? t("stats.won") : t("stats.lost")} <span className={pr?.team === "CT" ? "ct" : "t"} style={{ float: "right" }}>{pr?.team}</span></div>
+          {tl.map(({ r, pr }) => (
+            <div key={r.roundId} className="stats-round-card">
+              <div className="stats-round-card__top"><b>R{r.roundNumber + 1}</b><span>{r.teamAScore}:{r.teamBScore}</span></div>
+              <div className="stats-round-card__result"><span className={r.winnerTeam === "CT" ? "ct" : "t"}>{r.winnerTeam}</span></div>
               <p>{cs2ssRoundEndReasonLabel(r.endReason)}</p>
               <div className="stats-round-card__stats"><span>{pr?.kills ?? 0}K</span><span>{pr?.damage ?? 0} DMG</span><span>{pr?.survived ? t("stats.survived") : `${pr?.deaths ?? 0}D`}</span></div>
               {pr && badges(pr, t).length > 0 && <div className="stats-badges">{badges(pr, t).map(b => <span key={b.l} className={`stats-badge ${b.t}`}>{b.l}</span>)}</div>}

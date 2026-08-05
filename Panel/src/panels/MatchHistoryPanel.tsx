@@ -9,14 +9,17 @@ import { MAP_IMAGES, MAP_LABELS } from "../data/maps";
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis, Bar, BarChart, Cell } from "recharts";
 import "./MatchPanel.css";
 
-type Outcome = "won" | "lost" | "draw" | "interrupted" | "active";
-const OUTCOME_KEYS: Record<Outcome, I18nKey | null> = { won: "match.won", lost: "match.lost", draw: "match.draw", interrupted: "match.interrupted", active: null };
+type SessionStatus = "finished" | "interrupted" | "active";
+const SESSION_STATUS_KEYS: Record<SessionStatus, I18nKey> = {
+  finished: "match.finished",
+  interrupted: "match.interrupted",
+  active: "match.active",
+};
 const MC = ["#5d9cec","#e74c3c","#2ecc71","#f39c12","#9b59b6","#1abc9c","#3498db","#e67e22","#95a5a6","#34495e"];
 
-function outcomeOf(s: MatchSession): Outcome {
+function statusOf(s: MatchSession): SessionStatus {
   if (s.state === "interrupted") return "interrupted";
-  if (s.state !== "finished") return "active";
-  return s.player_score > s.opponent_score ? "won" : s.player_score < s.opponent_score ? "lost" : "draw";
+  return s.state === "finished" ? "finished" : "active";
 }
 
 export default function MatchHistoryPanel() {
@@ -43,16 +46,14 @@ export default function MatchHistoryPanel() {
   const stats = useMemo(() => {
     const f = history.filter(s => s.state === "finished");
     if (!f.length) return null;
-    const wins = f.filter(s => s.player_score > s.opponent_score).length;
-    const avg = f.reduce((a, s) => a + s.player_score, 0) / f.length;
+    const avgPlayerScore = f.reduce((a, s) => a + s.player_score, 0) / f.length;
+    const avgOpponentScore = f.reduce((a, s) => a + s.opponent_score, 0) / f.length;
     const mc = new Map<string, number>(); f.forEach(s => mc.set(s.map_id, (mc.get(s.map_id) ?? 0) + 1));
     const fav = [...mc.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
-    return { total: history.length, wr: wins / f.length, avg, fav, form: f.slice(0, 5).map(outcomeOf) };
+    return { total: history.length, completed: f.length, avgPlayerScore, avgOpponentScore, fav };
   }, [history]);
 
   const barData = useMemo(() => mhs?.perMap?.map(m => ({ map: MAP_LABELS[m.map] ?? m.map, r: +m.avgRating.toFixed(2), n: m.matches })) ?? [], [mhs]);
-  const barCols = useMemo(() => mhs?.perMap?.map(m => m.avgRating >= 1.1 ? "#20b486" : m.avgRating >= 0.9 ? "#e67e22" : "#e05d75") ?? [], [mhs]);
-
   const trendData = useMemo(() => {
     if (!mhs?.ratingTrend) return [];
     const maxN = Math.max(...mhs.perMap.map(m => m.matches));
@@ -87,14 +88,13 @@ export default function MatchHistoryPanel() {
     </header>
 
     {stats && (
-      <section className="mh-stats glass" style={{ gridTemplateColumns: "repeat(7, minmax(0,1fr))" }}>
+      <section className="mh-stats glass">
         <div className="mh-stat"><small>{t("mh.totalMatches")}</small><strong>{stats.total}</strong></div>
-        <div className="mh-stat"><small>{t("mh.winRate")}</small><strong className={stats.wr >= 0.5 ? "is-good" : "is-bad"}>{Math.round(stats.wr * 100)}%</strong></div>
-        <div className="mh-stat"><small>{t("mh.avgScore")}</small><strong>{stats.avg.toFixed(1)}</strong></div>
-        <div className="mh-stat"><small>Rating</small><strong style={{ color: (mhs?.avgRating ?? 0) >= 1.1 ? "var(--st-green)" : (mhs?.avgRating ?? 0) >= 0.9 ? "#e67e22" : "var(--c-red)" }}>{mhs?.avgRating.toFixed(2) ?? "--"}</strong></div>
+        <div className="mh-stat"><small>{t("mh.completedMatches")}</small><strong>{stats.completed}</strong></div>
+        <div className="mh-stat"><small>{t("mh.avgScore")}</small><strong>{stats.avgPlayerScore.toFixed(1)} : {stats.avgOpponentScore.toFixed(1)}</strong></div>
+        <div className="mh-stat"><small>Rating</small><strong>{mhs?.avgRating.toFixed(2) ?? "--"}</strong></div>
         <div className="mh-stat"><small>ADR</small><strong>{mhs?.avgAdr.toFixed(1) ?? "--"}</strong></div>
         <div className="mh-stat"><small>{t("mh.favMap")}</small><strong>{stats.fav ? MAP_LABELS[stats.fav] ?? stats.fav : "--"}</strong></div>
-        <div className="mh-stat"><small>{t("mh.form")}</small><span className="mh-form">{stats.form.map((o, i) => <i key={i} className={`is-${o}`}>{o === "won" ? "W" : o === "lost" ? "L" : "D"}</i>)}</span></div>
       </section>
     )}
 
@@ -108,7 +108,7 @@ export default function MatchHistoryPanel() {
             <YAxis type="category" dataKey="map" tick={{ fontSize: 11, fill: "var(--text-secondary)", fontWeight: 600 }} width={72} />
             <Tooltip contentStyle={{ background: "var(--card)", border: "1px solid var(--line-strong)", borderRadius: 8, fontSize: 12 }} formatter={((_v: number, _n: string, props: any) => [`${(props.payload?.r ?? 0).toFixed(2)}`, `${props.payload?.n ?? 0} matches`]) as any} labelFormatter={((l: any) => `${l}`) as any} />
             <Bar dataKey="r" radius={[0, 4, 4, 0]} maxBarSize={26} isAnimationActive={false} label={{ position: "right", fontSize: 11, fill: "var(--text-secondary)", fontWeight: 600, formatter: ((v: any) => (typeof v === "number" ? v.toFixed(2) : "")) as any }}>
-              {barData.map((_, i) => <Cell key={i} fill={barCols[i] ?? "#888"} />)}
+              {barData.map((_, i) => <Cell key={i} fill="var(--c-accent)" />)}
             </Bar>
           </BarChart>
         </ResponsiveContainer>
@@ -155,12 +155,12 @@ export default function MatchHistoryPanel() {
     ) : (
       <div className="mh-cards">
         {history.map((session, index) => {
-          const o = outcomeOf(session);
+          const status = statusOf(session);
           return (
-            <article className={`mh-card is-${o}`} key={session.session_id} style={{ animationDelay: `${Math.min(index, 10) * 45}ms` }} onClick={() => void openResult(session)}>
+            <article className={`mh-card is-${status}`} key={session.session_id} style={{ animationDelay: `${Math.min(index, 10) * 45}ms` }} onClick={() => void openResult(session)}>
               <span className="mh-card__map" aria-hidden="true">{MAP_IMAGES[session.map_id] && <img src={MAP_IMAGES[session.map_id]} alt="" />}<i>{MAP_LABELS[session.map_id] ?? session.map_id}</i></span>
               <span className="mh-card__main">
-                <span className="mh-card__scoreline">{OUTCOME_KEYS[o] && <em className={`mh-badge is-${o}`}>{t(OUTCOME_KEYS[o]!)}</em>}<strong>{session.player_score} : {session.opponent_score}</strong></span>
+                <span className="mh-card__scoreline"><em className={`mh-badge is-${status}`}>{t(SESSION_STATUS_KEYS[status])}</em><strong>{session.player_score} : {session.opponent_score}</strong></span>
                 <span className="mh-card__meta"><b>{session.opponent_name}</b><span>{new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(session.created_at_unix * 1000))}</span><span className={`mh-card__demo is-${session.demo.state}`}><Film size={12} />{t(`match.demoState.${session.demo.state}`)}</span></span>
               </span>
               <span className="mh-card__actions"><button className="match-history-delete" onClick={e => { e.stopPropagation(); setDel(session); }} aria-label={t("match.delete")} title={t("match.delete")}><Trash2 size={15} /></button></span>

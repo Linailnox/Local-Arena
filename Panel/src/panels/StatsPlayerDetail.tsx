@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer, BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
 import { api } from "../lib/api";
-import { cs2ssCalcRating, cs2ssCalcAdr, cs2ssCalcKd, cs2ssCalcHsPct, cs2ssCalcWinRate } from "../data/cs2ssRating";
+import { cs2ssCalcRating, cs2ssCalcAdr, cs2ssCalcKd, cs2ssCalcHsPct, cs2ssCalcKast } from "../data/cs2ssRating";
 import { cs2ssMapLabel } from "../data/cs2ssMaps";
 import type { Cs2ssPlayerDetailResponse } from "../data/cs2ssTypes";
 import { useT } from "../i18n";
@@ -23,10 +23,7 @@ export default function StatsPlayerDetail({ csgo, steamId, selfSteamId, onBack }
   if (err || !d) return <div className="stats-panel"><div className="stats-panel__error">{err || t("stats.noData")}</div></div>;
 
   const { total, matches: pms, mapStats, name } = d;
-  let wins = 0;
-  for (const m of pms) if ((m.team === "CT" && m.ctScore > m.tScore) || (m.team === "T" && m.tScore > m.ctScore)) wins++;
   const avgR = pms.reduce((s, m) => s + cs2ssCalcRating(m.totalKills, m.totalDeaths, m.totalAssists, m.totalDamage, m.totalHeadshotKills, m.roundsPlayed, { kastRounds: m.kastRounds, tradeKills: m.tradeKills, multikill2: m.multikill2, multikill3: m.multikill3, multikill4: m.multikill4, multikill5: m.multikill5, clutchAttempts: m.clutchAttempts, clutchesWon: m.clutchesWon }), 0) / Math.max(1, pms.length);
-  const wr = cs2ssCalcWinRate(wins, pms.length);
   const kd = cs2ssCalcKd(total.kills, total.deaths);
   const rcol = (r: number) => r >= 1.1 ? "#20b486" : r >= 0.9 ? "#e67e22" : "#e05d75";
   const fmtD = (iso: string) => { try { const dt = new Date(iso); return `${dt.getMonth() + 1}/${dt.getDate()}`; } catch { return iso; } };
@@ -35,7 +32,7 @@ export default function StatsPlayerDetail({ csgo, steamId, selfSteamId, onBack }
     { s: t("stats.rating"), v: Math.max(0, avgR) / 2 }, { s: "K/D", v: Math.min(kd / 3, 1) },
     { s: "ADR", v: Math.min(cs2ssCalcAdr(total.damage, total.rounds) / 150, 1) },
     { s: "KPR", v: Math.min(total.kills / Math.max(1, total.rounds), 1) },
-    { s: "HS%", v: cs2ssCalcHsPct(total.headshots, total.kills) / 100 }, { s: t("stats.winPercent"), v: wr / 100 },
+    { s: "HS%", v: cs2ssCalcHsPct(total.headshots, total.kills) / 100 }, { s: "KAST", v: cs2ssCalcKast(total.kastRounds, total.rounds) / 100 },
   ];
 
   const bar = [...pms].reverse().slice(-20).map((m, i) => ({ i: i + 1, r: cs2ssCalcRating(m.totalKills, m.totalDeaths, m.totalAssists, m.totalDamage, m.totalHeadshotKills, m.roundsPlayed, { kastRounds: m.kastRounds, tradeKills: m.tradeKills, multikill2: m.multikill2, multikill3: m.multikill3, multikill4: m.multikill4, multikill5: m.multikill5, clutchAttempts: m.clutchAttempts, clutchesWon: m.clutchesWon }) }));
@@ -56,7 +53,7 @@ export default function StatsPlayerDetail({ csgo, steamId, selfSteamId, onBack }
         </div>
       </div>
 
-      <p style={{ textAlign: "center", color: "var(--text-secondary)", fontSize: 13, fontWeight: 600, margin: "-12px 0 0" }}>{pms.length} matches · {wins}W {pms.length - wins}L · {wr}%</p>
+      <p style={{ textAlign: "center", color: "var(--text-secondary)", fontSize: 13, fontWeight: 600, margin: "-12px 0 0" }}>{t("stats.records", { count: pms.length })} · {t("stats.roundsShort", { count: total.rounds })}</p>
 
       <div className="stats-charts">
         <div className="stats-panel-block">
@@ -78,7 +75,7 @@ export default function StatsPlayerDetail({ csgo, steamId, selfSteamId, onBack }
       <div className="stats-panel-block" style={{ padding: 0 }}>
         <div style={{ padding: "20px 24px 0" }}><span style={{ fontSize: 10, fontWeight: 900, letterSpacing: ".18em", color: "var(--c-accent)" }}>{t("stats.recent")}</span><h2 style={{ margin: "4px 0 16px", fontSize: 18, fontWeight: 700 }}>{t("stats.recentMatches")}</h2></div>
         <table className="stats-table"><thead><tr><th>{t("stats.map")}</th><th>{t("stats.date")}</th><th>{t("stats.score")}</th><th style={{ textAlign: "right" }}>K/D/A</th><th style={{ textAlign: "right" }}>ADR</th><th style={{ textAlign: "right" }}>HS%</th><th style={{ textAlign: "right" }}>{t("stats.rating")}</th></tr></thead>
-          <tbody>{[...pms].reverse().map(m => { const r = cs2ssCalcRating(m.totalKills, m.totalDeaths, m.totalAssists, m.totalDamage, m.totalHeadshotKills, m.roundsPlayed, { kastRounds: m.kastRounds, tradeKills: m.tradeKills, multikill2: m.multikill2, multikill3: m.multikill3, multikill4: m.multikill4, multikill5: m.multikill5, clutchAttempts: m.clutchAttempts, clutchesWon: m.clutchesWon }); const pw = m.team === "CT" ? m.ctScore : m.tScore; const ow = m.team === "CT" ? m.tScore : m.ctScore; const won = pw > ow; return (<tr key={m.matchId}><td style={{ fontWeight: 600 }}>{cs2ssMapLabel(m.map)}</td><td style={{ color: "var(--text-secondary)", fontSize: 12 }}>{fmtD(m.startedAt)}</td><td><span style={{ color: "var(--st-green)", fontWeight: 600 }}>{pw}</span><span style={{ color: "var(--text-secondary)" }}> : </span><span style={{ color: "var(--st-red)", fontWeight: 600 }}>{ow}</span><span style={{ marginLeft: 8, fontWeight: 700, fontSize: 11, color: won ? "var(--st-green)" : "var(--st-red)" }}>{won ? "W" : "L"}</span></td><td style={{ textAlign: "right" }}>{m.totalKills}/{m.totalDeaths}/{m.totalAssists}</td><td style={{ textAlign: "right" }}>{cs2ssCalcAdr(m.totalDamage, m.roundsPlayed).toFixed(1)}</td><td style={{ textAlign: "right" }}>{cs2ssCalcHsPct(m.totalHeadshotKills, m.totalKills)}%</td><td style={{ textAlign: "right", fontWeight: 700, color: rcol(r) }}>{r.toFixed(2)}</td></tr>); })}</tbody></table>
+          <tbody>{[...pms].reverse().map(m => { const r = cs2ssCalcRating(m.totalKills, m.totalDeaths, m.totalAssists, m.totalDamage, m.totalHeadshotKills, m.roundsPlayed, { kastRounds: m.kastRounds, tradeKills: m.tradeKills, multikill2: m.multikill2, multikill3: m.multikill3, multikill4: m.multikill4, multikill5: m.multikill5, clutchAttempts: m.clutchAttempts, clutchesWon: m.clutchesWon }); return (<tr key={m.matchId}><td style={{ fontWeight: 600 }}>{cs2ssMapLabel(m.map)}</td><td style={{ color: "var(--text-secondary)", fontSize: 12 }}>{fmtD(m.startedAt)}</td><td className="stats-table__score">{m.teamAScore} : {m.teamBScore}</td><td style={{ textAlign: "right" }}>{m.totalKills}/{m.totalDeaths}/{m.totalAssists}</td><td style={{ textAlign: "right" }}>{cs2ssCalcAdr(m.totalDamage, m.roundsPlayed).toFixed(1)}</td><td style={{ textAlign: "right" }}>{cs2ssCalcHsPct(m.totalHeadshotKills, m.totalKills)}%</td><td style={{ textAlign: "right", fontWeight: 700, color: rcol(r) }}>{r.toFixed(2)}</td></tr>); })}</tbody></table>
       </div>
     </div>
   );

@@ -20,7 +20,7 @@ fn open_db(csgo: &str) -> Result<rusqlite::Connection> {
     let path = cs2ss_db_path(csgo);
     if !path.exists() {
         return Err(AppError::invalid(format!(
-            "暂无对局数据 ({}). 安装 CS2SS 插件并完成比赛后即可查看。",
+            "暂无本地统计数据 ({}). 请检查 Local Arena 安装状态，并在完成一场比赛后重试。",
             path.display()
         )));
     }

@@ -12,6 +12,38 @@
   margin-right: auto;
 }
 
+.stats-board-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.stats-board-header h1 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.stats-empty-board {
+  display: flex;
+  min-height: 220px;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px solid var(--border-color, #e2e4e9);
+  border-bottom: 1px solid var(--border-color, #e2e4e9);
+  color: var(--text-secondary, #7b8190);
+  text-align: center;
+}
+
+.stats-empty-board svg { color: var(--c-accent); }
+.stats-empty-board strong { color: var(--text-primary); font-size: 15px; }
+.stats-empty-board span { max-width: 520px; font-size: 13px; line-height: 1.6; }
+
 .stats-panel__loading,
 .stats-panel__empty,
 .stats-panel__error {
@@ -285,17 +317,11 @@
   margin-bottom: 4px;
 }
 
-.stats-match-row__badge.w { background: #dff7ef; color: #08785b; }
-.stats-match-row__badge.l { background: #fce8ec; color: #a63248; }
-
 .stats-match-row__score {
   font-size: 15px;
   font-weight: 700;
   text-align: right;
 }
-
-.stats-match-row__score .w { color: var(--st-green, #159b75); }
-.stats-match-row__score .l { color: var(--st-red, #d84f68); }
 
 .stats-match-row__stat {
   font-variant-numeric: tabular-nums;
@@ -519,13 +545,10 @@
   min-height: 145px;
   padding: 14px;
   border: 1px solid var(--border-color, var(--line));
-  border-top: 3px solid;
+  border-top: 3px solid var(--c-accent, #7557ed);
   border-radius: 11px;
   background: var(--bg, #fbfbfc);
 }
-
-.stats-round-card.w { border-top-color: var(--st-green, #159b75); }
-.stats-round-card.l { border-top-color: var(--st-red, #d84f68); }
 
 .stats-round-card__top {
   display: flex;
@@ -697,6 +720,13 @@
 .stats-table tr:last-child td { border-bottom: 0; }
 .stats-table tr:hover td { background: var(--hover, #f6f6f9); }
 
+.stats-table__score {
+  color: var(--text-primary);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 /* Recharts overrides */
 .stats-panel .recharts-cartesian-grid-horizontal line,
 .stats-panel .recharts-cartesian-grid-vertical line {
@@ -739,6 +769,7 @@
 
 @media (max-width: 600px) {
   .stats-panel { padding: 16px; }
+  .stats-board-header { align-items: stretch; flex-direction: column; }
   .stats-hero { min-height: 200px; padding: 24px; flex-direction: column; align-items: flex-start; }
   .stats-hero__rating { text-align: left; }
   .stats-cards { grid-template-columns: repeat(2, 1fr); gap: 9px; }
