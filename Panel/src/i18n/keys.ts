@@ -29,6 +29,7 @@ export const EN = {
   "stats.matches": "Matches",
   "stats.clutches": "Clutches",
   "stats.tradeKills": "Trade kills",
+  "stats.hsPct": "HS%",
   "stats.twoKillRounds": "2K rounds",
   "stats.threeKillRounds": "3K rounds",
   "stats.fourKillRounds": "4K rounds",

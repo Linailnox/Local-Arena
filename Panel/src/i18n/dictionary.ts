@@ -35,7 +35,7 @@ export const DICTS: Record<string, Partial18n> = {
     "stats.save": "保存", "stats.saving": "保存中...", "stats.cancel": "取消", "stats.connectionError": "本地统计数据暂时不可用，请检查 Local Arena 安装状态后重试",
     "stats.emptyAll": "暂无本地统计数据。完成 Local Arena 安装并结束一场比赛后即可查看", "stats.emptyCompetitive": "暂无已完成的竞技比赛", "stats.emptyDeathmatch": "暂无已完成的死亡竞赛",
     "stats.loading": "加载中...", "stats.playerDossier": "玩家档案", "stats.offlineRating": "离线 RATING 2.0", "stats.matches": "场次", "stats.clutches": "残局",
-    "stats.tradeKills": "补枪", "stats.twoKillRounds": "2K 回合", "stats.threeKillRounds": "3K 回合", "stats.fourKillRounds": "4K 回合", "stats.ace": "五杀",
+    "stats.hsPct": "爆头率", "stats.tradeKills": "补枪", "stats.twoKillRounds": "2K 回合", "stats.threeKillRounds": "3K 回合", "stats.fourKillRounds": "4K 回合", "stats.ace": "五杀",
     "stats.trend": "趋势", "stats.ratingTrend": "Rating 趋势", "stats.maps": "地图", "stats.mapPerformance": "地图表现", "stats.insufficientData": "数据不足", "stats.noMapData": "暂无地图数据",
     "stats.recent": "最近", "stats.recentMatches": "近期数据", "stats.noMatches": "暂无数据", "stats.map": "地图", "stats.date": "日期", "stats.score": "得分", "stats.rating": "Rating",
     "stats.dmTrainingLog": "死亡竞赛训练记录", "stats.sessions": "场", "stats.totalMinutes": "总计 {minutes} 分钟", "stats.highScore": "最高分",
