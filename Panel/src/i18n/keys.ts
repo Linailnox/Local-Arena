@@ -76,6 +76,9 @@ export const EN = {
   "stats.deleteMatches": "Delete matches",
   "stats.confirmDelete": "Confirm delete",
   "stats.selected": "{n} selected",
+  "stats.mapWinRate": "Map win rate",
+  "stats.switchToWinRate": "Win rate",
+  "stats.switchToRating": "Rating",
   "stats.roundsShort": "{count} rds",
   "stats.rounds": "Rounds",
   "stats.minutesShort": "{count} min",
@@ -396,7 +399,7 @@ export const EN = {
   "pre.excludePlayer": "Exclude a player",
   "pre.excludePlayerDesc": "The selected player slot is reserved for you. Only the remaining four bots will be added.",
   "pre.timescaleToggle": "Gold Time",
-  "pre.timescaleToggleDesc": "Time slows while aim speed remains unchanged",
+  "pre.timescaleToggleDesc": "CAPSLK: time slows while aim speed remains unchanged",
   "pre.timescaleToggleHint": "Enjoy your gold time!",
 
   "live.wear": "Wear",
