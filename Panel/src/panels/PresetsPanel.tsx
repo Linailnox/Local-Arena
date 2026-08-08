@@ -39,10 +39,12 @@ export default function PresetsPanel({ onBack }: { onBack?: () => void }) {
     botItems,
     csgoPath,
     teamLineup,
+    timescaleToggleEnabled,
     applyAim,
     applyNades,
     applyBotItem,
     applyTeamLineup,
+    applyTimescaleToggle,
     aimPending,
     nadesPending,
     botItemsPending,
@@ -182,6 +184,20 @@ export default function PresetsPanel({ onBack }: { onBack?: () => void }) {
               );
             })}
           </div>
+        </Section>
+
+        <Section title={t("pre.timescaleToggle")}>
+          <div className="botitem">
+            <span className="botitem__label">{t("pre.timescaleToggleDesc")}</span>
+            <Toggle
+              ariaLabel={t("pre.timescaleToggle")}
+              checked={timescaleToggleEnabled}
+              tone={!cfgPresent ? "red" : "green"}
+              disabled={!csgoPath || !cfgPresent}
+              onChange={(next) => applyTimescaleToggle(next)}
+            />
+          </div>
+          <p className="selection-detail">{t("pre.timescaleToggleHint")}</p>
         </Section>
 
         <div className="teamlineup-section">

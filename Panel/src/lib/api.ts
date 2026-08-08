@@ -715,6 +715,10 @@ export const api = {
     invoke<TeamLineupState>("set_team_lineup", { csgo, input }),
   getTeamLineup: (csgo: string) =>
     invoke<TeamLineupState>("get_team_lineup", { csgo }),
+  setTimescaleToggle: (csgo: string, enabled: boolean) =>
+    invoke<boolean>("set_timescale_toggle", { csgo, enabled }),
+  getTimescaleToggle: () =>
+    invoke<boolean>("get_timescale_toggle"),
   getDropKnives: (csgo: string) =>
     invoke<DropKnivesState>("get_drop_knives", { csgo }),
   setDropKnives: (csgo: string, bindKey: string, selected: number[]) =>

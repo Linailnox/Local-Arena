@@ -132,6 +132,8 @@ struct AppConfig {
     team_lineup_enemy: Option<String>,
     #[serde(default)]
     team_lineup_excluded: Option<String>,
+    #[serde(default)]
+    timescale_toggle_enabled: bool,
 }
 
 impl Default for AppConfig {
@@ -158,6 +160,7 @@ impl Default for AppConfig {
             team_lineup_friendly: None,
             team_lineup_enemy: None,
             team_lineup_excluded: None,
+            timescale_toggle_enabled: false,
         }
     }
 }
@@ -1957,6 +1960,26 @@ fn get_team_lineup(app: AppHandle, csgo: String) -> Result<TeamLineupState> {
         enemy_team_index: config.team_lineup_enemy.clone(),
         excluded_player: config.team_lineup_excluded.clone(),
     })
+}
+
+#[tauri::command]
+fn set_timescale_toggle(app: AppHandle, csgo: String, enabled: bool) -> Result<bool> {
+    let root = csgo_path(&csgo)?;
+    if enabled {
+        replace_managed_cfg_command(&root, "bind CAPSLOCK", "bind CAPSLOCK \"toggle host_timescale 0.4 1.0\"")?;
+    } else {
+        replace_managed_cfg_command(&root, "bind CAPSLOCK", "unbind CAPSLOCK")?;
+    }
+    let mut config = read_config(&app)?;
+    config.timescale_toggle_enabled = enabled;
+    write_config(&app, &config)?;
+    Ok(enabled)
+}
+
+#[tauri::command]
+fn get_timescale_toggle(app: AppHandle) -> Result<bool> {
+    let config = read_config(&app)?;
+    Ok(config.timescale_toggle_enabled)
 }
 
 #[tauri::command]
@@ -4101,7 +4124,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![get_config, save_config, should_present_welcome_story, detect_directories, select_directory,
             cleanup_backups, validate_files, get_difficulty, set_difficulty, get_mode, set_mode,
             reconcile_launch_options, launch_cs2, reconcile_core_json, get_bot_items, set_bot_item,
-            get_presets, set_aim, set_nades, set_team_lineup, get_team_lineup, get_drop_knives, set_drop_knives,
+            get_presets, set_aim, set_nades, set_team_lineup, get_team_lineup, set_timescale_toggle, get_timescale_toggle, get_drop_knives, set_drop_knives,
             get_knife_customizer, save_knife_customizer, export_cosmetics_preset,
             import_cosmetics_preset, get_runtime_snapshot, get_cs2_process,
             inspect_installation, get_install_plan, install_payload, repair_payload,

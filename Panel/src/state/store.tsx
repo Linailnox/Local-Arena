@@ -46,6 +46,7 @@ export type Store = {
   botItems: BotItemsState | null;
   presets: PresetsState | null;
   teamLineup: TeamLineupState | null;
+  timescaleToggleEnabled: boolean;
   /** Per-section "changed while CS2 running, pending restart" flags. Persisted,
    *  so each yellow light survives a full close/reopen of the panel. */
   aimPending: boolean;
@@ -84,6 +85,7 @@ export type Store = {
   applyAim: (value: AimValue) => Promise<PresetsState | null>;
   applyNades: (value: NadesValue) => Promise<PresetsState | null>;
   applyTeamLineup: (input: TeamLineupInput) => Promise<TeamLineupState | null>;
+  applyTimescaleToggle: (enabled: boolean) => Promise<boolean>;
   applyDropKnives: (
     bindKey: string,
     selected: number[]
@@ -180,6 +182,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [botItems, setBotItems] = useState<BotItemsState | null>(null);
   const [presets, setPresets] = useState<PresetsState | null>(null);
   const [teamLineup, setTeamLineup] = useState<TeamLineupState | null>(null);
+  const [timescaleToggleEnabled, setTimescaleToggleEnabled] = useState(false);
   // Per-section "changed while CS2 running, pending restart" flags. Persisted in
   // localStorage so each light survives a full close/reopen of the panel while
   // CS2 keeps running (the boot refreshAll clears them once CS2 is not running).
@@ -325,6 +328,22 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     [directory, reportError]
   );
 
+  const applyTimescaleToggle = useCallback(
+    async (enabled: boolean) => {
+      setTimescaleToggleEnabled(enabled);
+      const csgo = directory?.valid ? directory.selected : null;
+      if (!csgo) return false;
+      try {
+        const result = await api.setTimescaleToggle(csgo, enabled);
+        return result;
+      } catch (e) {
+        reportError(e);
+        return false;
+      }
+    },
+    [directory, reportError]
+  );
+
   const applyBotItem = useCallback(
     async (item: BotItemKey, on: boolean) => {
       const csgo = directory?.valid ? directory.selected : null;
@@ -411,6 +430,7 @@ setNadesPending(false);
       if (csgo) {
         api.getTeamLineup(csgo).then(setTeamLineup).catch(() => {});
       }
+      api.getTimescaleToggle().then(setTimescaleToggleEnabled).catch(() => {});
     } catch (e) {
       // Keep the complete last-good snapshot, but refresh the process lock
       // independently so a transient disk scan cannot leave install disabled.
@@ -657,7 +677,8 @@ setNadesPending(false);
     mode,
     botItems,
 presets,
-    teamLineup,
+teamLineup,
+    timescaleToggleEnabled,
     aimPending,
 nadesPending,
     teamLineupPending,
@@ -690,6 +711,7 @@ nadesPending,
     applyAim,
     applyNades,
     applyTeamLineup,
+    applyTimescaleToggle,
     applyDropKnives,
   };
 

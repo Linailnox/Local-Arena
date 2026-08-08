@@ -392,6 +392,9 @@ export const EN = {
   "pre.enemyTeam": "Enemy team",
   "pre.excludePlayer": "Exclude a player",
   "pre.excludePlayerDesc": "The selected player slot is reserved for you. Only the remaining four bots will be added.",
+  "pre.timescaleToggle": "Gold Time",
+  "pre.timescaleToggleDesc": "Time slows while aim speed remains unchanged",
+  "pre.timescaleToggleHint": "Enjoy your gold time!",
 
   "live.wear": "Wear",
   "live.seed": "Pattern seed",
