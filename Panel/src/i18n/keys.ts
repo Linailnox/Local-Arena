@@ -385,6 +385,13 @@ export const EN = {
   "pre.copy": "Copy",
   "pre.bind": "Bind",
   "pre.pressKey": "Press a key…",
+  "pre.teamLineup": "Team lineup",
+  "pre.teamLineupToggle": "Auto team lineup",
+  "pre.teamLineupHint": "Mutually exclusive with the Match panel feature. Do not enable both at the same time.",
+  "pre.friendlyTeam": "Friendly team",
+  "pre.enemyTeam": "Enemy team",
+  "pre.excludePlayer": "Exclude a player",
+  "pre.excludePlayerDesc": "The selected player slot is reserved for you. Only the remaining four bots will be added.",
 
   "live.wear": "Wear",
   "live.seed": "Pattern seed",
