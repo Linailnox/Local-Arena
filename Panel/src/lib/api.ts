@@ -760,4 +760,6 @@ export const api = {
   getCs2ssConfig: (csgo: string) => invoke<Cs2ssConfig>("get_cs2ss_config", { csgo }),
   saveCs2ssConfig: (csgo: string, config: Cs2ssConfig) => invoke<void>("save_cs2ss_config", { csgo, config }),
   getCs2ssDmOverview: (csgo: string, steamId: string) => invoke<Cs2ssDmOverview>("get_cs2ss_dm_overview", { csgo, steamId }),
+  deleteCs2ssMatches: (csgo: string, matchIds: number[]) =>
+    invoke<number>("delete_cs2ss_matches", { csgo, matchIds }),
 };
