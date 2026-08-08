@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { BarChart3, Settings2 } from "lucide-react";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis, Bar, BarChart, Cell } from "recharts";
 import { api } from "../lib/api";
-import type { Cs2ssOverviewResponse, Cs2ssMatchSummary, Cs2ssPlayerDetailResponse, Cs2ssDmOverview } from "../data/cs2ssTypes";
+import type { Cs2ssOverviewResponse, Cs2ssPlayerDetailResponse, Cs2ssDmOverview, Cs2ssMatchWithStats } from "../data/cs2ssTypes";
 import { cs2ssCalcRating, cs2ssCalcAdr, cs2ssCalcKast } from "../data/cs2ssRating";
 import { cs2ssMapLabel } from "../data/cs2ssMaps";
 import StatsMatchHistory from "./StatsMatchHistory";
@@ -14,6 +14,7 @@ import "./StatsPanel.css";
 type SubView = "dashboard" | "history" | "matchDetail";
 const HI = "#20b486", MID = "#e67e22", LO = "#e05d75";
 function rcol(r: number) { return r >= 1.1 ? HI : r >= 0.9 ? MID : LO; }
+function playerIsTeamA(initialTeam: string) { return initialTeam === "CT" || initialTeam === "3"; }
 function fmtD(iso: string) { try { const d = new Date(iso); return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; } catch { return iso; } }
 function validSteamId64(value: string) { return /^7656119\d{10}$/.test(value.trim()); }
 
@@ -24,7 +25,7 @@ export default function StatsDashboard() {
   const [sub, setSub] = useState<SubView>("dashboard");
   const [selMatch, setSelMatch] = useState(0);
   const [data, setData] = useState<Cs2ssOverviewResponse | null>(null);
-  const [matches, setMatches] = useState<Cs2ssMatchSummary[]>([]);
+  const [matches, setMatches] = useState<Cs2ssMatchWithStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(false);
   const [mode, setMode] = useState<"competitive" | "deathmatch">("competitive");
@@ -34,6 +35,7 @@ export default function StatsDashboard() {
   const [cfgOpen, setCfgOpen] = useState(false);
   const [cfgInput, setCfgInput] = useState("");
   const [cfgSaving, setCfgSaving] = useState(false);
+  const [mapChartMode, setMapChartMode] = useState<"rating" | "winrate">("rating");
   const comp = matches.filter(m => m.modeFamily === "competitive");
   const dms = matches.filter(m => m.modeFamily === "deathmatch");
   const cfgValid = validSteamId64(cfgInput);
@@ -48,7 +50,7 @@ export default function StatsDashboard() {
         if (!cfgData.steamId) { setCfgInput(""); setCfgOpen(true); setLoading(false); return; }
         setPid(cfgData.steamId);
         try {
-          const [o, ms] = await Promise.all([api.getCs2ssOverview(csgo), api.listCs2ssMatches(csgo)]);
+const [o, ms] = await Promise.all([api.getCs2ssOverview(csgo), api.listCs2ssMatchesWithStats(csgo)]);
           if (c) return;
           setData(o); setMatches(ms);
         } catch {
@@ -88,7 +90,7 @@ export default function StatsDashboard() {
       setPid(cfgInput.trim());
       setCfgOpen(false);
       try {
-        const [o, ms] = await Promise.all([api.getCs2ssOverview(csgo), api.listCs2ssMatches(csgo)]);
+        const [o, ms] = await Promise.all([api.getCs2ssOverview(csgo), api.listCs2ssMatchesWithStats(csgo)]);
         setData(o); setMatches(ms);
       } catch {
         setData({ matchCount: 0, players: [] });
@@ -131,12 +133,40 @@ export default function StatsDashboard() {
   const po = data?.players.find(p => p.steamId === pid) ?? null;
   const tr = po?.totalRounds ?? 0;
   const tk = po?.kills ?? 0, td = po?.deaths ?? 0, ta = po?.assists ?? 0, tdm = po?.damage ?? 0, ths = po?.headshots ?? 0;
-  const rating = tr > 0 ? cs2ssCalcRating(tk, td, ta, tdm, ths, tr, { kastRounds: po?.kastRounds, tradeKills: po?.tradeKills, multikill2: po?.multikill2, multikill3: po?.multikill3, multikill4: po?.multikill4, multikill5: po?.multikill5, clutchAttempts: po?.clutchAttempts, clutchesWon: po?.clutchesWon }) : 0;
+  const rating = (pd?.matches ?? []).length > 0
+    ? (pd?.matches ?? []).reduce((s, m) => s + (m.roundsPlayed > 0
+        ? cs2ssCalcRating(m.totalKills, m.totalDeaths, m.totalAssists, m.totalDamage, m.totalHeadshotKills, m.roundsPlayed, { kastRounds: m.kastRounds, tradeKills: m.tradeKills, multikill2: m.multikill2, multikill3: m.multikill3, multikill4: m.multikill4, multikill5: m.multikill5, clutchAttempts: m.clutchAttempts, clutchesWon: m.clutchesWon })
+        : 0), 0) / (pd?.matches ?? []).length
+    : 0;
   const adr = cs2ssCalcAdr(tdm, tr);
   const kast = cs2ssCalcKast(po?.kastRounds ?? 0, tr);
+  const winCount = matches.filter(m => {
+    if (m.modeFamily === "deathmatch") return false;
+    const isA = playerIsTeamA(m.playerInitialTeam);
+    const myScore = isA ? m.teamAScore : m.teamBScore;
+    const oppScore = isA ? m.teamBScore : m.teamAScore;
+    return myScore > oppScore;
+  }).length;
 
   const trend = (pd?.matches ?? []).filter(m => m.roundsPlayed > 0).slice(0, 20).reverse().map((m, i) => ({ i: i + 1, r: cs2ssCalcRating(m.totalKills, m.totalDeaths, m.totalAssists, m.totalDamage, m.totalHeadshotKills, m.roundsPlayed, { kastRounds: m.kastRounds, tradeKills: m.tradeKills, multikill2: m.multikill2, multikill3: m.multikill3, multikill4: m.multikill4, multikill5: m.multikill5, clutchAttempts: m.clutchAttempts, clutchesWon: m.clutchesWon }) }));
   const mpperf = (pd?.mapStats ?? []).filter(m => m.rounds > 0).map(m => ({ map: cs2ssMapLabel(m.map), r: cs2ssCalcRating(m.kills, m.deaths, m.assists, m.damage, m.headshots, m.rounds, { kastRounds: m.kastRounds, tradeKills: m.tradeKills, multikill2: m.multikill2, multikill3: m.multikill3, multikill4: m.multikill4, multikill5: m.multikill5, clutchAttempts: m.clutchAttempts, clutchesWon: m.clutchesWon }) })).sort((a, b) => b.r - a.r);
+
+  const mapWinRates = useMemo(() => {
+    const competitive = matches.filter(m => m.modeFamily === "competitive");
+    const byMap: Record<string, { w: number; t: number }> = {};
+    for (const m of competitive) {
+      const map = cs2ssMapLabel(m.map);
+      if (!byMap[map]) byMap[map] = { w: 0, t: 0 };
+      byMap[map].t++;
+      const isA = playerIsTeamA(m.playerInitialTeam);
+      const myScore = isA ? m.teamAScore : m.teamBScore;
+      const oppScore = isA ? m.teamBScore : m.teamAScore;
+      if (myScore > oppScore) byMap[map].w++;
+    }
+    return Object.entries(byMap)
+      .map(([map, { w, t }]) => ({ map, wr: t > 0 ? Math.round(w / t * 100) : 0 }))
+      .sort((a, b) => b.wr - a.wr);
+  }, [matches]);
 
   const recent = (pd?.matches ?? []).slice(0, 10).map(m => {
     const r = m.roundsPlayed > 0 ? cs2ssCalcRating(m.totalKills, m.totalDeaths, m.totalAssists, m.totalDamage, m.totalHeadshotKills, m.roundsPlayed, { kastRounds: m.kastRounds, tradeKills: m.tradeKills, multikill2: m.multikill2, multikill3: m.multikill3, multikill4: m.multikill4, multikill5: m.multikill5, clutchAttempts: m.clutchAttempts, clutchesWon: m.clutchesWon }) : 0;
@@ -191,7 +221,7 @@ export default function StatsDashboard() {
           <div className="stats-hero__rating"><small>{t("stats.offlineRating")}</small><strong style={{ color: rcol(rating) }}>{rating.toFixed(2)}</strong></div>
         </div>
         <div className="stats-cards">
-          {[[t("stats.matches"), po?.matches ?? 0], ["KAST", `${kast}%`, kast >= 75 ? HI : kast >= 65 ? MID : LO], ["ADR", adr.toFixed(1), adr >= 85 ? HI : adr >= 70 ? MID : LO], ["K/D", (tk / Math.max(1, td)).toFixed(2), (tk / Math.max(1, td)) >= 1.2 ? HI : (tk / Math.max(1, td)) >= 1 ? MID : LO], ["KDA", ((tk + ta) / Math.max(1, td)).toFixed(2)], ["KPR", (tr > 0 ? (tk / tr).toFixed(2) : "0.00")], ["HS%", `${(tk > 0 ? Math.round(ths / tk * 100) : 0)}%`], [t("stats.clutches"), `${po?.clutchesWon ?? 0}/${po?.clutchAttempts ?? 0}`]].map(([l, v, c]) => (
+          {[[t("stats.matches"), `${winCount}/${po?.matches ?? 0}`], ["KAST", `${kast}%`, kast >= 75 ? HI : kast >= 65 ? MID : LO], ["ADR", adr.toFixed(1), adr >= 85 ? HI : adr >= 70 ? MID : LO], ["K/D", (tk / Math.max(1, td)).toFixed(2), (tk / Math.max(1, td)) >= 1.2 ? HI : (tk / Math.max(1, td)) >= 1 ? MID : LO], ["KDA", ((tk + ta) / Math.max(1, td)).toFixed(2)], ["KPR", (tr > 0 ? (tk / tr).toFixed(2) : "0.00")], ["HS%", `${(tk > 0 ? Math.round(ths / tk * 100) : 0)}%`], [t("stats.clutches"), `${po?.clutchesWon ?? 0}/${po?.clutchAttempts ?? 0}`]].map(([l, v, c]) => (
             <div className="stats-card" key={l}><span className="stats-card__label">{l}</span><span className="stats-card__value" style={c ? { color: c } as React.CSSProperties : undefined}>{v}</span></div>
           ))}
         </div>
@@ -206,22 +236,39 @@ export default function StatsDashboard() {
             {trend.length > 0 ? <ResponsiveContainer width="100%" height={200}><LineChart data={trend}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="i" tick={{ fontSize: 11 }} /><YAxis domain={[0, "auto"]} tick={{ fontSize: 11 }} /><Tooltip /><Line type="monotone" dataKey="r" stroke="#8e5cb8" strokeWidth={2.2} dot={{ r: 3, fill: "#8e5cb8" }} /></LineChart></ResponsiveContainer> : <p style={{ color: "var(--text-secondary)", textAlign: "center", padding: 32 }}>{t("stats.insufficientData")}</p>}
           </div>
           <div className="stats-panel-block">
-            <div className="stats-panel-block__title"><div><span>{t("stats.maps")}</span><h2>{t("stats.mapPerformance")}</h2></div></div>
-            {mpperf.length > 0 ? <ResponsiveContainer width="100%" height={200}><BarChart data={mpperf} layout="vertical"><CartesianGrid strokeDasharray="3 3" /><XAxis type="number" domain={[0, "auto"]} tick={{ fontSize: 11 }} /><YAxis type="category" dataKey="map" tick={{ fontSize: 11 }} width={72} /><Tooltip /><Bar dataKey="r" radius={[0, 4, 4, 0]}>{mpperf.map((_entry, i) => <Cell key={i} fill={["#5d9cec","#3498db","#2ecc71","#f39c12","#9b59b6"][i % 5]} />)}</Bar></BarChart></ResponsiveContainer> : <p style={{ color: "var(--text-secondary)", textAlign: "center", padding: 32 }}>{t("stats.noMapData")}</p>}
+            <div className="stats-panel-block__title">
+              <div><span>{t("stats.maps")}</span><h2>{mapChartMode === "rating" ? t("stats.mapPerformance") : t("stats.mapWinRate")}</h2></div>
+              <button className="stats-mapchart-toggle" onClick={() => setMapChartMode(m => m === "rating" ? "winrate" : "rating")}>
+                {mapChartMode === "rating" ? t("stats.switchToWinRate") : t("stats.switchToRating")}
+              </button>
+            </div>
+            {mapChartMode === "rating" ? (
+              mpperf.length > 0 ? <ResponsiveContainer width="100%" height={200}><BarChart data={mpperf} layout="vertical"><CartesianGrid strokeDasharray="3 3" /><XAxis type="number" domain={[0, "auto"]} tick={{ fontSize: 11 }} /><YAxis type="category" dataKey="map" tick={{ fontSize: 11 }} width={72} /><Tooltip /><Bar dataKey="r" radius={[0, 4, 4, 0]}>{mpperf.map((_entry, i) => <Cell key={i} fill={["#5d9cec","#3498db","#2ecc71","#f39c12","#9b59b6"][i % 5]} />)}</Bar></BarChart></ResponsiveContainer> : <p style={{ color: "var(--text-secondary)", textAlign: "center", padding: 32 }}>{t("stats.noMapData")}</p>
+            ) : (
+              mapWinRates.length > 0 ? <ResponsiveContainer width="100%" height={200}><BarChart data={mapWinRates} layout="vertical"><CartesianGrid strokeDasharray="3 3" /><XAxis type="number" domain={[0, 100]} tick={{ fontSize: 11 }} unit="%" /><YAxis type="category" dataKey="map" tick={{ fontSize: 11 }} width={72} /><Tooltip formatter={(v: any) => `${v}%`} /><Bar dataKey="wr" radius={[0, 4, 4, 0]}>{mapWinRates.map((entry, i) => <Cell key={i} fill={entry.wr >= 50 ? "#20b486" : "#e05d75"} />)}</Bar></BarChart></ResponsiveContainer> : <p style={{ color: "var(--text-secondary)", textAlign: "center", padding: 32 }}>{t("stats.noMapData")}</p>
+            )}
           </div>
         </div>
         <div className="stats-panel-block">
           <div className="stats-panel-block__title"><div><span>{t("stats.recent")}</span><h2>{t("stats.recentMatches")}</h2></div></div>
           {recent.length > 0 ? (
-            <table className="stats-table"><thead><tr><th>{t("stats.map")}</th><th>{t("stats.date")}</th><th>{t("stats.score")}</th><th>K/D/A</th><th>ADR</th><th>{t("stats.rating")}</th></tr></thead>
-              <tbody>{recent.map(m => (
+<table className="stats-table"><thead><tr><th style={{ width: 44 }}>W/L</th><th>{t("stats.map")}</th><th>{t("stats.date")}</th><th>{t("stats.score")}</th><th>K/D/A</th><th>ADR</th><th>{t("stats.rating")}</th></tr></thead>
+              <tbody>{recent.map(m => {
+                const isA = playerIsTeamA(m.initialTeam);
+                const myScore = isA ? m.teamAScore : m.teamBScore;
+                const oppScore = isA ? m.teamBScore : m.teamAScore;
+                const wl = myScore > oppScore ? "W" : myScore < oppScore ? "L" : "D";
+                const wlC = wl === "W" ? "#20b486" : wl === "L" ? "#e05d75" : "#888";
+                return (
                 <tr key={m.matchId} onClick={() => { setSelMatch(m.matchId); setSub("matchDetail"); }} style={{ cursor: "pointer" }}>
+                  <td style={{ fontWeight: 700, fontSize: 13, color: wlC, textAlign: "center" }}>{wl}</td>
                   <td style={{ fontWeight: 600 }}>{cs2ssMapLabel(m.map)}</td><td style={{ color: "var(--text-secondary)", fontSize: 12 }}>{fmtD(m.startedAt)}</td>
                   <td className="stats-table__score">{m.teamAScore} : {m.teamBScore}</td>
                   <td>{m.totalKills}/{m.totalDeaths}/{m.totalAssists}</td><td>{cs2ssCalcAdr(m.totalDamage, m.roundsPlayed).toFixed(1)}</td>
                   <td><span style={{ fontWeight: 700, color: rcol(m.r) }}>{m.r.toFixed(2)}</span></td>
                 </tr>
-              ))}</tbody></table>
+                );
+              })}</tbody></table>
           ) : <div className="stats-panel__empty">{t("stats.noMatches")}</div>}
         </div>
       </>) : mode === "deathmatch" && dm ? (<>

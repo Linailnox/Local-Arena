@@ -12,6 +12,20 @@ interface Props { csgo: string; onOpenMatch?: (id: number) => void; onBack?: () 
 function fmtDT(iso: string) { try { const d = new Date(iso); return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`; } catch { return iso; } }
 function rcol(r: number) { return r >= 1.1 ? "#20b486" : r >= 0.9 ? "#e67e22" : "#e05d75"; }
 
+function playerIsTeamA(initialTeam: string) { return initialTeam === "CT" || initialTeam === "3"; }
+
+function matchWL(m: Cs2ssMatchWithStats): "W" | "L" | "D" | "" {
+  if (m.modeFamily === "deathmatch") return "";
+  const isA = playerIsTeamA(m.playerInitialTeam);
+  const myScore = isA ? m.teamAScore : m.teamBScore;
+  const oppScore = isA ? m.teamBScore : m.teamAScore;
+  if (myScore > oppScore) return "W";
+  if (myScore < oppScore) return "L";
+  return "D";
+}
+
+function wlColor(wl: string) { return wl === "W" ? "#20b486" : wl === "L" ? "#e05d75" : "#888"; }
+
 export default function StatsMatchHistory({ csgo, onOpenMatch, onBack }: Props) {
   const { reportError } = useStore();
   const t = useT();
@@ -22,6 +36,7 @@ export default function StatsMatchHistory({ csgo, onOpenMatch, onBack }: Props) 
   const [modeF, setModeF] = useState("all");
   const [dateF, setDateF] = useState("");
   const [dateT, setDateT] = useState("");
+  const [wlF, setWlF] = useState("all");
   const [deleting, setDeleting] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
 
@@ -37,10 +52,11 @@ export default function StatsMatchHistory({ csgo, onOpenMatch, onBack }: Props) 
     let r = matches;
     if (mapF) r = r.filter(m => m.map === mapF);
     if (modeF !== "all") r = r.filter(m => m.modeFamily === modeF);
+    if (wlF !== "all") r = r.filter(m => matchWL(m) === wlF);
     if (dateF) { const t = new Date(dateF).getTime(); r = r.filter(m => new Date(m.startedAt).getTime() >= t); }
     if (dateT) { const t = new Date(dateT + "T23:59:59").getTime(); r = r.filter(m => new Date(m.startedAt).getTime() <= t); }
     return r;
-  }, [matches, mapF, modeF, dateF, dateT]);
+  }, [matches, mapF, modeF, wlF, dateF, dateT]);
 
   const toggleSelect = (id: number) => {
     setSelected(prev => {
@@ -94,22 +110,25 @@ export default function StatsMatchHistory({ csgo, onOpenMatch, onBack }: Props) 
       <div className="stats-filters">
         <label><span>{t("stats.map")}</span><select value={mapF} onChange={e => setMapF(e.target.value)}><option value="">{t("stats.all")}</option>{maps.map(m => <option key={m} value={m}>{cs2ssMapLabel(m)}</option>)}</select></label>
         <label><span>{t("stats.mode")}</span><select value={modeF} onChange={e => setModeF(e.target.value)}><option value="all">{t("stats.all")}</option><option value="competitive">{t("stats.competitive")}</option><option value="deathmatch">{t("stats.deathmatch")}</option></select></label>
+        <label><span>W/L</span><select value={wlF} onChange={e => setWlF(e.target.value)}><option value="all">{t("stats.all")}</option><option value="W">W</option><option value="L">L</option><option value="D">D</option></select></label>
         <label><span>{t("stats.from")}</span><input type="date" value={dateF} onChange={e => setDateF(e.target.value)} /></label>
         <label><span>{t("stats.to")}</span><input type="date" value={dateT} onChange={e => setDateT(e.target.value)} /></label>
-        <button onClick={() => { setMapF(""); setModeF("all"); setDateF(""); setDateT(""); }}>{t("stats.reset")}</button>
+        <button onClick={() => { setMapF(""); setModeF("all"); setWlF("all"); setDateF(""); setDateT(""); }}>{t("stats.reset")}</button>
       </div>
 
       <div className="stats-panel-block" style={{ padding: 0 }}>
         <table className="stats-table">
           <thead><tr>
             {deleting && <th style={{ width: 40 }}><input type="checkbox" checked={selected.size === filtered.length && filtered.length > 0} onChange={toggleSelectAll} /></th>}
+            <th style={{ width: 44 }}>W/L</th>
             <th>{t("stats.map")}</th><th>{t("stats.date")}</th><th>{t("stats.score")}</th><th>{t("stats.rounds")}</th><th style={{ textAlign: "right" }}>K/D/A</th><th style={{ textAlign: "right" }}>ADR</th><th style={{ textAlign: "right" }}>{t("stats.rating")}</th>
           </tr></thead>
           <tbody>
             {filtered.length === 0 ? (
-              <tr><td colSpan={deleting ? 8 : 7} style={{ textAlign: "center", padding: 40, color: "var(--text-secondary)" }}>{t("stats.noFilteredMatches")}</td></tr>
+              <tr><td colSpan={deleting ? 9 : 8} style={{ textAlign: "center", padding: 40, color: "var(--text-secondary)" }}>{t("stats.noFilteredMatches")}</td></tr>
             ) : filtered.map(m => {
               const dm = m.modeFamily === "deathmatch";
+              const wl = matchWL(m);
 
               const rating = !dm && m.roundsPlayed > 0
                 ? cs2ssCalcRating(m.playerKills, m.playerDeaths, m.playerAssists, m.playerDamage, m.playerHeadshots, m.roundsPlayed, {
@@ -127,6 +146,7 @@ export default function StatsMatchHistory({ csgo, onOpenMatch, onBack }: Props) 
               return (
                 <tr key={m.matchId} onClick={() => { if (deleting) toggleSelect(m.matchId); else onOpenMatch?.(m.matchId); }} style={{ cursor: "pointer" }}>
                   {deleting && <td onClick={e => e.stopPropagation()}><input type="checkbox" checked={selected.has(m.matchId)} onChange={() => toggleSelect(m.matchId)} /></td>}
+                  <td style={{ fontWeight: 700, fontSize: 13, color: wl ? wlColor(wl) : undefined, textAlign: "center" }}>{wl || "-"}</td>
                   <td style={{ fontWeight: 600 }}>{cs2ssMapLabel(m.map)}{dm && <span className="dm-tag">DM</span>}</td>
                   <td style={{ color: "var(--text-secondary)", fontSize: 12, whiteSpace: "nowrap" }}>{fmtDT(m.startedAt)}</td>
                   <td>
