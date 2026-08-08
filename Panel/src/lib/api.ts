@@ -346,6 +346,20 @@ export type AppConfig = {
   experimental_stickers_enabled?: boolean;
 };
 
+export type TeamLineupInput = {
+  enabled: boolean;
+  friendly_team_index: string | null;
+  enemy_team_index: string | null;
+  excluded_player: string | null;
+};
+
+export type TeamLineupState = {
+  enabled: boolean;
+  friendly_team_index: string | null;
+  enemy_team_index: string | null;
+  excluded_player: string | null;
+};
+
 export type AppearanceStyle = "paper" | "clean" | "compact" | "immersive";
 export type AppearancePalette = "terracotta" | "sky" | "monochrome" | "grass" | "mist" | "berry" | "custom";
 export type AppearanceFont = "humanist" | "modern" | "clear" | "classic" | "technical" | "custom";
@@ -697,6 +711,10 @@ export const api = {
     invoke<PresetsState>("set_aim", { csgo, value }),
   setNades: (csgo: string, value: NadesValue) =>
     invoke<PresetsState>("set_nades", { csgo, value }),
+  setTeamLineup: (csgo: string, input: TeamLineupInput) =>
+    invoke<TeamLineupState>("set_team_lineup", { csgo, input }),
+  getTeamLineup: (csgo: string) =>
+    invoke<TeamLineupState>("get_team_lineup", { csgo }),
   getDropKnives: (csgo: string) =>
     invoke<DropKnivesState>("get_drop_knives", { csgo }),
   setDropKnives: (csgo: string, bindKey: string, selected: number[]) =>
