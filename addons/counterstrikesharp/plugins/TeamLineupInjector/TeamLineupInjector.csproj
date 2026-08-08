@@ -13,6 +13,9 @@
       <Private>false</Private>
       <ExcludeAssets>runtime</ExcludeAssets>
     </PackageReference>
+    <ProjectReference Include="..\..\shared\BotHiderApi\BotHiderApi.csproj">
+      <Private>false</Private>
+    </ProjectReference>
   </ItemGroup>
   <ItemGroup>
     <None Include="NuGet.config" CopyToOutputDirectory="PreserveNewest" />

@@ -212,7 +212,18 @@ export default function PresetsPanel({ onBack }: { onBack?: () => void }) {
                 disabled={disabled}
                 onChange={(next) => {
                   setLineupEnabled(next);
-                  saveLineup(next, friendlyIdx, enemyIdx, excludedPlayer);
+                  if (next) {
+                    const f = friendlyIdx || "1";
+                    const e = enemyIdx || "8";
+                    const team = TEAMS.find(t => String(t.index) === f);
+                    const ex = excludedPlayer || team?.players[0] || null;
+                    if (f !== friendlyIdx) setFriendlyIdx(f);
+                    if (e !== enemyIdx) setEnemyIdx(e);
+                    if (ex !== excludedPlayer) setExcludedPlayer(ex);
+                    saveLineup(next, f, e, ex);
+                  } else {
+                    saveLineup(false, friendlyIdx, enemyIdx, excludedPlayer);
+                  }
                 }}
               />
             </div>
@@ -229,8 +240,10 @@ export default function PresetsPanel({ onBack }: { onBack?: () => void }) {
                     disabled={disabled}
                     onChange={(v) => {
                       setFriendlyIdx(v);
-                      setExcludedPlayer(null);
-                      saveLineup(lineupEnabled, v, enemyIdx, null);
+                      const team = TEAMS.find(t => String(t.index) === v);
+                      const firstPlayer = team?.players[0] ?? null;
+                      setExcludedPlayer(firstPlayer);
+                      saveLineup(lineupEnabled, v, enemyIdx, firstPlayer);
                     }}
                     options={teamOptions}
                   />

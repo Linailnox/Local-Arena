@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using BotHiderApi;
 using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Core.Attributes;
@@ -20,7 +21,6 @@ public sealed class TeamLineupInjectorPlugin : BasePlugin
     public override string ModuleDescription => "Auto-injects team lineup bots and identity after human picks a side";
 
     private IBotHiderApi? _botHider;
-    private IdentityCatalog? _identities;
     private string? _csgoRoot;
     private string? _currentMap;
     private bool _injected;
@@ -50,50 +50,80 @@ public sealed class TeamLineupInjectorPlugin : BasePlugin
         if (team != (byte)CsTeam.Terrorist && team != (byte)CsTeam.CounterTerrorist)
             return HookResult.Continue;
 
+        if (MatchSessionActive())
+        {
+            Logger.LogInformation("[TeamLineup] Active match session detected, not interfering with the Match roster");
+            ClearTeamIdentity();
+            return HookResult.Continue;
+        }
+
+        var config = ReadLineupConfig();
+        if (config is not { Enabled: true })
+        {
+            Logger.LogInformation("[TeamLineup] Lineup disabled or config missing, not interfering");
+            ClearTeamIdentity();
+            RestoreBotQuota();
+            return HookResult.Continue;
+        }
+
+        if (config.FriendlyTeam == null && config.EnemyTeam == null)
+        {
+            Logger.LogInformation("[TeamLineup] Lineup enabled but no teams configured, not interfering");
+            return HookResult.Continue;
+        }
+
         _injected = true;
         Logger.LogInformation("[TeamLineup] Human player joined team {Team}, injecting lineup", team);
 
         AddTimer(0.5f, () =>
         {
+            var current = ReadLineupConfig();
+            if (current is not { Enabled: true } || MatchSessionActive())
+            {
+                _injected = false;
+                return;
+            }
             Server.ExecuteCommand("bot_kick");
             Server.ExecuteCommand("bot_quota 0");
         });
 
         AddTimer(1.5f, () =>
         {
-            ExecuteLineup(team == (byte)CsTeam.CounterTerrorist);
+            var current = ReadLineupConfig();
+            if (current is not { Enabled: true } || MatchSessionActive())
+            {
+                _injected = false;
+                return;
+            }
+            ExecuteLineup(current, team == (byte)CsTeam.CounterTerrorist);
         });
 
         return HookResult.Continue;
     }
 
-    private void ExecuteLineup(bool humanIsCt)
+    private LineupConfig? ReadLineupConfig()
     {
         var configPath = LineupConfigPath();
         if (!File.Exists(configPath))
         {
             Logger.LogInformation("[TeamLineup] No lineup config found at {Path}", configPath);
-            return;
+            return null;
         }
 
-        LineupConfig? config;
         try
         {
             var json = File.ReadAllText(configPath);
-            config = JsonSerializer.Deserialize<LineupConfig>(json);
+            return JsonSerializer.Deserialize<LineupConfig>(json);
         }
         catch (Exception ex)
         {
             Logger.LogWarning(ex, "[TeamLineup] Failed to read lineup config");
-            return;
+            return null;
         }
+    }
 
-        if (config is not { Enabled: true })
-        {
-            Logger.LogInformation("[TeamLineup] Lineup disabled");
-            return;
-        }
-
+    private void ExecuteLineup(LineupConfig config, bool humanIsCt)
+    {
         var addedNames = new List<string>();
         var friendlyBotCmd = humanIsCt ? "bot_add_ct" : "bot_add_t";
         var enemyBotCmd = humanIsCt ? "bot_add_t" : "bot_add_ct";
@@ -145,11 +175,6 @@ public sealed class TeamLineupInjectorPlugin : BasePlugin
 
     private void BindBotIdentities(List<string> expectedNames)
     {
-        if (!ResolveIdentityCatalog())
-        {
-            Logger.LogWarning("[TeamLineup] Failed to load bot identities");
-            return;
-        }
         if (!ResolveBotHiderApi())
         {
             Logger.LogWarning("[TeamLineup] BotHider API unavailable");
@@ -163,24 +188,12 @@ public sealed class TeamLineupInjectorPlugin : BasePlugin
 
         foreach (var bot in bots)
         {
-            var name = bot.PlayerName;
-            if (_identities == null || !_identities.TryGet(name, out var identity))
-            {
-                Logger.LogInformation("[TeamLineup] No identity for bot '{Name}'", name);
+            if (_botHider == null || !_botHider.IsManagedBot(bot.Slot))
                 continue;
-            }
 
-            var slot = bot.Slot;
-            if (_botHider != null && _botHider.IsManagedBot(slot))
-            {
-                _botHider.SetPersonaName(slot, name);
-                _botHider.SetBotSteamId(slot, identity.SteamId64);
-                if (!string.IsNullOrEmpty(identity.CrosshairCode) && identity.CrosshairCode != "0")
-                    _botHider.SetCrosshairCode(slot, identity.CrosshairCode);
-                if (identity.ScoreboardFlair != 0)
-                    _botHider.SetScoreboardFlair(slot, identity.ScoreboardFlair);
-                Logger.LogInformation("[TeamLineup] Bound identity for '{Name}' slot {Slot}", name, slot);
-            }
+            var name = bot.PlayerName;
+            _botHider.SetPersonaName(bot.Slot, name);
+            Logger.LogInformation("[TeamLineup] Set persona name for '{Name}' slot {Slot}", name, bot.Slot);
         }
     }
 
@@ -200,32 +213,6 @@ public sealed class TeamLineupInjectorPlugin : BasePlugin
         catch (Exception error)
         {
             Logger.LogError(error, "[TeamLineup] BotHider API is unavailable");
-            return false;
-        }
-    }
-
-    private bool ResolveIdentityCatalog()
-    {
-        if (_identities != null) return true;
-        if (_csgoRoot == null && !TryResolveCsgoRoot())
-            return false;
-
-        var path = Path.Combine(_csgoRoot!, "addons", "BotHider", "bot_info.json");
-        if (!File.Exists(path))
-        {
-            Logger.LogWarning("[TeamLineup] bot_info.json not found at {Path}", path);
-            return false;
-        }
-
-        try
-        {
-            _identities = IdentityCatalog.Load(path);
-            Logger.LogInformation("[TeamLineup] Loaded bot identities from {Path}", path);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            Logger.LogError(ex, "[TeamLineup] Failed to load bot_info.json");
             return false;
         }
     }
@@ -263,50 +250,34 @@ public sealed class TeamLineupInjectorPlugin : BasePlugin
         return false;
     }
 
+    /// <summary>True when the PLUS match coordinator owns the current roster (match-active.json present).</summary>
+    private bool MatchSessionActive()
+    {
+        if (_csgoRoot == null && !TryResolveCsgoRoot()) return false;
+        return File.Exists(Path.Combine(_csgoRoot ?? ".", ".csbip", "match-active.json"));
+    }
+
+    private void ClearTeamIdentity()
+    {
+        Server.ExecuteCommand("mp_teamname_1 \"\"");
+        Server.ExecuteCommand("mp_teamname_2 \"\"");
+        Server.ExecuteCommand("mp_teamlogo_1 \"\"");
+        Server.ExecuteCommand("mp_teamlogo_2 \"\"");
+    }
+
+    private void RestoreBotQuota()
+    {
+        Server.ExecuteCommand("bot_quota_mode fill");
+        Server.ExecuteCommand("bot_quota 10");
+        Server.ExecuteCommand("mp_restartgame 1");
+        Logger.LogInformation("[TeamLineup] Restored default bot quota and restarted game");
+    }
+
     private string LineupConfigPath()
     {
         if (_csgoRoot == null) TryResolveCsgoRoot();
         return Path.Combine(_csgoRoot ?? ".", ".csbip", "team-lineup.json");
     }
-}
-
-internal sealed class IdentityCatalog
-{
-    private readonly Dictionary<string, BotIdentity> _exact;
-
-    private IdentityCatalog(Dictionary<string, BotIdentity> exact)
-    {
-        _exact = exact;
-    }
-
-    public static IdentityCatalog Load(string path)
-    {
-        var source = JsonSerializer.Deserialize<Dictionary<string, BotIdentity>>(
-            File.ReadAllText(path))
-            ?? throw new InvalidDataException("bot_info.json is empty");
-        var exact = new Dictionary<string, BotIdentity>(StringComparer.Ordinal);
-        foreach (var (name, identity) in source)
-        {
-            if (string.IsNullOrWhiteSpace(name) || identity.SteamAccountId == 0)
-                continue;
-            exact.TryAdd(name, identity);
-        }
-        return new IdentityCatalog(exact);
-    }
-
-    public bool TryGet(string name, out BotIdentity identity)
-    {
-        return _exact.TryGetValue(name, out identity!);
-    }
-}
-
-internal sealed record BotIdentity(
-    [property: JsonPropertyName("steamid")] uint SteamAccountId,
-    [property: JsonPropertyName("crosshair_code")] string? CrosshairCode,
-    [property: JsonPropertyName("scoreboard_flair")] uint ScoreboardFlair)
-{
-    public const ulong SteamId64Base = 76561197960265728UL;
-    public ulong SteamId64 => SteamId64Base + SteamAccountId;
 }
 
 public sealed class LineupConfig
@@ -334,19 +305,4 @@ public sealed class LineupTeam
 
     [JsonPropertyName("players")]
     public string[] Players { get; set; } = Array.Empty<string>();
-}
-
-internal interface IBotHiderApi
-{
-    bool IsManagedBot(int slot);
-    ulong GetBotSteamId(int slot);
-    string GetPersonaName(int slot);
-    string GetCrosshairCode(int slot);
-    uint GetScoreboardFlair(int slot);
-    bool SetBotSteamId(int slot, ulong steamId64);
-    bool SetCrosshairCode(int slot, string code);
-    bool SetPersonaName(int slot, string name);
-    bool SetScoreboardFlair(int slot, uint itemDefIndex);
-    bool SetDisguise(bool enabled);
-    bool SetNameSource(bool useBotInfo);
 }
