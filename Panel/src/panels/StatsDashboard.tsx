@@ -221,7 +221,7 @@ const [o, ms] = await Promise.all([api.getCs2ssOverview(csgo), api.listCs2ssMatc
               <tbody>{recent.map(m => (
                 <tr key={m.matchId} onClick={() => { setSelMatch(m.matchId); setSub("matchDetail"); }} style={{ cursor: "pointer" }}>
                   <td style={{ fontWeight: 600 }}>{cs2ssMapLabel(m.map)}</td><td style={{ color: "var(--text-secondary)", fontSize: 12 }}>{fmtD(m.startedAt)}</td>
-                  <td className="stats-table__score">{m.teamAScore} : {m.teamBScore}</td>
+                  <td className="stats-table__score">{m.team === "CT" ? m.teamBScore : m.teamAScore} : {m.team === "CT" ? m.teamAScore : m.teamBScore}</td>
                   <td>{m.totalKills}/{m.totalDeaths}/{m.totalAssists}</td><td>{cs2ssCalcAdr(m.totalDamage, m.roundsPlayed).toFixed(1)}</td>
                   <td><span style={{ fontWeight: 700, color: rcol(m.r) }}>{m.r.toFixed(2)}</span></td>
                 </tr>
