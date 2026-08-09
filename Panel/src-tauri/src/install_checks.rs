@@ -233,7 +233,6 @@ pub fn run(payload_root: &Path, state_root: &Path, target: &Path, cs2_running: b
         ("MATCH_COORDINATOR_MANAGED", "PlusMatchCoordinator", "addons/counterstrikesharp/plugins/PlusMatchCoordinator/PlusMatchCoordinator.dll"),
         ("MATCH_CORE_MANAGED", "MatchCore", "addons/counterstrikesharp/plugins/PlusMatchCoordinator/MatchCore.dll"),
         ("BOTHIDER_API_MANAGED", "BotHider API", "addons/counterstrikesharp/shared/BotHiderApi/BotHiderApi.dll"),
-        ("TEAM_LINEUP_MANAGED", "TeamLineupInjector", "addons/counterstrikesharp/plugins/TeamLineupInjector/TeamLineupInjector.dll"),
     ] {
         checks.push(managed_component_check(
             &format!("TARGET_{code}"),
@@ -248,6 +247,24 @@ pub fn run(payload_root: &Path, state_root: &Path, target: &Path, cs2_running: b
             payload_root.join(relative),
             CheckStatus::Fail,
             true,
+        ));
+    }
+    {
+        let name = "TeamLineupInjector";
+        let relative = "addons/counterstrikesharp/plugins/TeamLineupInjector/TeamLineupInjector.dll";
+        checks.push(managed_component_check(
+            "TARGET_TEAM_LINEUP_MANAGED",
+            &format!("Installed {name}"),
+            target.join(relative),
+            CheckStatus::Warn,
+            false,
+        ));
+        checks.push(managed_component_check(
+            "PAYLOAD_TEAM_LINEUP_MANAGED",
+            &format!("Package {name}"),
+            payload_root.join(relative),
+            CheckStatus::Warn,
+            false,
         ));
     }
     for (code, title, relative) in [

@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo } from "react";
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { api } from "../lib/api";
 import type { Cs2ssMatchDetailResponse, Cs2ssRoundPlayer } from "../data/cs2ssTypes";
-import { cs2ssCalcRating, cs2ssCalcAdr, cs2ssCalcKast, cs2ssCalcHsPct } from "../data/cs2ssRating";
+import { cs2ssCalcRating, cs2ssCalcAdr, cs2ssCalcKast, cs2ssCalcHsPct, cs2ssRatingBreakdown } from "../data/cs2ssRating";
 import { cs2ssMapLabel } from "../data/cs2ssMaps";
 import { cs2ssRoundEndReasonLabel } from "../data/cs2ssReasons";
 import { useStore } from "../state/store";
@@ -33,10 +33,23 @@ export default function StatsMatchDetail({ csgo, matchId, onBack }: Props) {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
   const [sel, setSel] = useState<Set<string>>(new Set());
+  const [expanded, setExpanded] = useState<string | null>(null);
+
+  const [pruning, setPruning] = useState(false);
 
   useEffect(() => {
-    api.getCs2ssMatchDetail(csgo, matchId).then(d => {
-      if (d) {
+    let cancelled = false;
+    const load = () => {
+      setLoading(true);
+      api.getCs2ssMatchDetail(csgo, matchId).then(async d => {
+        if (cancelled || !d) return;
+        const ghostBots = d.matchPlayers.filter(mp => mp.isBot && mp.totalKills === 0 && mp.totalDeaths === 0 && mp.totalDamage === 0);
+        if (ghostBots.length > 0 && !pruning) {
+          setPruning(true);
+          try { await api.pruneCs2ssBotPlayers(csgo, matchId); } catch { /* ignore */ }
+          if (!cancelled) load();
+          return;
+        }
         setData(d);
         if (d.matchPlayers.length > 0) {
           const self = d.matchPlayers.find(mp => !mp.isBot) ?? d.matchPlayers[0];
@@ -47,10 +60,12 @@ export default function StatsMatchDetail({ csgo, matchId, onBack }: Props) {
           if (topEnemy) ns.add(topEnemy.steamId);
           setSel(ns);
         }
-      }
-      setLoading(false);
-    }).catch(e => { setErr(String(e)); setLoading(false); reportError(e); });
-  }, [csgo, matchId, reportError]);
+        setLoading(false);
+      }).catch(e => { if (!cancelled) { setErr(String(e)); setLoading(false); reportError(e); } });
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [csgo, matchId, pruning, reportError]);
 
   const c = useMemo(() => {
     if (!data) return null;
@@ -132,8 +147,12 @@ export default function StatsMatchDetail({ csgo, matchId, onBack }: Props) {
           const iss = mp.steamId === s.steamId;
           const dots = mp.multikill2 + mp.multikill3 + mp.multikill4 + mp.multikill5;
           const hsPct = cs2ssCalcHsPct(mp.totalHeadshotKills, mp.totalKills);
+          const breakdown = cs2ssRatingBreakdown(mp.totalKills, mp.totalDeaths, mp.totalAssists, mp.totalDamage, match.roundsPlayed, { kastRounds: mp.kastRounds, tradeKills: mp.tradeKills, multikill2: mp.multikill2, multikill3: mp.multikill3, multikill4: mp.multikill4, multikill5: mp.multikill5, clutchAttempts: mp.clutchAttempts, clutchesWon: mp.clutchesWon });
+          const peak = Math.max(0.01, ...breakdown.map(b => Math.abs(b.value)));
+          const isOpen = expanded === mp.steamId;
           return (
-            <div key={mp.steamId} style={{ display: "grid", gridTemplateColumns: "minmax(100px, 1.5fr) repeat(8, 1fr)", alignItems: "center", borderBottom: "1px solid var(--line)", cursor: "pointer", background: iss ? "rgba(124,92,255,.055)" : undefined, fontSize: 13 }} onClick={() => toggle(mp.steamId)}>
+            <div key={mp.steamId}>
+            <div style={{ display: "grid", gridTemplateColumns: "minmax(100px, 1.5fr) repeat(8, 1fr)", alignItems: "center", borderBottom: "1px solid var(--line)", cursor: "pointer", background: iss ? "rgba(124,92,255,.055)" : undefined, fontSize: 13 }} onClick={() => { toggle(mp.steamId); setExpanded(isOpen ? null : mp.steamId); }}>
               <div style={{ padding: "7px 10px", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 <span className={`stats-team-row__dot${sel.has(mp.steamId) ? " sel" : ""}`} style={{ marginRight: 6 }} />{mp.name}
               </div>
@@ -145,6 +164,26 @@ export default function StatsMatchDetail({ csgo, matchId, onBack }: Props) {
               <div style={{ textAlign: "center", padding: "7px 4px", color: "var(--text-secondary)" }}>{dots || "—"}</div>
               <div style={{ textAlign: "center", padding: "7px 4px", color: "var(--text-secondary)" }}>{mp.clutchesWon}/{mp.clutchAttempts}</div>
               <div style={{ textAlign: "center", fontWeight: 800, padding: "7px 6px", color: rcol(r) }}>{r.toFixed(2)}</div>
+            </div>
+            {isOpen && (
+              <div className="mr-detail" onClick={e => e.stopPropagation()} style={{ borderBottom: "1px solid var(--line)", padding: "10px 12px" }}>
+                <div className="mr-detail__bars">
+                  <small className="mr-detail__bars-title">{t("match.breakdown")}</small>
+                  {breakdown.map(row => {
+                    const tier = row.value >= 0.1 ? "is-high" : row.value <= -0.02 ? "is-low" : "is-mid";
+                    return (
+                      <span className="mr-bar" key={row.label}>
+                        <small>{row.label}</small>
+                        <span className="mr-bar__track">
+                          <i className={tier} style={{ width: `${Math.max(4, (Math.abs(row.value) / peak) * 100)}%` }} />
+                        </span>
+                        <b className={tier}>{row.value >= 0 ? "+" : ""}{row.value.toFixed(2)}</b>
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             </div>
           );
         })}
@@ -164,7 +203,7 @@ export default function StatsMatchDetail({ csgo, matchId, onBack }: Props) {
         </div>
         <div className="stats-hero__rating">
           <small>{t("match.finished")}</small>
-          <strong style={{ color: "#fff" }}>{match.teamAScore}:{match.teamBScore}</strong>
+          <strong style={{ color: "#fff" }}>{pw}:{ow}</strong>
         </div>
       </div>
 
