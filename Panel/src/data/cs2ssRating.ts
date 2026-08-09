@@ -1,3 +1,45 @@
+export interface Cs2ssRatingBreakdownItem {
+  label: string;
+  value: number;
+}
+
+export function cs2ssRatingBreakdown(
+  kills: number,
+  deaths: number,
+  assists: number,
+  damage: number,
+  rounds: number,
+  extras: Cs2ssRatingExtras = {},
+): Cs2ssRatingBreakdownItem[] {
+  if (rounds <= 0) return [];
+  const kpr = kills / rounds;
+  const dpr = deaths / rounds;
+  const apr = assists / rounds;
+  const adr = damage / rounds;
+  const kast = (extras.kastRounds ?? 0) / rounds;
+  const tradeRate = (extras.tradeKills ?? 0) / rounds;
+  const multikillImpact = (
+    (extras.multikill2 ?? 0) * 0.025 +
+    (extras.multikill3 ?? 0) * 0.06 +
+    (extras.multikill4 ?? 0) * 0.11 +
+    (extras.multikill5 ?? 0) * 0.18
+  ) / rounds;
+  const clutchImpact = (extras.clutchesWon ?? 0) * 0.16 / rounds;
+  const clutchConversion = extras.clutchAttempts
+    ? Math.min(0.05, (extras.clutchesWon ?? 0) / extras.clutchAttempts * 0.05)
+    : 0;
+  return [
+    { label: "KPR", value: Math.round((kpr - 0.72) * 0.52 * 100) / 100 },
+    { label: "ADR", value: Math.round((adr - 75) / 100 * 0.42 * 100) / 100 },
+    { label: "DPR", value: Math.round(-(dpr - 0.68) * 0.32 * 100) / 100 },
+    { label: "APR", value: Math.round((apr - 0.18) * 0.14 * 100) / 100 },
+    { label: "KAST", value: Math.round((kast - 0.70) * 0.30 * 100) / 100 },
+    { label: "Trade", value: Math.round(tradeRate * 0.16 * 100) / 100 },
+    { label: "Multi", value: Math.round(multikillImpact * 100) / 100 },
+    { label: "Clutch", value: Math.round((clutchImpact + clutchConversion) * 100) / 100 },
+  ];
+}
+
 export interface Cs2ssRatingExtras {
   kastRounds?: number;
   tradeKills?: number;
@@ -26,18 +68,18 @@ export function cs2ssCalcRating(
   const kast = (extras.kastRounds ?? 0) / rounds;
   const tradeRate = (extras.tradeKills ?? 0) / rounds;
   const multikillImpact = (
-    (extras.multikill2 ?? 0) * 0.03 +
-    (extras.multikill3 ?? 0) * 0.08 +
-    (extras.multikill4 ?? 0) * 0.15 +
-    (extras.multikill5 ?? 0) * 0.28
-  );
-  const clutchImpact = (extras.clutchesWon ?? 0) * 0.22;
+    (extras.multikill2 ?? 0) * 0.025 +
+    (extras.multikill3 ?? 0) * 0.06 +
+    (extras.multikill4 ?? 0) * 0.11 +
+    (extras.multikill5 ?? 0) * 0.18
+  ) / rounds;
+  const clutchImpact = (extras.clutchesWon ?? 0) * 0.16 / rounds;
   const clutchConversion = extras.clutchAttempts
-    ? Math.min(0.06, (extras.clutchesWon ?? 0) / extras.clutchAttempts * 0.06)
+    ? Math.min(0.05, (extras.clutchesWon ?? 0) / extras.clutchAttempts * 0.05)
     : 0;
   const rating = 1
     + (kpr - 0.72) * 0.52
-    + (adr - 68) / 100 * 0.75
+    + (adr - 75) / 100 * 0.42
     - (dpr - 0.68) * 0.32
     + (apr - 0.18) * 0.14
     + (kast - 0.70) * 0.30

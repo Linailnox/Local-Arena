@@ -762,4 +762,6 @@ export const api = {
   getCs2ssDmOverview: (csgo: string, steamId: string) => invoke<Cs2ssDmOverview>("get_cs2ss_dm_overview", { csgo, steamId }),
   deleteCs2ssMatches: (csgo: string, matchIds: number[]) =>
     invoke<number>("delete_cs2ss_matches", { csgo, matchIds }),
+  pruneCs2ssBotPlayers: (csgo: string, matchId: number) =>
+    invoke<[number, number]>("prune_cs2ss_bot_players", { csgo, matchId }),
 };
