@@ -133,7 +133,7 @@ export default function StatsMatchHistory({ csgo, onOpenMatch, onBack }: Props) 
                     {dm ? (
                       <span style={{ color: "#df6b35", fontWeight: 700 }}>{t("stats.minutesShort", { count: Math.round(m.durationSeconds / 60) })}</span>
                     ) : (
-                      <span className="stats-table__score">{m.teamAScore} : {m.teamBScore}</span>
+                      <span className="stats-table__score">{m.playerTeam === "CT" ? m.teamBScore : m.teamAScore} : {m.playerTeam === "CT" ? m.teamAScore : m.teamBScore}</span>
                     )}
                   </td>
                   <td>{dm ? t("stats.minutesShort", { count: Math.round(m.durationSeconds / 60) }) : t("stats.roundsShort", { count: m.roundsPlayed })}</td>
