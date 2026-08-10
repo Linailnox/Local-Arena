@@ -256,14 +256,14 @@ pub fn run(payload_root: &Path, state_root: &Path, target: &Path, cs2_running: b
             "TARGET_TEAM_LINEUP_MANAGED",
             &format!("Installed {name}"),
             target.join(relative),
-            CheckStatus::Warn,
+            if installed { CheckStatus::Fail } else { CheckStatus::Warn },
             false,
         ));
         checks.push(managed_component_check(
             "PAYLOAD_TEAM_LINEUP_MANAGED",
             &format!("Package {name}"),
             payload_root.join(relative),
-            CheckStatus::Warn,
+            CheckStatus::Fail,
             false,
         ));
     }
