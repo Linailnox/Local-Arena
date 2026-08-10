@@ -35,28 +35,20 @@ export default function StatsMatchDetail({ csgo, matchId, onBack }: Props) {
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<string | null>(null);
 
-  const [pruning, setPruning] = useState(false);
-
   useEffect(() => {
     let cancelled = false;
     const load = () => {
       setLoading(true);
-      api.getCs2ssMatchDetail(csgo, matchId).then(async d => {
+      api.getCs2ssMatchDetail(csgo, matchId).then(d => {
         if (cancelled || !d) return;
-        const ghostBots = d.matchPlayers.filter(mp => mp.isBot && mp.totalKills === 0 && mp.totalDeaths === 0 && mp.totalDamage === 0);
-        if (ghostBots.length > 0 && !pruning) {
-          setPruning(true);
-          try { await api.pruneCs2ssBotPlayers(csgo, matchId); } catch { /* ignore */ }
-          if (!cancelled) load();
-          return;
-        }
         setData(d);
-        if (d.matchPlayers.length > 0) {
-          const self = d.matchPlayers.find(mp => !mp.isBot) ?? d.matchPlayers[0];
+        const visiblePlayers = d.matchPlayers.filter(mp => !mp.isBot || mp.totalKills > 0 || mp.totalDeaths > 0 || mp.totalDamage > 0);
+        if (visiblePlayers.length > 0) {
+          const self = visiblePlayers.find(mp => !mp.isBot) ?? visiblePlayers[0];
           const initTeamOf = (sid: string) => d.roundPlayers.find(rp => rp.steamId === sid)?.team ?? d.matchPlayers.find(p => p.steamId === sid)?.team;
           const selfInit = initTeamOf(self.steamId);
           const ns = new Set<string>(); ns.add(self.steamId);
-          const topEnemy = d.matchPlayers.filter(p => initTeamOf(p.steamId) !== selfInit).sort((a, b) => (b.totalKills + b.totalAssists) - (a.totalKills + a.totalAssists))[0];
+          const topEnemy = visiblePlayers.filter(p => initTeamOf(p.steamId) !== selfInit).sort((a, b) => (b.totalKills + b.totalAssists) - (a.totalKills + a.totalAssists))[0];
           if (topEnemy) ns.add(topEnemy.steamId);
           setSel(ns);
         }
@@ -65,12 +57,13 @@ export default function StatsMatchDetail({ csgo, matchId, onBack }: Props) {
     };
     load();
     return () => { cancelled = true; };
-  }, [csgo, matchId, pruning, reportError]);
+  }, [csgo, matchId, reportError]);
 
   const c = useMemo(() => {
     if (!data) return null;
-    const { match, matchPlayers: mps, roundPlayers: rps, rounds: rs } = data;
+    const { match, matchPlayers: mpsRaw, roundPlayers: rps, rounds: rs } = data;
 
+    const mps = mpsRaw.filter(mp => !mp.isBot || mp.totalKills > 0 || mp.totalDeaths > 0 || mp.totalDamage > 0);
     if (mps.length === 0) return { empty: true, match, status: match.status } as const;
 
     const s = mps.find(p => !p.isBot) ?? mps[0];

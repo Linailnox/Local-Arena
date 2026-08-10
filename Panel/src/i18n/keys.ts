@@ -188,7 +188,7 @@ export const EN = {
   "match.mvps": "MVPs",
   "match.clutches": "Clutches",
   "match.firstKills": "First kills",
-  "match.breakdown": "Rating 构成-基础值为1",
+  "match.breakdown": "Rating breakdown — base value 1",
   "match.openRating": "OpenRating",
   "match.ratingKills": "Kills",
   "match.ratingDamage": "Damage",

@@ -73,7 +73,7 @@ export const DICTS: Record<string, Partial18n> = {
     "match.ratingKills": "击杀", "match.ratingDamage": "伤害", "match.ratingSurvival": "生存", "match.ratingKast": "KAST", "match.ratingMulti": "多杀", "match.ratingSwing": "回合影响", "match.ratingEconomy": "经济修正",
     "match.demoState.disabled": "未开启", "match.demoState.pending": "等待录制", "match.demoState.recording": "录制中", "match.demoState.validating": "正在校验", "match.demoState.ready": "可播放", "match.demoState.failed": "录制失败", "match.demoState.interrupted": "录制中断", "startup.failed": "面板启动失败",
     "match.kindHuman": "玩家", "match.kindBot": "人机", "match.rounds": "回合",
-    "match.mvps": "MVP 次数", "match.clutches": "残局获胜", "match.firstKills": "首杀", "match.breakdown": "Rating 构成-基础值为1",
+    "match.mvps": "MVP 次数", "match.clutches": "残局获胜", "match.firstKills": "首杀", "match.breakdown": "Rating 构成 — 基础值为 1",
     "mh.totalMatches": "记录总数", "mh.completedMatches": "已完成", "mh.avgScore": "平均比分", "mh.favMap": "常用地图",
     "cosmetics.transferTitle": "饰品预设导入导出", "cosmetics.exportPreset": "导出预设", "cosmetics.importPreset": "导入预设",
     "cosmetics.exporting": "正在导出...", "cosmetics.importing": "正在导入...", "cosmetics.exported": "饰品预设已导出", "cosmetics.imported": "饰品预设已导入，原实时预设已自动备份",
