@@ -249,6 +249,24 @@ pub fn run(payload_root: &Path, state_root: &Path, target: &Path, cs2_running: b
             true,
         ));
     }
+    {
+        let name = "TeamLineupInjector";
+        let relative = "addons/counterstrikesharp/plugins/TeamLineupInjector/TeamLineupInjector.dll";
+        checks.push(managed_component_check(
+            "TARGET_TEAM_LINEUP_MANAGED",
+            &format!("Installed {name}"),
+            target.join(relative),
+            if installed { CheckStatus::Fail } else { CheckStatus::Warn },
+            false,
+        ));
+        checks.push(managed_component_check(
+            "PAYLOAD_TEAM_LINEUP_MANAGED",
+            &format!("Package {name}"),
+            payload_root.join(relative),
+            CheckStatus::Fail,
+            false,
+        ));
+    }
     for (code, title, relative) in [
         ("MATCH_CATALOG", "Match catalog", "addons/counterstrikesharp/plugins/PlusMatchCoordinator/match_catalog.json"),
         ("OPEN_RATING_MODEL", "OpenRating model", "addons/counterstrikesharp/plugins/PlusMatchCoordinator/open-rating-3.0-proxy-v1.json"),
