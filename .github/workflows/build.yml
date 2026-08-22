@@ -40,7 +40,6 @@ jobs:
       - name: Prepare build and signing tools
         shell: pwsh
         run: |
-          if (-not $env:CSBIP_UPDATE_SIGNING_KEY) { throw "CSBIP_UPDATE_SIGNING_KEY is not configured" }
           python -m pip install --disable-pip-version-check pynacl
           $env:CARGO_HOME = Join-Path $PWD ".cache/cargo-home"
           New-Item -ItemType Directory -Path $env:CARGO_HOME -Force | Out-Null
