@@ -49,7 +49,8 @@ jobs:
         run: |
           $llvm = Join-Path $env:ProgramFiles "LLVM/bin"
           if (-not (Test-Path (Join-Path $llvm "lld-link.exe"))) { throw "LLVM linker is unavailable: $llvm" }
-          $version = "${{ github.ref_name }}".TrimStart("v")
+          $latest_tag = git describe --tags --abbrev=0
+          $version = $latest_tag.TrimStart("v")
           ./scripts/package.ps1 -ReleaseVersion $version -LlvmBin $llvm -XwinCache (Join-Path $PWD ".cache/xwin") -OutputDirectory (Join-Path $PWD "artifacts")
           if ((git status --short --untracked-files=no).Length -ne 0) { git status --short; throw "Build modified tracked files" }
       - uses: actions/upload-artifact@v7
