@@ -9,10 +9,9 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  build:
     runs-on: windows-latest
     env:
-      CSBIP_UPDATE_SIGNING_KEY: ${{ secrets.CSBIP_UPDATE_SIGNING_KEY }}
       CARGO_TERM_COLOR: always
     steps:
       - uses: actions/checkout@v4
