@@ -35,7 +35,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
+      
+      - name: Get latest tags
+        id: get_tag
+        shell: pwsh
+        run: |
+          $latest_tag = git describe --tags --abbrev=0
+          echo "LTAG=$latest_tag" >> $env:GITHUB_OUTPUT
+      
       - name: Prepare build and signing tools
         shell: pwsh
         run: |
@@ -49,24 +56,23 @@ jobs:
         run: |
           $llvm = Join-Path $env:ProgramFiles "LLVM/bin"
           if (-not (Test-Path (Join-Path $llvm "lld-link.exe"))) { throw "LLVM linker is unavailable: $llvm" }
-          $latest_tag = git describe --tags --abbrev=0
-          $version = $latest_tag.TrimStart("v")
+          $version = ${{ steps.get_tag.outputs.LTAG }}.TrimStart("v")
           ./scripts/package.ps1 -ReleaseVersion $version -LlvmBin $llvm -XwinCache (Join-Path $PWD ".cache/xwin") -OutputDirectory (Join-Path $PWD "artifacts")
           if ((git status --short --untracked-files=no).Length -ne 0) { git status --short; throw "Build modified tracked files" }
       - uses: actions/upload-artifact@v7
         with:
             name: LocalArena-${{ github.ref_name }}-windows.zip
-            path:  artifacts/LocalArena-${{ github.ref_name }}-windows.zip
+            path:  artifacts/LocalArena-${{ steps.get_tag.outputs.LTAG }}-windows.zip
             archive: false
       - uses: actions/upload-artifact@v7
         with:
             name: LocalArena-panel-${{ github.ref_name }}-windows.zip
-            path: artifacts/LocalArena-panel-${{ github.ref_name }}-windows.zip
+            path: artifacts/LocalArena-panel-${{ steps.get_tag.outputs.LTAG }}-windows.zip
             archive: false
       - uses: actions/upload-artifact@v7
         with:
             name: LocalArena-plugin-${{ github.ref_name }}-windows.zip
-            path: artifacts/LocalArena-plugin-${{ github.ref_name }}-windows.zip
+            path: artifacts/LocalArena-plugin-${{ steps.get_tag.outputs.LTAG }}-windows.zip
             archive: false
       - uses: actions/upload-artifact@v7
         with:
