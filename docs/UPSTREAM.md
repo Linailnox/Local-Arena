@@ -3,15 +3,27 @@
 ## Base
 
 - Project: `ed0ard/CS2-Bot-Improver`
-- Packaged runtime base: `v1.4.1`
-- Synced upstream source version: `1.4.2`
-- Synced upstream commit: `43c455c6f85bbb6ffe80f137a5e911cfe0c903f2`
-- Plus release line: `1.4.2.1`
+- Synced upstream source commit: `7491e175f83e612dbb1c742c2241d454ed4c15ad` (`v1.4.4`)
+- Pinned Windows runtime asset: `CS2BotImprover.zip` (`v1.4.4`, see `scripts/dependencies.json`)
+- Plus release line: `1.4.3.x` test line; the merged payload tracks upstream `v1.4.4` enhanced-bot sources
 
-The repository stores source and configuration deltas. Upstream has marked its Panel and source tree as 1.4.2 but has
-not published a v1.4.2 release archive. The Windows package script therefore obtains the last official v1.4.1 layout,
-then overlays the synced 1.4.2 sources, BotHider v0.3.0 data, pinned engine-compatible runtimes, and current Plus builds
-instead of committing generated or third-party binaries.
+The repository stores source and configuration deltas. Upstream has marked its Panel and source tree as 1.4.4 and has
+published the `v1.4.4` release archive. The Windows package script obtains the official v1.4.4 layout, then overlays the
+synced sources, BotHider v0.4.0 data, pinned engine-compatible runtimes, and current Plus builds instead of committing
+generated or third-party binaries.
+
+### 2026-09 v1.4.4 merge notes
+
+- Adopted upstream `BotAI`, `BotState`, `BotControllerImpl`/`BotHiderImpl`, the `NadeSystem` partial-class rewrite,
+  the steamid-keyed `bot_info.json` schema, `BotHider`/`gamedata.json`, and the new `BotVision`/`BotController`
+  metamod payload (arrives from the pinned release archive).
+- Kept Local Arena versions: `Panel`, `README*`, `Commands.txt`, `BotRandomizer` (feature-gated skins/agents/music
+  pipeline), `BotAimImprover`/`BotBuy` custom builds, the `NadeSystem` disconnected-pawn guard (now in
+  `NadeSystemPlugin.Replay.cs`), and the curated difficulty `overrides` DBs that still carry Local Arena featured
+  players such as `Techno4K`.
+- Follow-up data task: the pinned `v1.4.4` botprofile data no longer defines some Local Arena featured roster names
+  (e.g. `Techno4K`); the shipped difficulty VPKs must be re-augmented before an official package passes
+  `verify-workspace.ps1`.
 
 ## Pinned Runtime Inputs
 
