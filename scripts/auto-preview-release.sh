@@ -149,8 +149,39 @@ git push "$UPSTREAM" "$TAG_NAME"
 
 REPO_URL="$(git config "remote.${UPSTREAM}.url")"
 WEB_URL="$(python3 -c "import sys,re;u=sys.argv[1];u=re.sub(r'^(git@[^:]+:|https?://[^/]+/|ssh://[^/]+/|git://[^/]+/)','',u);u=re.sub(r'\.git$','',u);print('https://github.com/'+u)" "$REPO_URL" 2>/dev/null || true)"
+
+# --- report the Actions run for this tag ----------------------------
+SLUG="$(python3 -c "import sys,re;u=sys.argv[1];u=re.sub(r'^(git@[^:]+:|https?://[^/]+/|ssh://[^/]+/|git://[^/]+/)','',u);u=re.sub(r'\.git$','',u);print(u)" "$REPO_URL" 2>/dev/null || true)"
+TAG_SHA="$(git rev-parse "$TAG_NAME" 2>/dev/null || true)"
+RUN_URL=""
+if [ -n "$SLUG" ] && [ -n "$TAG_SHA" ]; then
+    AUTH=()
+    if [ -n "${GH_TOKEN:-}${GITHUB_TOKEN:-}" ]; then
+        AUTH=(-H "Authorization: Bearer ${GITHUB_TOKEN:-$GH_TOKEN}")
+    fi
+    for _ in $(seq 1 20); do
+        sleep 8
+        BODY="$(curl -fsSL "${AUTH[@]}" "https://api.github.com/repos/${SLUG}/actions/runs?head_sha=${TAG_SHA}&per_page=10" 2>/dev/null || true)"
+        RUN_URL="$(python3 -c "
+import sys, json
+try:
+    d = json.load(sys.stdin)
+    for r in d.get('workflow_runs', []):
+        if r.get('event') == 'push' and str(r.get('head_sha','')).startswith('${TAG_SHA}'):
+            print(r.get('html_url','')); break
+except Exception:
+    pass
+" <<< "$BODY" 2>/dev/null || true)"
+        [ -n "$RUN_URL" ] && break
+    done
+fi
+
 echo
 echo "Done."
 echo "  branch : ${BRANCH_NAME} -> ${UPSTREAM}"
 echo "  tag    : ${TAG_NAME}"
-echo "  CI     : watch ${WEB_URL:-https://github.com}/actions (tag ${TAG_NAME})"
+if [ -n "$RUN_URL" ]; then
+    echo "  CI run : ${RUN_URL}"
+else
+    echo "  CI     : watch ${WEB_URL:-https://github.com}/actions (tag ${TAG_NAME})"
+fi
