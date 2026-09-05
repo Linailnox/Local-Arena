@@ -40,11 +40,13 @@ export default function PresetsPanel({ onBack }: { onBack?: () => void }) {
     csgoPath,
     teamLineup,
     timescaleToggleEnabled,
+    infiniteAmmoEnabled,
     applyAim,
     applyNades,
     applyBotItem,
     applyTeamLineup,
     applyTimescaleToggle,
+    applyInfiniteAmmo,
     aimPending,
     nadesPending,
     botItemsPending,
@@ -181,6 +183,17 @@ export default function PresetsPanel({ onBack }: { onBack?: () => void }) {
           <p className="selection-detail" aria-live="polite">
             {t(nadesOption.descriptionKey)}
           </p>
+          <div className="botitem">
+            <span className="botitem__label">{t("pre.infiniteAmmo")}</span>
+            <Toggle
+              ariaLabel={t("pre.infiniteAmmo")}
+              checked={infiniteAmmoEnabled}
+              tone={!cfgPresent ? "red" : "green"}
+              disabled={disabled}
+              onChange={(next) => applyInfiniteAmmo(next)}
+            />
+          </div>
+          <p className="selection-detail">{t("pre.infiniteAmmoHint")}</p>
         </Section>
 
         <Section title={t("bi.title")} status={itemsStatus}>
