@@ -133,6 +133,8 @@ struct AppConfig {
     #[serde(default)]
     team_lineup_excluded: Option<String>,
     #[serde(default)]
+    team_lineup_duel: bool,
+    #[serde(default)]
     timescale_toggle_enabled: bool,
 }
 
@@ -160,6 +162,7 @@ impl Default for AppConfig {
             team_lineup_friendly: None,
             team_lineup_enemy: None,
             team_lineup_excluded: None,
+            team_lineup_duel: false,
             timescale_toggle_enabled: false,
         }
     }
@@ -257,6 +260,7 @@ struct TeamLineupState {
     friendly_team_index: Option<String>,
     enemy_team_index: Option<String>,
     excluded_player: Option<String>,
+    duel: bool,
 }
 
 #[derive(Deserialize)]
@@ -265,6 +269,7 @@ struct TeamLineupInput {
     friendly_team_index: Option<String>,
     enemy_team_index: Option<String>,
     excluded_player: Option<String>,
+    duel: bool,
 }
 #[derive(Serialize)]
 struct DropKnivesState {
@@ -1836,7 +1841,7 @@ fn team_lineup_meta(index: &str) -> Option<(&'static str, &'static str, &'static
         "3" => Some(("fal", "Falcons", &["NiKo", "TeSeS", "m0NESY", "karrigan", "kyousuke"])),
         "4" => Some(("mouz", "MOUZ", &["jL", "torzsi", "Spinx", "xelex", "xertioN"])),
         "5" => Some(("faze", "FaZe Clan", &["enkay J", "frozen", "Twistzz", "broky", "jcobbb"])),
-        "6" => Some(("mngz", "The MongolZ", &["bLitz", "Techno4K", "mzinho", "910", "cobrazera"])),
+        "6" => Some(("mngz", "The MongolZ", &["bLitz", "Senzu", "mzinho", "910", "cobrazera"])),
         "7" => Some(("navi", "Natus Vincere", &["Aleksib", "iM", "b1t", "w0nderful", "makazze"])),
         "8" => Some(("spir", "Spirit", &["sh1ro", "magixx", "tN1R", "zont1x", "donk"])),
         "9" => Some(("g2", "G2 Esports", &["huNter-", "NertZ", "SunPayus", "HeavyGod", "MATYS"])),
@@ -1893,34 +1898,83 @@ struct LineupJsonConfig {
 
 #[tauri::command]
 fn set_team_lineup(app: AppHandle, csgo: String, input: TeamLineupInput) -> Result<TeamLineupState> {
+    const FORSAKEN: &str = "forsaken";
     let root = csgo_path(&csgo)?;
     let mut config = read_config(&app)?;
 
-    config.team_lineup_enabled = input.enabled;
-    config.team_lineup_friendly = input.friendly_team_index.clone();
-    config.team_lineup_enemy = input.enemy_team_index.clone();
-    config.team_lineup_excluded = input.excluded_player.clone();
+    let friendly_sel = input.friendly_team_index.as_deref();
+    let enemy_sel = input.enemy_team_index.as_deref();
+    let friendly_is_forsaken = friendly_sel == Some(FORSAKEN);
+    let enemy_is_forsaken = enemy_sel == Some(FORSAKEN);
+    // "1v1 duel": forsaken is alone on the enemy side and the friendly lineup is
+    // dropped so only the human player remains on their own team.
+    let duel = input.duel && enemy_is_forsaken;
 
-    let json_config = if input.enabled && (input.friendly_team_index.is_some() || input.enemy_team_index.is_some()) {
-        let friendly = input.friendly_team_index.as_deref()
-            .and_then(team_lineup_meta)
-            .map(|(logo, name, players)| LineupJsonTeam {
-                logo: logo.to_string(),
-                name: name.to_string(),
-                players: players.iter().map(|s| s.to_string()).collect(),
-            });
-        let enemy = input.enemy_team_index.as_deref()
-            .and_then(team_lineup_meta)
-            .map(|(logo, name, players)| LineupJsonTeam {
-                logo: logo.to_string(),
-                name: name.to_string(),
-                players: players.iter().map(|s| s.to_string()).collect(),
-            });
+    if friendly_is_forsaken && enemy_is_forsaken {
+        return Err(AppError::invalid(
+            "forsaken cannot be selected on both sides at the same time",
+        ));
+    }
+    // A 2-man side (player + forsaken) still needs a configured enemy roster.
+    if friendly_is_forsaken && enemy_sel.is_none() {
+        return Err(AppError::invalid(
+            "an enemy team is required when forsaken is on your side",
+        ));
+    }
+
+    let friendly_index = if duel {
+        None
+    } else {
+        input.friendly_team_index.clone()
+    };
+    let enemy_index = input.enemy_team_index.clone();
+
+    config.team_lineup_enabled = input.enabled;
+    config.team_lineup_friendly = friendly_index.clone();
+    config.team_lineup_enemy = enemy_index.clone();
+    config.team_lineup_excluded = if friendly_is_forsaken || duel {
+        None
+    } else {
+        input.excluded_player.clone()
+    };
+    config.team_lineup_duel = input.duel;
+
+    let forsaken_team = || LineupJsonTeam {
+        logo: String::new(),
+        name: FORSAKEN.to_string(),
+        players: vec![FORSAKEN.to_string()],
+    };
+
+    let json_config = if input.enabled && (friendly_index.is_some() || enemy_index.is_some()) {
+        let friendly = if friendly_is_forsaken {
+            Some(forsaken_team())
+        } else {
+            friendly_index
+                .as_deref()
+                .and_then(team_lineup_meta)
+                .map(|(logo, name, players)| LineupJsonTeam {
+                    logo: logo.to_string(),
+                    name: name.to_string(),
+                    players: players.iter().map(|s| s.to_string()).collect(),
+                })
+        };
+        let enemy = if enemy_is_forsaken {
+            Some(forsaken_team())
+        } else {
+            enemy_index
+                .as_deref()
+                .and_then(team_lineup_meta)
+                .map(|(logo, name, players)| LineupJsonTeam {
+                    logo: logo.to_string(),
+                    name: name.to_string(),
+                    players: players.iter().map(|s| s.to_string()).collect(),
+                })
+        };
         LineupJsonConfig {
             enabled: true,
             friendly_team: friendly,
             enemy_team: enemy,
-            excluded_player: input.excluded_player.clone(),
+            excluded_player: config.team_lineup_excluded.clone(),
         }
     } else {
         LineupJsonConfig {
@@ -1946,6 +2000,7 @@ fn set_team_lineup(app: AppHandle, csgo: String, input: TeamLineupInput) -> Resu
         friendly_team_index: config.team_lineup_friendly.clone(),
         enemy_team_index: config.team_lineup_enemy.clone(),
         excluded_player: config.team_lineup_excluded.clone(),
+        duel: config.team_lineup_duel,
     })
 }
 
@@ -1959,6 +2014,7 @@ fn get_team_lineup(app: AppHandle, csgo: String) -> Result<TeamLineupState> {
         friendly_team_index: config.team_lineup_friendly.clone(),
         enemy_team_index: config.team_lineup_enemy.clone(),
         excluded_player: config.team_lineup_excluded.clone(),
+        duel: config.team_lineup_duel,
     })
 }
 
