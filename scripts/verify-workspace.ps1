@@ -113,6 +113,7 @@ else {
         "addons/counterstrikesharp/plugins/BotHiderImpl/BotHiderImplPlugin.cs",
         "addons/counterstrikesharp/plugins/NadeSystem/NadeSystem.cs",
         "addons/counterstrikesharp/plugins/NadeSystem/NadeSystem.csproj",
+        "addons/counterstrikesharp/plugins/NadeSystem/NadeSystemPlugin.Replay.cs",
         "addons/counterstrikesharp/plugins/RoundDamageRecap/RoundDamageRecap.cs",
         "addons/counterstrikesharp/plugins/RoundDamageRecap/RoundDamageRecap.csproj",
         "overrides/Low/botprofile.db",
@@ -163,7 +164,10 @@ if (([regex]::Matches($botBuy, 'AddTimer\(').Count -ne 1) -or
     Add-Failure "BotBuy no longer guards delayed callbacks against invalid CounterStrikeSharp controllers."
 }
 
-$nadeSystem = Get-Content -LiteralPath (Join-Path $repo "addons/counterstrikesharp/plugins/NadeSystem/NadeSystem.cs") -Raw
+# NadeSystem was refactored upstream (v1.4.4) into partial files. The Local
+# Arena disconnected-pawn guard and the Less-mode markers now live in the
+# replay partial; scan that file instead of the monolithic NadeSystem.cs.
+$nadeSystem = Get-Content -LiteralPath (Join-Path $repo "addons/counterstrikesharp/plugins/NadeSystem/NadeSystemPlugin.Replay.cs") -Raw
 if ($nadeSystem -notmatch 'if \(!bot\.IsValid\) return;' -or
     $nadeSystem -notmatch 'botPawn = bot\.PlayerPawn\?\.Value;' -or
     $nadeSystem -notmatch 'catch \(Exception\)\s*\{\s*return;\s*\}') {
@@ -442,12 +446,12 @@ function Assert-BotProfileContent([string]$Profile, [string]$Label) {
     }
 }
 
-$botHiderImpl = Get-Content -LiteralPath (Join-Path $repo "addons/counterstrikesharp/plugins/BotHiderImpl/BotHiderImplPlugin.cs") -Raw
+    $botHiderImpl = Get-Content -LiteralPath (Join-Path $repo "addons/counterstrikesharp/plugins/BotHiderImpl/BotHiderImplPlugin.cs") -Raw
 if ($botHiderImpl -notmatch "foreach \(int slot in managedSlots\)" -or
     $botHiderImpl -notmatch "player\.PlayerName = name" -or
-    $botHiderImpl -notmatch 'ModuleVersion => "0\.3\.3"' -or
+    $botHiderImpl -notmatch 'ModuleVersion => "0\.4\.0"' -or
     $botHiderImpl -notmatch "EnsureBotInfoNameSource\(\)") {
-    Add-Failure "BotHiderImpl no longer preserves the v0.3.3 managed-name integration."
+    Add-Failure "BotHiderImpl no longer preserves the v0.4.0 managed-name integration."
 }
 $botHiderGameData = Get-Content -LiteralPath (Join-Path $repo "addons/BotHider/gamedata.json") -Raw
 if ($botHiderGameData -notmatch '"CServerSideClient::SetName"' -or
@@ -472,7 +476,9 @@ if ($PackageRoot) {
     $requiredPackageFiles = @(
         "addons/BotHider/bin/win64/BotHider.dll",
         "addons/BotController/bin/win64/BotController.dll",
+        "addons/BotVision/bin/win64/BotVision.dll",
         "addons/metamod/BotController.vdf",
+        "addons/metamod/BotVision.vdf",
         "addons/metamod/bin/win64/server.dll",
         "addons/counterstrikesharp/bin/win64/counterstrikesharp.dll",
         "addons/RayTrace/bin/win64/RayTrace.dll",
