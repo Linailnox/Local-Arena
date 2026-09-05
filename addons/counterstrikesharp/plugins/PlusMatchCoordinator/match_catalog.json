@@ -21,7 +21,7 @@
     { "id": "falcons", "name": "Falcons", "badge": "FLC", "ranking": 3, "players": ["NiKo", "TeSeS", "m0NESY", "karrigan", "kyousuke"] },
     { "id": "mouz", "name": "MOUZ", "badge": "MOU", "ranking": 4, "players": ["jL", "torzsi", "Spinx", "xelex", "xertioN"] },
     { "id": "faze", "name": "FaZe Clan", "badge": "FAZ", "ranking": 5, "players": ["enkay J", "frozen", "Twistzz", "broky", "jcobbb"] },
-    { "id": "mongolz", "name": "The MongolZ", "badge": "MGL", "ranking": 6, "players": ["bLitz", "Techno4K", "mzinho", "910", "cobrazera"] },
+    { "id": "mongolz", "name": "The MongolZ", "badge": "MGL", "ranking": 6, "players": ["bLitz", "Senzu", "mzinho", "910", "cobrazera"] },
     { "id": "navi", "name": "Natus Vincere", "badge": "NAVI", "ranking": 7, "players": ["Aleksib", "iM", "b1t", "w0nderful", "makazze"] },
     { "id": "spirit", "name": "Spirit", "badge": "TS", "ranking": 8, "players": ["sh1ro", "magixx", "tN1R", "zont1x", "donk"] },
     { "id": "g2", "name": "G2", "badge": "G2", "ranking": 9, "players": ["huNter-", "NertZ", "SunPayus", "HeavyGod", "MATYS"] },
