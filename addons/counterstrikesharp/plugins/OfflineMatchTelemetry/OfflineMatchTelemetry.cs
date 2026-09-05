@@ -49,6 +49,7 @@ public class OfflineMatchTelemetryPlugin : BasePlugin
     private long _spawnEvents;
     private string _modeFamily = "competitive";
     private string _ruleset = "round_based";
+    private bool _balancedSession;
     private int _gameType;
     private int _gameMode;
     private bool _isDeathmatch;
@@ -56,7 +57,7 @@ public class OfflineMatchTelemetryPlugin : BasePlugin
     private readonly List<DeathmatchLifeRecord> _deathmatchLives = [];
 
     public override string ModuleName => "OfflineMatchTelemetry";
-    public override string ModuleVersion => "0.8.0";
+    public override string ModuleVersion => "0.8.1";
     public override string ModuleAuthor => "CS2-Self-Stat";
     public override string ModuleDescription => "Offline bot match SQLite telemetry exporter";
 
@@ -285,7 +286,14 @@ public class OfflineMatchTelemetryPlugin : BasePlugin
         if (_matchActive) return true;
         if (!IsValidMap(Server.MapName)) return false;
         DetectMode();
-        if (!_isDeathmatch && !HasBalancedPlayingRoster()) return false;
+        // A round-based session only needs both sides present to be meaningful.
+        // Team sizes may differ (e.g. 5v1 / 2v5 forsaken lineups); balanced
+        // sessions are still tagged so the panel can treat them distinctly.
+        if (!_isDeathmatch && !HasPlayingRoster()) return false;
+
+        _balancedSession = !_isDeathmatch && HasBalancedRoster();
+        if (!_isDeathmatch)
+            _ruleset = _balancedSession ? "round_based" : "round_based_unbalanced";
 
         _matchStartedAt = DateTimeOffset.UtcNow;
         _matchMap = Server.MapName;
@@ -805,6 +813,7 @@ public class OfflineMatchTelemetryPlugin : BasePlugin
         _eventRoundActive = false;
         _modeFamily = "competitive";
         _ruleset = "round_based";
+        _balancedSession = false;
         _gameType = 0;
         _gameMode = 1;
         _isDeathmatch = false;
@@ -1034,7 +1043,7 @@ public class OfflineMatchTelemetryPlugin : BasePlugin
             if (player.Team == CsTeam.CounterTerrorist) _teamAPlayers.Add(PlayerId(player));
             if (player.Team == CsTeam.Terrorist) _teamBPlayers.Add(PlayerId(player));
         }
-        _fixedTeamsReady = _teamAPlayers.Count > 0 && _teamAPlayers.Count == _teamBPlayers.Count;
+        _fixedTeamsReady = _teamAPlayers.Count > 0 && _teamBPlayers.Count > 0;
     }
 
     private string? FixedTeamForSide(string? side)
@@ -1163,11 +1172,26 @@ public class OfflineMatchTelemetryPlugin : BasePlugin
     private static string PlayerId(CCSPlayerController player) => player.SteamID.ToString();
     private static IEnumerable<CCSPlayerController> PlayingPlayers() => Utilities
         .FindAllEntitiesByDesignerName<CCSPlayerController>("cs_player_controller").Where(IsPlaying);
-    private static bool HasBalancedPlayingRoster()
+    private static (int Terrorists, int CounterTerrorists) PlayingRosterCounts()
     {
         var players = PlayingPlayers().ToList();
-        var terrorists = players.Count(player => player.Team == CsTeam.Terrorist);
-        var counterTerrorists = players.Count(player => player.Team == CsTeam.CounterTerrorist);
+        return (
+            players.Count(player => player.Team == CsTeam.Terrorist),
+            players.Count(player => player.Team == CsTeam.CounterTerrorist)
+        );
+    }
+
+    /// <summary>Both teams have at least one playing member (balanced or not).</summary>
+    private static bool HasPlayingRoster()
+    {
+        var (terrorists, counterTerrorists) = PlayingRosterCounts();
+        return terrorists > 0 && counterTerrorists > 0;
+    }
+
+    /// <summary>Both teams are present with an equal number of playing members.</summary>
+    private static bool HasBalancedRoster()
+    {
+        var (terrorists, counterTerrorists) = PlayingRosterCounts();
         return terrorists > 0 && terrorists == counterTerrorists;
     }
 
@@ -1216,7 +1240,7 @@ public class OfflineMatchTelemetryPlugin : BasePlugin
         {
             var terrorists = current.Values.Count(x => x.Team == CsTeam.Terrorist);
             var counterTerrorists = current.Values.Count(x => x.Team == CsTeam.CounterTerrorist);
-            if (terrorists > 0 && terrorists == counterTerrorists)
+            if (terrorists > 0 && counterTerrorists > 0)
             {
                 CaptureInitialTeams(current.Values);
                 foreach (var player in current.Values) GetRoundState(player).Team = player.Team;
