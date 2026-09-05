@@ -18,11 +18,13 @@ generated or third-party binaries.
   the steamid-keyed `bot_info.json` schema, `BotHider`/`gamedata.json`, and the new `BotVision`/`BotController`
   metamod payload (arrives from the pinned release archive).
 - Kept Local Arena versions: `Panel`, `README*`, `Commands.txt`, `BotRandomizer` (feature-gated skins/agents/music
-  pipeline), `BotAimImprover`/`BotBuy` custom builds, the `NadeSystem` disconnected-pawn guard (now in
-  `NadeSystemPlugin.Replay.cs`), and the curated difficulty `overrides` DBs.
+  pipeline), `BotAimImprover`/`BotBuy` custom builds, and the `NadeSystem` disconnected-pawn guard (now in
+  `NadeSystemPlugin.Replay.cs`).
+- Difficulty `overrides` DB mirrors are re-extracted from the normalized `v1.4.4` payload VPKs, so they carry the
+  new v1.4.4 pros (e.g. `forsaken`) while keeping valid `LookAngle` values.
 - Roster reconciliation: the pinned `v1.4.4` botprofile data no longer defines `Techno4K`; the Local Arena
   `The MongolZ` five-man lineups (`match_catalog.json`, `Commands.txt`, Panel command browser) now use `Senzu`,
-  which exists in the shipped difficulty data, so packaging verification passes without re-augmenting the VPKs.
+  which exists in the shipped difficulty data, so packaging verification passes.
 
 ## Pinned Runtime Inputs
 
