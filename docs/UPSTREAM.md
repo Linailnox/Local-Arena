@@ -19,11 +19,10 @@ generated or third-party binaries.
   metamod payload (arrives from the pinned release archive).
 - Kept Local Arena versions: `Panel`, `README*`, `Commands.txt`, `BotRandomizer` (feature-gated skins/agents/music
   pipeline), `BotAimImprover`/`BotBuy` custom builds, the `NadeSystem` disconnected-pawn guard (now in
-  `NadeSystemPlugin.Replay.cs`), and the curated difficulty `overrides` DBs that still carry Local Arena featured
-  players such as `Techno4K`.
-- Follow-up data task: the pinned `v1.4.4` botprofile data no longer defines some Local Arena featured roster names
-  (e.g. `Techno4K`); the shipped difficulty VPKs must be re-augmented before an official package passes
-  `verify-workspace.ps1`.
+  `NadeSystemPlugin.Replay.cs`), and the curated difficulty `overrides` DBs.
+- Roster reconciliation: the pinned `v1.4.4` botprofile data no longer defines `Techno4K`; the Local Arena
+  `The MongolZ` five-man lineups (`match_catalog.json`, `Commands.txt`, Panel command browser) now use `Senzu`,
+  which exists in the shipped difficulty data, so packaging verification passes without re-augmenting the VPKs.
 
 ## Pinned Runtime Inputs
 
