@@ -135,6 +135,8 @@ struct AppConfig {
     #[serde(default)]
     team_lineup_duel: bool,
     #[serde(default)]
+    nades_infinite_ammo: bool,
+    #[serde(default)]
     timescale_toggle_enabled: bool,
 }
 
@@ -163,6 +165,7 @@ impl Default for AppConfig {
             team_lineup_enemy: None,
             team_lineup_excluded: None,
             team_lineup_duel: false,
+            nades_infinite_ammo: false,
             timescale_toggle_enabled: false,
         }
     }
@@ -2036,6 +2039,27 @@ fn set_timescale_toggle(app: AppHandle, csgo: String, enabled: bool) -> Result<b
 fn get_timescale_toggle(app: AppHandle) -> Result<bool> {
     let config = read_config(&app)?;
     Ok(config.timescale_toggle_enabled)
+}
+
+#[tauri::command]
+fn set_infinite_ammo(app: AppHandle, csgo: String, enabled: bool) -> Result<bool> {
+    let root = csgo_path(&csgo)?;
+    let value = if enabled {
+        "sv_infinite_ammo 2"
+    } else {
+        "sv_infinite_ammo 0"
+    };
+    replace_managed_cfg_command(&root, "sv_infinite_ammo", value)?;
+    let mut config = read_config(&app)?;
+    config.nades_infinite_ammo = enabled;
+    write_config(&app, &config)?;
+    Ok(enabled)
+}
+
+#[tauri::command]
+fn get_infinite_ammo(app: AppHandle) -> Result<bool> {
+    let config = read_config(&app)?;
+    Ok(config.nades_infinite_ammo)
 }
 
 #[tauri::command]
@@ -4180,7 +4204,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![get_config, save_config, should_present_welcome_story, detect_directories, select_directory,
             cleanup_backups, validate_files, get_difficulty, set_difficulty, get_mode, set_mode,
             reconcile_launch_options, launch_cs2, reconcile_core_json, get_bot_items, set_bot_item,
-            get_presets, set_aim, set_nades, set_team_lineup, get_team_lineup, set_timescale_toggle, get_timescale_toggle, get_drop_knives, set_drop_knives,
+            get_presets, set_aim, set_nades, set_team_lineup, get_team_lineup, set_timescale_toggle, get_timescale_toggle, set_infinite_ammo, get_infinite_ammo, get_drop_knives, set_drop_knives,
             get_knife_customizer, save_knife_customizer, export_cosmetics_preset,
             import_cosmetics_preset, get_runtime_snapshot, get_cs2_process,
             inspect_installation, get_install_plan, install_payload, repair_payload,

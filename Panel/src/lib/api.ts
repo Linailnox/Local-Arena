@@ -721,6 +721,10 @@ export const api = {
     invoke<boolean>("set_timescale_toggle", { csgo, enabled }),
   getTimescaleToggle: () =>
     invoke<boolean>("get_timescale_toggle"),
+  setInfiniteAmmo: (csgo: string, enabled: boolean) =>
+    invoke<boolean>("set_infinite_ammo", { csgo, enabled }),
+  getInfiniteAmmo: () =>
+    invoke<boolean>("get_infinite_ammo"),
   getDropKnives: (csgo: string) =>
     invoke<DropKnivesState>("get_drop_knives", { csgo }),
   setDropKnives: (csgo: string, bindKey: string, selected: number[]) =>

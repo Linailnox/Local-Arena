@@ -404,6 +404,8 @@ export const EN = {
   "pre.timescaleToggle": "Gold Time",
   "pre.timescaleToggleDesc": "CAPSLK: time slows while aim speed remains unchanged",
   "pre.timescaleToggleHint": "Enjoy your gold time!",
+  "pre.infiniteAmmo": "Infinite ammo",
+  "pre.infiniteAmmoHint": "Injects sv_infinite_ammo 2 at the start of each match so magazines and grenades never run out.",
 
   "live.wear": "Wear",
   "live.seed": "Pattern seed",
