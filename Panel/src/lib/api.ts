@@ -351,6 +351,7 @@ export type TeamLineupInput = {
   friendly_team_index: string | null;
   enemy_team_index: string | null;
   excluded_player: string | null;
+  duel: boolean;
 };
 
 export type TeamLineupState = {
@@ -358,6 +359,7 @@ export type TeamLineupState = {
   friendly_team_index: string | null;
   enemy_team_index: string | null;
   excluded_player: string | null;
+  duel: boolean;
 };
 
 export type AppearanceStyle = "paper" | "clean" | "compact" | "immersive";
