@@ -222,6 +222,14 @@ Add `-disable_workshop_command_filtering` to your launch options.
 </details>
 
 <details>
+<summary><strong>Panel not working properly?</strong></summary>
+   
+1. Install **WebView2 Runtime** if you are on Windows 10.
+2. Try right-clicking and selecting `Run as administrator`.
+
+</details>
+
+<details>
 <summary><strong>How to surf normally?</strong></summary>
 
 Run `sv_standable_normal 0.7` in the game console.
