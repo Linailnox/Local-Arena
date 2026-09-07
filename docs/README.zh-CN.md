@@ -237,6 +237,14 @@ negev     m249
 </details>
 
 <details>
+<summary><strong>Panel无法正常运行？</strong></summary>
+   
+1. 如果你是 Windows 10 系统，需要安装 **WebView2运行时** 才能正常运行
+2. 尝试右键以管理员身份运行
+
+</details>
+
+<details>
 <summary><strong>如何正常进行滑翔（Surf）？</strong></summary>
 
 在游戏控制台中运行 `sv_standable_normal 0.7`。
