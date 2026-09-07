@@ -224,6 +224,14 @@ negev     m249
 </details>
 
 <details>
+<summary><strong>Панель не работает корректно?</strong></summary>
+   
+1. Установите **WebView2 Runtime**, если у вас Windows 10.
+2. Попробуйте запустить от имени администратора.
+
+</details>
+
+<details>
 <summary><strong>Как нормально играть на surf-картах?</strong></summary>
 
 Выполните `sv_standable_normal 0.7` в игровой консоли.
