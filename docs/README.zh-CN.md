@@ -239,8 +239,8 @@ negev     m249
 <details>
 <summary><strong>Panel无法正常运行？</strong></summary>
    
-1. 如果你是 Windows 10 系统，需要安装 **WebView2运行时** 才能正常运行
-2. 尝试右键以管理员身份运行
+1. 如果你是 Windows 10 系统，需要安装 **WebView2运行时** 才能正常运行。
+2. 尝试右键以管理员身份运行。
 
 </details>
 
