@@ -1142,6 +1142,17 @@ fn launch_request(mode: LaunchMode) -> (Vec<&'static str>, String) {
     }
 }
 
+/// Keep the injector's lineup file aligned with the persisted toggle. A stale
+/// roster left behind by an older build (or by an interrupted write) must never
+/// survive a disabled setting, because the injector would keep acting on it.
+fn reconcile_team_lineup_file(root: &Path, enabled: bool) {
+    if enabled {
+        return;
+    }
+    let lineup_path = root.join(".csbip").join("team-lineup.json");
+    let _ = fs::remove_file(lineup_path);
+}
+
 #[tauri::command]
 fn launch_cs2(app: AppHandle) -> Result<LaunchResult> {
     let mut config = read_config(&app)?;
@@ -1150,6 +1161,7 @@ fn launch_cs2(app: AppHandle) -> Result<LaunchResult> {
         AppError::directory("Select the CS2 game/csgo directory before launching")
     })?;
     let root = csgo_path(configured_path)?;
+    reconcile_team_lineup_file(&root, config.team_lineup_enabled);
     ensure_target_not_running(&root)?;
     let state = local_state_root(&app)?;
     mode_layout::recover(&state, &root)?;
@@ -1195,7 +1207,10 @@ fn prepare_and_launch_match(app: AppHandle, csgo: String, input: PrepareMatchInp
         "high" => "High",
         _ => return Err(AppError::invalid("Difficulty must be low, medium, or high")),
     };
-    let previous_mode = LaunchMode::parse(read_config(&app)?.mode.as_deref()).map_err(AppError::invalid)?;
+    let current_config = read_config(&app)?;
+    let previous_mode =
+        LaunchMode::parse(current_config.mode.as_deref()).map_err(AppError::invalid)?;
+    reconcile_team_lineup_file(&root, current_config.team_lineup_enabled);
     mode_layout::recover(&state, &root)?;
     apply_launch_mode(&root, LaunchMode::Bots).map_err(AppError::invalid)?;
     mode_layout::set_preview(&state, &root, false)?;
@@ -1897,31 +1912,41 @@ struct LineupJsonConfig {
     friendly_team: Option<LineupJsonTeam>,
     enemy_team: Option<LineupJsonTeam>,
     excluded_player: Option<String>,
+    solo: bool,
 }
 
 #[tauri::command]
 fn set_team_lineup(app: AppHandle, csgo: String, input: TeamLineupInput) -> Result<TeamLineupState> {
     const FORSAKEN: &str = "forsaken";
+    const SOLO: &str = "solo";
     let root = csgo_path(&csgo)?;
     let mut config = read_config(&app)?;
 
     let friendly_sel = input.friendly_team_index.as_deref();
     let enemy_sel = input.enemy_team_index.as_deref();
     let friendly_is_forsaken = friendly_sel == Some(FORSAKEN);
+    let friendly_is_solo = friendly_sel == Some(SOLO);
     let enemy_is_forsaken = enemy_sel == Some(FORSAKEN);
     // "1v1 duel": forsaken is alone on the enemy side and the friendly lineup is
-    // dropped so only the human player remains on their own team.
-    let duel = input.duel && enemy_is_forsaken;
+    // dropped so only the human player remains on their own team. A friendly
+    // "solo" pick means the same thing by itself, so the duel flag is ignored.
+    let duel = input.duel && enemy_is_forsaken && !friendly_is_solo;
 
     if friendly_is_forsaken && enemy_is_forsaken {
         return Err(AppError::invalid(
             "forsaken cannot be selected on both sides at the same time",
         ));
     }
-    // A 2-man side (player + forsaken) still needs a configured enemy roster.
-    if friendly_is_forsaken && enemy_sel.is_none() {
+    if enemy_sel == Some(SOLO) {
         return Err(AppError::invalid(
-            "an enemy team is required when forsaken is on your side",
+            "solo is only available on your own side",
+        ));
+    }
+    // A reduced friendly side (player + forsaken, or the player alone) still
+    // needs a configured enemy roster to face.
+    if (friendly_is_forsaken || friendly_is_solo) && enemy_sel.is_none() {
+        return Err(AppError::invalid(
+            "an enemy team is required when your side is forsaken or solo",
         ));
     }
 
@@ -1935,12 +1960,12 @@ fn set_team_lineup(app: AppHandle, csgo: String, input: TeamLineupInput) -> Resu
     config.team_lineup_enabled = input.enabled;
     config.team_lineup_friendly = friendly_index.clone();
     config.team_lineup_enemy = enemy_index.clone();
-    config.team_lineup_excluded = if friendly_is_forsaken || duel {
+    config.team_lineup_excluded = if friendly_is_forsaken || friendly_is_solo || duel {
         None
     } else {
         input.excluded_player.clone()
     };
-    config.team_lineup_duel = input.duel;
+    config.team_lineup_duel = duel;
 
     let forsaken_team = || LineupJsonTeam {
         logo: String::new(),
@@ -1951,6 +1976,9 @@ fn set_team_lineup(app: AppHandle, csgo: String, input: TeamLineupInput) -> Resu
     let json_config = if input.enabled && (friendly_index.is_some() || enemy_index.is_some()) {
         let friendly = if friendly_is_forsaken {
             Some(forsaken_team())
+        } else if friendly_is_solo {
+            // Solo: the friendly side fields no bots at all, so no team is injected.
+            None
         } else {
             friendly_index
                 .as_deref()
@@ -1973,28 +2001,40 @@ fn set_team_lineup(app: AppHandle, csgo: String, input: TeamLineupInput) -> Resu
                     players: players.iter().map(|s| s.to_string()).collect(),
                 })
         };
-        LineupJsonConfig {
+        Some(LineupJsonConfig {
             enabled: true,
             friendly_team: friendly,
             enemy_team: enemy,
             excluded_player: config.team_lineup_excluded.clone(),
-        }
+            solo: friendly_is_solo,
+        })
     } else {
-        LineupJsonConfig {
-            enabled: false,
-            friendly_team: None,
-            enemy_team: None,
-            excluded_player: None,
-        }
+        None
     };
 
     let csbip = root.join(".csbip");
-    fs::create_dir_all(&csbip).ok();
     let lineup_path = csbip.join("team-lineup.json");
-    let json = serde_json::to_string_pretty(&json_config)
-        .map_err(|e| AppError::io(format!("Failed to serialize lineup config: {e}")))?;
-    fs::write(&lineup_path, json)
-        .map_err(|e| AppError::io(format!("Failed to write team-lineup.json: {e}")))?;
+    match json_config {
+        Some(json_config) => {
+            fs::create_dir_all(&csbip).ok();
+            let json = serde_json::to_string_pretty(&json_config)
+                .map_err(|e| AppError::io(format!("Failed to serialize lineup config: {e}")))?;
+            fs::write(&lineup_path, json)
+                .map_err(|e| AppError::io(format!("Failed to write team-lineup.json: {e}")))?;
+        }
+        None => {
+            // Disabled: drop the file entirely. Leaving an `enabled: false`
+            // roster behind let the injector keep acting on stale data after
+            // the feature was switched off.
+            if let Err(error) = fs::remove_file(&lineup_path) {
+                if error.kind() != std::io::ErrorKind::NotFound {
+                    return Err(AppError::io(format!(
+                        "Failed to remove team-lineup.json: {error}"
+                    )));
+                }
+            }
+        }
+    }
 
     write_config(&app, &config)?;
 
@@ -3290,6 +3330,25 @@ mod tests {
         assert_eq!(csgo_path(root.to_str().unwrap()).unwrap(), expected);
         assert_eq!(csgo_path(game.to_str().unwrap()).unwrap(), expected);
         assert_eq!(csgo_path(csgo.to_str().unwrap()).unwrap(), expected);
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn reconcile_team_lineup_file_only_removes_a_disabled_roster() {
+        let root = test_root();
+        let csbip = root.join(".csbip");
+        fs::create_dir_all(&csbip).unwrap();
+        let lineup = csbip.join("team-lineup.json");
+        fs::write(&lineup, b"{\"enabled\":true}").unwrap();
+
+        reconcile_team_lineup_file(&root, true);
+        assert!(lineup.is_file(), "an enabled lineup file must be preserved");
+
+        reconcile_team_lineup_file(&root, false);
+        assert!(!lineup.exists(), "a disabled lineup file must be removed");
+        // Missing files are not an error and the call stays idempotent.
+        reconcile_team_lineup_file(&root, false);
 
         fs::remove_dir_all(root).unwrap();
     }
