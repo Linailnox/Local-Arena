@@ -9,7 +9,14 @@
 #  4. commit "tmp: remove signing for test build"
 #  5. pick next free v1.4.3.3-Preview.M tag (local + upstream remote)
 #  6. tag pick, push branch + tag to the fork remote (default: upstream)
-#  7. checkout back to base
+#  7. prune older test_build_* branches and v1.4.3.3-Preview.* tags, keeping
+#     only the highest numeric suffix (local + upstream, auto-detected)
+#  8. checkout back to base
+#
+# Usage:
+#   scripts/auto-preview-release.sh               new test build, then prune
+#   scripts/auto-preview-release.sh --no-prune    new test build, keep old refs
+#   scripts/auto-preview-release.sh --prune-only  prune old refs, no new build
 #
 # Set UPSTREAM_REMOTE to override the fork remote (default "upstream").
 #
@@ -24,9 +31,94 @@ TAG_PREFIX="v1.4.3.3-Preview."
 
 die() { echo "error: $*" >&2; exit 1; }
 
+PRUNE_ONLY=0
+PRUNE=1
+for arg in "$@"; do
+    case "$arg" in
+        --prune-only) PRUNE_ONLY=1 ;;
+        --no-prune) PRUNE=0 ;;
+        -h|--help) awk 'NR>1 && /^#/ { sub(/^# ?/, ""); print; next } NR>1 { exit }' "$0"; exit 0 ;;
+        *) die "unknown argument: $arg (try --help)" ;;
+    esac
+done
+
+git config "remote.${UPSTREAM}.url" >/dev/null 2>&1 || die "remote '${UPSTREAM}' is not configured"
+
+# --- prune older test builds / preview tags ---------------------------------
+# Keeps the highest-numbered test_build_N branch and TAG_PREFIX tag, deleting
+# every other matching ref locally and on the fork. Candidates are discovered
+# with the same local + ls-remote auto-detection the "next free" scan uses.
+prune_old_previews() {
+    local branches tags name n keep_branch keep_branch_n keep_tag keep_tag_n current
+    keep_branch=""; keep_branch_n=0
+    keep_tag=""; keep_tag_n=0
+
+    branches="$({ git for-each-ref --format='%(refname:short)' "refs/heads/${BRANCH_PREFIX}*"
+        git ls-remote --heads "$UPSTREAM" "refs/heads/${BRANCH_PREFIX}*" 2>/dev/null | awk '{print $2}' | sed 's#^refs/heads/##'
+    } | sort -u || true)"
+    tags="$({ git tag -l "${TAG_PREFIX}*"
+        git ls-remote --tags "$UPSTREAM" "${TAG_PREFIX}*" 2>/dev/null | awk '{print $2}' | sed 's#^refs/tags/##; s#\^{}##'
+    } | sort -u || true)"
+
+    while IFS= read -r name; do
+        [ -n "$name" ] || continue
+        n="${name##*${BRANCH_PREFIX}}"
+        case "$n" in ''|*[!0-9]*) continue ;; esac
+        [ "$n" -gt "$keep_branch_n" ] && { keep_branch_n="$n"; keep_branch="$name"; }
+    done <<< "$branches"
+    while IFS= read -r name; do
+        [ -n "$name" ] || continue
+        n="${name##*${TAG_PREFIX}}"
+        case "$n" in ''|*[!0-9]*) continue ;; esac
+        [ "$n" -gt "$keep_tag_n" ] && { keep_tag_n="$n"; keep_tag="$name"; }
+    done <<< "$tags"
+
+    current="$(git branch --show-current 2>/dev/null || true)"
+
+    if [ -n "$keep_branch" ]; then
+        echo "== prune ${BRANCH_PREFIX}* (keep ${keep_branch}) =="
+        while IFS= read -r name; do
+            [ -n "$name" ] || continue
+            [ "$name" = "$keep_branch" ] && continue
+            if [ "$name" = "$current" ]; then
+                echo "   note: ${name} is checked out; skipped"
+                continue
+            fi
+            if git show-ref --verify --quiet "refs/heads/${name}"; then
+                echo "   delete local branch ${name}"
+                git branch -D "$name" >/dev/null 2>&1 || echo "   warning: could not delete local branch ${name}"
+            fi
+            if git ls-remote --exit-code --heads "$UPSTREAM" "refs/heads/${name}" >/dev/null 2>&1; then
+                echo "   delete remote branch ${UPSTREAM}/${name}"
+                git push "$UPSTREAM" --delete "$name" >/dev/null 2>&1 || echo "   warning: could not delete remote branch ${name}"
+            fi
+        done <<< "$branches"
+    fi
+
+    if [ -n "$keep_tag" ]; then
+        echo "== prune ${TAG_PREFIX}* (keep ${keep_tag}) =="
+        while IFS= read -r name; do
+            [ -n "$name" ] || continue
+            [ "$name" = "$keep_tag" ] && continue
+            if git show-ref --verify --quiet "refs/tags/${name}"; then
+                echo "   delete local tag ${name}"
+                git tag -d "$name" >/dev/null 2>&1 || echo "   warning: could not delete local tag ${name}"
+            fi
+            if git ls-remote --exit-code --tags "$UPSTREAM" "refs/tags/${name}" >/dev/null 2>&1; then
+                echo "   delete remote tag ${name}"
+                git push "$UPSTREAM" --delete "refs/tags/${name}" >/dev/null 2>&1 || echo "   warning: could not delete remote tag ${name}"
+            fi
+        done <<< "$tags"
+    fi
+}
+
+if [ "$PRUNE_ONLY" -eq 1 ]; then
+    prune_old_previews
+    exit 0
+fi
+
 BASE="$(git branch --show-current || true)"
 [ -n "$BASE" ] || die "not on a branch (detached HEAD?)"
-git config "remote.${UPSTREAM}.url" >/dev/null 2>&1 || die "remote '${UPSTREAM}' is not configured"
 
 # Refuse to run over uncommitted tracked changes (ignored build dirs are fine).
 if [ -n "$(git status --porcelain)" ]; then
@@ -146,6 +238,11 @@ echo "== pushing branch ${BRANCH_NAME} =="
 git push -u "$UPSTREAM" "$BRANCH_NAME"
 echo "== pushing tag ${TAG_NAME} =="
 git push "$UPSTREAM" "$TAG_NAME"
+
+# The refs just pushed carry the highest suffix, so pruning keeps exactly them.
+if [ "$PRUNE" -eq 1 ]; then
+    prune_old_previews
+fi
 
 REPO_URL="$(git config "remote.${UPSTREAM}.url")"
 WEB_URL="$(python3 -c "import sys,re;u=sys.argv[1];u=re.sub(r'^(git@[^:]+:|https?://[^/]+/|ssh://[^/]+/|git://[^/]+/)','',u);u=re.sub(r'\.git$','',u);print('https://github.com/'+u)" "$REPO_URL" 2>/dev/null || true)"
