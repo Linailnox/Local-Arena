@@ -1210,7 +1210,21 @@ fn prepare_and_launch_match(app: AppHandle, csgo: String, input: PrepareMatchInp
     let current_config = read_config(&app)?;
     let previous_mode =
         LaunchMode::parse(current_config.mode.as_deref()).map_err(AppError::invalid)?;
-    reconcile_team_lineup_file(&root, current_config.team_lineup_enabled);
+    // A Plus match always builds its own 5v5 roster, so the auto team lineup must
+    // never survive into it regardless of the persisted toggle. Deleting it here
+    // (not only when the toggle is off) closes the window where the Match panel
+    // gate could not see a stale enabled lineup in the store.
+    let lineup_path = root.join(".csbip").join("team-lineup.json");
+    let had_lineup = lineup_path.is_file();
+    reconcile_team_lineup_file(&root, false);
+    if had_lineup {
+        logging::append(
+            &state,
+            "INFO",
+            "match.lineup_cleared",
+            &format!("removed={}", lineup_path.display()),
+        );
+    }
     mode_layout::recover(&state, &root)?;
     apply_launch_mode(&root, LaunchMode::Bots).map_err(AppError::invalid)?;
     mode_layout::set_preview(&state, &root, false)?;

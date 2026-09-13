@@ -418,8 +418,9 @@ $teamLineupInjector = Get-Content -LiteralPath (Join-Path $repo "addons/counters
 if ($teamLineupInjector -notmatch 'MatchSessionActive\(\)' -or
     $teamLineupInjector -notmatch 'config is not \{ Enabled: true \}' -or
     $teamLineupInjector -notmatch '"bot_kick"' -or
+    $teamLineupInjector -notmatch '_matchDetected' -or
     $teamLineupInjector -notmatch 'RestoreBotQuota\(\)') {
-    Add-Failure "TeamLineupInjector must check Enabled and MatchSessionActive before bot_kick."
+    Add-Failure "TeamLineupInjector must latch the match session, check Enabled before bot_kick, and never restart from cleanup."
 }
 if ($teamLineupInjector -match 'mp_restartgame 1') {
     Add-Failure "TeamLineupInjector must not restart the game from its cleanup path; a stray restart wipes the live scoreboard at half-time."

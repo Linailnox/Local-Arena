@@ -24,6 +24,10 @@ public sealed class TeamLineupInjectorPlugin : BasePlugin
     private string? _csgoRoot;
     private string? _currentMap;
     private bool _injected;
+    // Latched per map: once a Plus match session owns the map, the injector must
+    // stay out of the way even if the marker file disappears later (the Panel
+    // removes it as soon as a result is written).
+    private bool _matchDetected;
     // Process-wide markers so the injector only ever undoes side effects it
     // actually created. Without them a disabled/missing lineup would still
     // touch bot_quota and restart the game on every team change (including the
@@ -42,7 +46,12 @@ public sealed class TeamLineupInjectorPlugin : BasePlugin
     {
         _currentMap = mapName;
         _injected = false;
-        Logger.LogInformation("[TeamLineup] Map started: {Map}, waiting for human to pick a side", mapName);
+        _matchDetected = MatchSessionActive();
+        Logger.LogInformation(
+            "[TeamLineup] Map started: {Map}; plus match session={Match}; lineup config={Config}",
+            mapName,
+            _matchDetected,
+            DescribeLineupConfig());
     }
 
     private HookResult OnPlayerTeam(EventPlayerTeam @event, GameEventInfo info)
@@ -56,9 +65,12 @@ public sealed class TeamLineupInjectorPlugin : BasePlugin
         if (team != (byte)CsTeam.Terrorist && team != (byte)CsTeam.CounterTerrorist)
             return HookResult.Continue;
 
-        if (MatchSessionActive())
+        if (_matchDetected || MatchSessionActive())
         {
-            Logger.LogInformation("[TeamLineup] Active match session detected, not interfering with the Match roster");
+            _matchDetected = true;
+            Logger.LogInformation(
+                "[TeamLineup] Plus match session owns this map, not interfering (config={Config})",
+                DescribeLineupConfig());
             if (_identityApplied)
             {
                 ClearTeamIdentity();
@@ -70,7 +82,9 @@ public sealed class TeamLineupInjectorPlugin : BasePlugin
         var config = ReadLineupConfig();
         if (config is not { Enabled: true })
         {
-            Logger.LogInformation("[TeamLineup] Lineup disabled or config missing, not interfering");
+            Logger.LogInformation(
+                "[TeamLineup] Lineup disabled or config missing, not interfering (config={Config})",
+                DescribeLineupConfig());
             CleanupInjectedState();
             return HookResult.Continue;
         }
@@ -318,6 +332,14 @@ public sealed class TeamLineupInjectorPlugin : BasePlugin
     {
         if (_csgoRoot == null) TryResolveCsgoRoot();
         return Path.Combine(_csgoRoot ?? ".", ".csbip", "team-lineup.json");
+    }
+
+    /// <summary>Compact, log-friendly description of the on-disk lineup state.</summary>
+    private string DescribeLineupConfig()
+    {
+        var path = LineupConfigPath();
+        if (!File.Exists(path)) return $"absent ({path})";
+        return $"present enabled={ReadLineupConfig() is { Enabled: true }} ({path})";
     }
 }
 
