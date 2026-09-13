@@ -126,7 +126,9 @@ export default function PresetsPanel({ onBack }: { onBack?: () => void }) {
     : "green";
 
   const FORSAKEN_ID = "forsaken";
+  const SOLO_ID = "solo";
   const forsakenOption = { value: FORSAKEN_ID, label: "forsaken" };
+  const soloOption = { value: SOLO_ID, label: t("pre.soloTeam") };
   const firstOf = (idx: string | null): string | null => {
     if (!idx) return null;
     return TEAMS.find((t) => String(t.index) === idx)?.players[0] ?? null;
@@ -140,6 +142,7 @@ export default function PresetsPanel({ onBack }: { onBack?: () => void }) {
       label: t.name,
     })),
     ...(enemyIdx === FORSAKEN_ID ? [] : [forsakenOption]),
+    soloOption,
   ];
   const enemyOptions = [
     ...TEAMS.filter((t) => String(t.index) !== friendlyIdx).map((t) => ({
@@ -254,7 +257,10 @@ export default function PresetsPanel({ onBack }: { onBack?: () => void }) {
                     let d = duel;
                     if (e == null) e = "8";
                     if (e === FORSAKEN_ID) {
-                      if (d) {
+                      if (f === SOLO_ID) {
+                        ex = null;
+                        d = false;
+                      } else if (d) {
                         f = null;
                         ex = null;
                       } else if (f == null || f === FORSAKEN_ID) {
@@ -264,7 +270,7 @@ export default function PresetsPanel({ onBack }: { onBack?: () => void }) {
                     } else {
                       d = false;
                       if (f == null) f = "1";
-                      if (f === FORSAKEN_ID) ex = null;
+                      if (f === FORSAKEN_ID || f === SOLO_ID) ex = null;
                       else if (ex == null) ex = firstOf(f);
                     }
                     if (f !== friendlyIdx) setFriendlyIdx(f);
@@ -290,7 +296,14 @@ export default function PresetsPanel({ onBack }: { onBack?: () => void }) {
                     value={friendlyIdx}
                     disabled={disabled || (enemyIdx === FORSAKEN_ID && duel)}
                     onChange={(v) => {
-                      if (v === FORSAKEN_ID) {
+                      if (v === SOLO_ID) {
+                        const e = enemyIdx ?? "8";
+                        setFriendlyIdx(v);
+                        setEnemyIdx(e);
+                        setExcludedPlayer(null);
+                        setDuel(false);
+                        saveLineup(lineupEnabled, v, e, null, false);
+                      } else if (v === FORSAKEN_ID) {
                         let e = enemyIdx;
                         if (e == null || e === FORSAKEN_ID) e = "8";
                         setFriendlyIdx(v);
@@ -346,10 +359,12 @@ export default function PresetsPanel({ onBack }: { onBack?: () => void }) {
                     disabled={disabled}
                     onChange={(v) => {
                       if (v === FORSAKEN_ID) {
-                        const d = duel;
+                        const d = duel && friendlyIdx !== SOLO_ID;
                         let f = friendlyIdx;
                         let ex = excludedPlayer;
-                        if (d) {
+                        if (f === SOLO_ID) {
+                          ex = null;
+                        } else if (d) {
                           f = null;
                           ex = null;
                         } else if (f == null || f === FORSAKEN_ID) {
@@ -359,6 +374,7 @@ export default function PresetsPanel({ onBack }: { onBack?: () => void }) {
                         setFriendlyIdx(f);
                         setEnemyIdx(v);
                         setExcludedPlayer(ex);
+                        setDuel(d);
                         saveLineup(lineupEnabled, f, v, ex, d);
                       } else {
                         setEnemyIdx(v);
@@ -370,7 +386,7 @@ export default function PresetsPanel({ onBack }: { onBack?: () => void }) {
                   />
                 </div>
 
-                {enemyIdx === FORSAKEN_ID && (
+                {enemyIdx === FORSAKEN_ID && friendlyIdx !== SOLO_ID && (
                   <div className="teamlineup__select">
                     <span className="teamlineup__select-label">{t("pre.forsakenDuel")}</span>
                     <Toggle
@@ -399,6 +415,10 @@ export default function PresetsPanel({ onBack }: { onBack?: () => void }) {
 
                 {friendlyIdx === FORSAKEN_ID && (
                   <p className="selection-detail">{t("pre.forsakenFriend")}</p>
+                )}
+
+                {friendlyIdx === SOLO_ID && (
+                  <p className="selection-detail">{t("pre.soloFriend")}</p>
                 )}
 
                 <p className="selection-detail">{t("pre.appliesNextLaunch")}</p>

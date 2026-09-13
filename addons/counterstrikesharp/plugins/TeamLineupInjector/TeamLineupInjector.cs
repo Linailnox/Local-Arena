@@ -24,6 +24,12 @@ public sealed class TeamLineupInjectorPlugin : BasePlugin
     private string? _csgoRoot;
     private string? _currentMap;
     private bool _injected;
+    // Process-wide markers so the injector only ever undoes side effects it
+    // actually created. Without them a disabled/missing lineup would still
+    // touch bot_quota and restart the game on every team change (including the
+    // automatic CT/T swap at half-time), wiping the live scoreboard.
+    private bool _quotaManaged;
+    private bool _identityApplied;
 
     public override void Load(bool hotReload)
     {
@@ -53,7 +59,11 @@ public sealed class TeamLineupInjectorPlugin : BasePlugin
         if (MatchSessionActive())
         {
             Logger.LogInformation("[TeamLineup] Active match session detected, not interfering with the Match roster");
-            ClearTeamIdentity();
+            if (_identityApplied)
+            {
+                ClearTeamIdentity();
+                _identityApplied = false;
+            }
             return HookResult.Continue;
         }
 
@@ -61,8 +71,7 @@ public sealed class TeamLineupInjectorPlugin : BasePlugin
         if (config is not { Enabled: true })
         {
             Logger.LogInformation("[TeamLineup] Lineup disabled or config missing, not interfering");
-            ClearTeamIdentity();
-            RestoreBotQuota();
+            CleanupInjectedState();
             return HookResult.Continue;
         }
 
@@ -85,6 +94,7 @@ public sealed class TeamLineupInjectorPlugin : BasePlugin
             }
             Server.ExecuteCommand("bot_kick");
             Server.ExecuteCommand("bot_quota 0");
+            _quotaManaged = true;
         });
 
         AddTimer(1.5f, () =>
@@ -166,6 +176,24 @@ public sealed class TeamLineupInjectorPlugin : BasePlugin
         }
 
         Server.ExecuteCommand("mp_restartgame 3");
+
+        _identityApplied = true;
+        _quotaManaged = true;
+
+        if (config.Solo)
+        {
+            // Solo side: no friendly bots were injected. Lock the total bot count
+            // to exactly what we added and disable side balancing so the game
+            // cannot backfill the player's team or shuffle bots across sides at
+            // round start / half-time.
+            Server.ExecuteCommand("bot_quota_mode normal");
+            Server.ExecuteCommand($"bot_quota {addedNames.Count}");
+            Server.ExecuteCommand("mp_autoteambalance 0");
+            Server.ExecuteCommand("mp_limitteams 0");
+            Logger.LogInformation(
+                "[TeamLineup] Solo lineup: locked bot total at {Count} and disabled side balancing",
+                addedNames.Count);
+        }
 
         AddTimer(1.0f, () =>
         {
@@ -265,12 +293,25 @@ public sealed class TeamLineupInjectorPlugin : BasePlugin
         Server.ExecuteCommand("mp_teamlogo_2 \"\"");
     }
 
+    /// <summary>
+    /// Undo only the side effects this plugin created, and only once. Deliberately
+    /// never issues mp_restartgame: a disabled lineup must not reset a live
+    /// scoreboard (for example when CS2 swaps CT/T at half-time).
+    /// </summary>
+    private void CleanupInjectedState()
+    {
+        if (!_identityApplied && !_quotaManaged) return;
+        ClearTeamIdentity();
+        RestoreBotQuota();
+        _identityApplied = false;
+        _quotaManaged = false;
+    }
+
     private void RestoreBotQuota()
     {
         Server.ExecuteCommand("bot_quota_mode fill");
         Server.ExecuteCommand("bot_quota 10");
-        Server.ExecuteCommand("mp_restartgame 1");
-        Logger.LogInformation("[TeamLineup] Restored default bot quota and restarted game");
+        Logger.LogInformation("[TeamLineup] Restored default bot quota");
     }
 
     private string LineupConfigPath()
@@ -293,6 +334,10 @@ public sealed class LineupConfig
 
     [JsonPropertyName("excluded_player")]
     public string? ExcludedPlayer { get; set; }
+
+    /// <summary>True when the friendly side is the human player alone (no bots).</summary>
+    [JsonPropertyName("solo")]
+    public bool Solo { get; set; }
 }
 
 public sealed class LineupTeam

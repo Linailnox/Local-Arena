@@ -421,6 +421,9 @@ if ($teamLineupInjector -notmatch 'MatchSessionActive\(\)' -or
     $teamLineupInjector -notmatch 'RestoreBotQuota\(\)') {
     Add-Failure "TeamLineupInjector must check Enabled and MatchSessionActive before bot_kick."
 }
+if ($teamLineupInjector -match 'mp_restartgame 1') {
+    Add-Failure "TeamLineupInjector must not restart the game from its cleanup path; a stray restart wipes the live scoreboard at half-time."
+}
 
 $matchCatalog = Get-Content -LiteralPath (Join-Path $repo "addons/counterstrikesharp/plugins/PlusMatchCoordinator/match_catalog.json") -Raw | ConvertFrom-Json
 $featuredPlayers = @($matchCatalog.teams | ForEach-Object { $_.players } | Sort-Object -Unique)

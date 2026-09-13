@@ -401,6 +401,8 @@ export const EN = {
   "pre.forsakenEnemy": "forsaken stands alone on the enemy side.",
   "pre.forsakenDuel": "1v1 duel vs forsaken",
   "pre.forsakenDuelHint": "On: your side is only you (1v1). Off: pick a friendly five and reserve one slot for a 5v1.",
+  "pre.soloTeam": "Solo",
+  "pre.soloFriend": "Solo: your side is only you — no other bots join. The bot total count and side balance stay locked.",
   "pre.timescaleToggle": "Gold Time",
   "pre.timescaleToggleDesc": "CAPSLK: time slows while aim speed remains unchanged",
   "pre.timescaleToggleHint": "Enjoy your gold time!",
