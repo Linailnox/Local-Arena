@@ -43,8 +43,11 @@ public sealed class BotIdentityCatalog
             if (string.IsNullOrWhiteSpace(name) || steamAccountId == 0)
                 return;
             var identity = new BotIdentity(SteamAccountId: steamAccountId, CrosshairCode: crosshairCode, ScoreboardFlair: scoreboardFlair);
+            // The v1.4.4 catalog keys entries by steam account id and can repeat a
+            // display name across accounts (e.g. "roman", "rain", "JT"). The first
+            // entry wins; duplicates must never abort the whole match coordinator.
             if (!identities.TryAdd(name, identity))
-                throw new InvalidDataException($"Duplicate bot identity: {name}");
+                return;
             if (!caseInsensitive.TryAdd(name, identity))
                 caseInsensitive[name] = null;
         }

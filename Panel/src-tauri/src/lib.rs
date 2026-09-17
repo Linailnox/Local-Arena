@@ -766,6 +766,50 @@ fn replace_managed_cfg_command(csgo: &Path, command: &str, replacement: &str) ->
     Ok(())
 }
 
+const LEGACY_LINEUP_START: &str = "// managed_team_lineup_start";
+const LEGACY_LINEUP_END: &str = "// managed_team_lineup_end";
+
+/// Older Panel builds wrote the auto lineup straight into the managed bot cfgs as
+/// a `// managed_team_lineup_start ... end` block. That block runs
+/// `bot_kick; bot_quota 0` when the gamemode cfg execs the bot config, so a stale
+/// copy makes offline/practice games spawn no bots. The current lineup feature
+/// goes through `.csbip/team-lineup.json` and the TeamLineupInjector plugin, so
+/// the legacy block is dead weight and is removed unconditionally.
+fn strip_legacy_team_lineup_blocks(csgo: &Path) {
+    for canonical in cfg_paths(csgo) {
+        let path = mode_layout::active_or_disabled(&canonical).unwrap_or(canonical);
+        strip_legacy_team_lineup_block(&path);
+    }
+}
+
+fn strip_legacy_team_lineup_block(path: &Path) {
+    let Ok(text) = fs::read_to_string(path) else {
+        return;
+    };
+    // Only touch files that carry a complete managed block, so a truncated file
+    // can never lose everything after an unmatched start marker.
+    if !text.contains(LEGACY_LINEUP_START) || !text.contains(LEGACY_LINEUP_END) {
+        return;
+    }
+    let mut lines = Vec::new();
+    let mut skipping = false;
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed == LEGACY_LINEUP_START {
+            skipping = true;
+            continue;
+        }
+        if skipping {
+            if trimmed == LEGACY_LINEUP_END {
+                skipping = false;
+            }
+            continue;
+        }
+        lines.push(line.to_string());
+    }
+    let _ = fs::write(path, format!("{}\r\n", lines.join("\r\n")));
+}
+
 fn replace_cfg_command(path: &Path, command: &str, replacement: &str) -> Result<()> {
     let text = fs::read_to_string(path)?;
     let mut found = false;
@@ -1162,6 +1206,7 @@ fn launch_cs2(app: AppHandle) -> Result<LaunchResult> {
     })?;
     let root = csgo_path(configured_path)?;
     reconcile_team_lineup_file(&root, config.team_lineup_enabled);
+    strip_legacy_team_lineup_blocks(&root);
     ensure_target_not_running(&root)?;
     let state = local_state_root(&app)?;
     mode_layout::recover(&state, &root)?;
@@ -1225,6 +1270,7 @@ fn prepare_and_launch_match(app: AppHandle, csgo: String, input: PrepareMatchInp
             &format!("removed={}", lineup_path.display()),
         );
     }
+    strip_legacy_team_lineup_blocks(&root);
     mode_layout::recover(&state, &root)?;
     apply_launch_mode(&root, LaunchMode::Bots).map_err(AppError::invalid)?;
     mode_layout::set_preview(&state, &root, false)?;
@@ -3364,6 +3410,31 @@ mod tests {
         // Missing files are not an error and the call stays idempotent.
         reconcile_team_lineup_file(&root, false);
 
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn strip_legacy_team_lineup_blocks_removes_the_managed_cfg_block() {
+        let root = test_root();
+        let cfg = root.join("cfg");
+        fs::create_dir_all(&cfg).unwrap();
+        for name in ["my_bot_normal_config.cfg", "my_bot_ffa_config.cfg"] {
+            fs::write(
+                cfg.join(name),
+                "bh_namesource 1\r\n// managed_team_lineup_start\r\nbot_kick;bot_quota 0;bot_add_ct \"apEX\"\r\n// managed_team_lineup_end\r\nsv_infinite_ammo 2\r\n",
+            )
+            .unwrap();
+        }
+
+        strip_legacy_team_lineup_blocks(&root);
+
+        for name in ["my_bot_normal_config.cfg", "my_bot_ffa_config.cfg"] {
+            let text = fs::read_to_string(cfg.join(name)).unwrap();
+            assert!(!text.contains("managed_team_lineup"));
+            assert!(!text.contains("bot_quota 0"));
+            assert!(text.contains("bh_namesource 1"));
+            assert!(text.contains("sv_infinite_ammo 2"));
+        }
         fs::remove_dir_all(root).unwrap();
     }
 
