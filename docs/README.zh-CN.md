@@ -264,7 +264,6 @@ negev     m249
 
 - [Metamod:Source](https://github.com/alliedmodders/metamod-source)
 - [CounterStrikeSharp](https://github.com/roflmuffin/CounterStrikeSharp)
-- [Ray-Trace](https://github.com/FUNPLAY-pro-CS2/Ray-Trace)
 - [CS2-Bullseye-Bot](https://github.com/ed0ard/CS2-Bullseye-Bot)
 - [CS2-Bot-NadeSystem](https://github.com/ed0ard/CS2-Bot-NadeSystem)
 - [CS2_ExecAfter_No_Admin](https://github.com/ed0ard/CS2_ExecAfter_No_Admin)，fork 自 [kus](https://github.com/kus)
