@@ -46,6 +46,7 @@ export const DICTS: Record<string, Partial18n> = {
     "stats.deleteMatches": "删除对局",
     "stats.confirmDelete": "确认删除",
     "stats.selected": "已选 {n} 场",
+    "stats.wl": "胜负",
     "stats.roundsShort": "{count} 回合", "stats.rounds": "回合", "stats.minutesShort": "{count} 分钟",
     "stats.matchNumber": "比赛 #{id}", "stats.noData": "暂无数据", "stats.inProgressNoPlayers": "本场比赛仍在进行，暂无玩家汇总", "stats.abandonedNoPlayers": "本场比赛中断，玩家数据未能完成记录", "stats.noPlayers": "暂无玩家数据",
     "stats.yourContribution": "你的贡献", "stats.scoreboard": "计分板", "stats.playerPerformance": "玩家表现", "stats.toggleDamage": "选择玩家以比较逐回合伤害", "stats.enemyTeam": "敌方",

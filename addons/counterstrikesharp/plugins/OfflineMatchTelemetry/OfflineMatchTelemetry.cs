@@ -57,7 +57,7 @@ public class OfflineMatchTelemetryPlugin : BasePlugin
     private readonly List<DeathmatchLifeRecord> _deathmatchLives = [];
 
     public override string ModuleName => "OfflineMatchTelemetry";
-    public override string ModuleVersion => "0.8.1";
+    public override string ModuleVersion => "0.8.2";
     public override string ModuleAuthor => "CS2-Self-Stat";
     public override string ModuleDescription => "Offline bot match SQLite telemetry exporter";
 
@@ -122,7 +122,11 @@ public class OfflineMatchTelemetryPlugin : BasePlugin
             _roundEndEvents++;
             _eventCallbacks++;
             if (_isDeathmatch) return HookResult.Continue;
-            if (_matchActive) WriteRoundSummary(_round, Team(@event.Winner), @event.Reason, "event");
+            // The round counter may already include the round that just ended (and a
+            // missed round start can leave _round stale), so pick the highest index
+            // either source agrees on; WriteRoundSummary deduplicates on write.
+            var round = Math.Max(_round, GetTotalRoundsPlayed() - 1);
+            if (_matchActive) WriteRoundSummary(round, Team(@event.Winner), @event.Reason, "event");
         }
         catch (Exception ex)
         {
@@ -247,7 +251,9 @@ public class OfflineMatchTelemetryPlugin : BasePlugin
             }
 
             _lastObservedRounds = roundsPlayed;
-            _round = roundsPlayed;
+            // Do NOT advance _round here: pre-arming it to the next round number made a
+            // delayed round-end event rewrite the round the poll had just recorded under
+            // a fresh index (a phantom extra round row plus a doubled score count).
             SnapshotBase();
             StartEventRound();
         }
@@ -465,13 +471,18 @@ public class OfflineMatchTelemetryPlugin : BasePlugin
     private void WriteRoundSummary(int round, string? winner, int? endReason, string source)
     {
         if (round <= _lastWrittenRound) return;
-        if (!_roundRosterReady) return;
+        // A round whose roster never settled used to be dropped outright here. Record it
+        // anyway: FixedTeamForSide falls back to a deterministic identity so the win is
+        // never silently lost from team_a_score/team_b_score.
         FinalizeEventRound(winner);
-        if (winner == "CT") _ctScore++;
-        if (winner == "T") _tScore++;
         var winnerIdentity = FixedTeamForSide(winner);
-        if (winnerIdentity == "A") _teamAScore++;
-        if (winnerIdentity == "B") _teamBScore++;
+        // Derived up front so the INSERT carries the post-round running score, but the
+        // shared counters only move after a successful commit. A failed write can then be
+        // retried by the poll/event fallback without double counting a win.
+        var ctScore = _ctScore + (winner == "CT" ? 1 : 0);
+        var tScore = _tScore + (winner == "T" ? 1 : 0);
+        var teamAScore = _teamAScore + (winnerIdentity == "A" ? 1 : 0);
+        var teamBScore = _teamBScore + (winnerIdentity == "B" ? 1 : 0);
 
         var players = CapturePlayers();
         using var connection = OpenConnection();
@@ -493,10 +504,10 @@ public class OfflineMatchTelemetryPlugin : BasePlugin
             roundCommand.Parameters.AddWithValue("$source", source);
             roundCommand.Parameters.AddWithValue("$winnerTeam", (object?)winner ?? DBNull.Value);
             roundCommand.Parameters.AddWithValue("$endReason", (object?)endReason ?? DBNull.Value);
-            roundCommand.Parameters.AddWithValue("$ctScore", _ctScore);
-            roundCommand.Parameters.AddWithValue("$tScore", _tScore);
-            roundCommand.Parameters.AddWithValue("$teamAScore", _teamAScore);
-            roundCommand.Parameters.AddWithValue("$teamBScore", _teamBScore);
+            roundCommand.Parameters.AddWithValue("$ctScore", ctScore);
+            roundCommand.Parameters.AddWithValue("$tScore", tScore);
+            roundCommand.Parameters.AddWithValue("$teamAScore", teamAScore);
+            roundCommand.Parameters.AddWithValue("$teamBScore", teamBScore);
             var roundId = Convert.ToInt64(roundCommand.ExecuteScalar());
 
             foreach (var player in players)
@@ -548,13 +559,31 @@ public class OfflineMatchTelemetryPlugin : BasePlugin
             }
             transaction.Commit();
         }
+        catch (SqliteException ex) when (ex.SqliteExtendedErrorCode == 2067 || ex.SqliteErrorCode == 19)
+        {
+            // UNIQUE (match_id, round_number) fired: this round is already on disk (the
+            // event and poll fallback raced earlier). Leave the counters alone - the
+            // write that won the race already accounted for them.
+            transaction.Rollback();
+            Log("Round {Round}: match={MatchId} already recorded, skipping duplicate ({Source})",
+                round, _currentMatchId, source);
+            _lastWrittenRound = round;
+            _eventRoundActive = false;
+            _roundRosterReady = false;
+            return;
+        }
         catch
         {
             transaction.Rollback();
             throw;
         }
 
+        _ctScore = ctScore;
+        _tScore = tScore;
+        _teamAScore = teamAScore;
+        _teamBScore = teamBScore;
         _lastWrittenRound = round;
+        AccumulateMatchEventStats();
         CachePlayers(players);
         SnapshotBase();
         _eventRoundActive = false;
@@ -1046,18 +1075,72 @@ public class OfflineMatchTelemetryPlugin : BasePlugin
         _fixedTeamsReady = _teamAPlayers.Count > 0 && _teamBPlayers.Count > 0;
     }
 
-    private string? FixedTeamForSide(string? side)
+    /// <summary>
+    /// Lineup injection (TeamLineupInjector / PlusMatchCoordinator) kicks the placeholder
+    /// bots and adds the real roster after the initial capture, which used to leave every
+    /// newcomer outside both identity sets: their side's majority vote tied at 0:0 and
+    /// their round wins were dropped. Anchor newcomers to the identity their current side
+    /// already resolves to (the opposite of the other side when only one side is known,
+    /// the CT=A / T=B convention otherwise).
+    /// </summary>
+    private void AbsorbUnknownPlayers(IEnumerable<CCSPlayerController> players)
     {
-        return side == "CT" ? _roundCtTeam : side == "T" ? _roundTTeam : null;
+        var roster = players.ToList();
+        string? SideIdentity(CsTeam side) => IdentityFor(roster
+            .Where(player => player.Team == side)
+            .Select(PlayerId));
+
+        var ctIdentity = SideIdentity(CsTeam.CounterTerrorist);
+        var tIdentity = SideIdentity(CsTeam.Terrorist);
+        if (ctIdentity is null && tIdentity is not null) ctIdentity = Opposite(tIdentity);
+        if (tIdentity is null && ctIdentity is not null) tIdentity = Opposite(ctIdentity);
+        if (ctIdentity == tIdentity) tIdentity = Opposite(ctIdentity);
+        ctIdentity ??= "A";
+        tIdentity ??= "B";
+
+        foreach (var player in roster)
+        {
+            var id = PlayerId(player);
+            if (_teamAPlayers.Contains(id) || _teamBPlayers.Contains(id)) continue;
+            var identity = player.Team == CsTeam.CounterTerrorist ? ctIdentity : tIdentity;
+            if (identity == "A") _teamAPlayers.Add(id);
+            else _teamBPlayers.Add(id);
+        }
+        _fixedTeamsReady = _teamAPlayers.Count > 0 && _teamBPlayers.Count > 0;
     }
 
-    private string? FixedTeamForPlayers(IEnumerable<CCSPlayerController> sidePlayers)
+    private string? IdentityFor(IEnumerable<string> playerIds)
     {
-        var players = sidePlayers.Select(PlayerId).ToList();
+        var players = playerIds.ToList();
         var teamACount = players.Count(_teamAPlayers.Contains);
         var teamBCount = players.Count(_teamBPlayers.Contains);
         return teamACount > teamBCount ? "A" : teamBCount > teamACount ? "B" : null;
     }
+
+    private string? FixedTeamForSide(string? side)
+    {
+        // Exactly two lineups exist, so a decided vote on one side determines the other,
+        // and with no vote at all the start-of-match CT=A / T=B convention applies. A
+        // decided round winner must never map to null: those wins silently vanished from
+        // both counters (the opponent score stuck at zero after roster churn) while the
+        // round rows still recorded them.
+        return side switch
+        {
+            "CT" => _roundCtTeam ?? Opposite(_roundTTeam) ?? "A",
+            "T" => _roundTTeam ?? Opposite(_roundCtTeam) ?? "B",
+            _ => null,
+        };
+    }
+
+    private static string? Opposite(string? identity) => identity switch
+    {
+        "A" => "B",
+        "B" => "A",
+        _ => null,
+    };
+
+    private string? FixedTeamForPlayers(IEnumerable<CCSPlayerController> sidePlayers)
+        => IdentityFor(sidePlayers.Select(PlayerId));
 
     private void OnStatusCommand(CCSPlayerController? player, CommandInfo command)
     {
@@ -1109,10 +1192,21 @@ public class OfflineMatchTelemetryPlugin : BasePlugin
             && clutchState.Alive)
             clutchState.ClutchWon = true;
 
-        foreach (var (id, state) in _roundState)
+        foreach (var state in _roundState.Values)
         {
             state.Survived = state.Participated && !state.Died;
             state.Kast = state.Kills > 0 || state.Assisted || state.Survived || state.Traded;
+        }
+    }
+
+    /// <summary>
+    /// Folds the finalized round into the match-level event counters. Called only after
+    /// the round row is committed so a retried (failed) write cannot double count.
+    /// </summary>
+    private void AccumulateMatchEventStats()
+    {
+        foreach (var (id, state) in _roundState)
+        {
             var stats = _matchEventStats.GetValueOrDefault(id) ?? new();
             _matchEventStats[id] = stats;
             if (state.Kast) stats.KastRounds++;
@@ -1243,6 +1337,7 @@ public class OfflineMatchTelemetryPlugin : BasePlugin
             if (terrorists > 0 && counterTerrorists > 0)
             {
                 CaptureInitialTeams(current.Values);
+                AbsorbUnknownPlayers(current.Values);
                 foreach (var player in current.Values) GetRoundState(player).Team = player.Team;
                 _roundCtTeam = FixedTeamForPlayers(current.Values.Where(x => x.Team == CsTeam.CounterTerrorist));
                 _roundTTeam = FixedTeamForPlayers(current.Values.Where(x => x.Team == CsTeam.Terrorist));
