@@ -5,13 +5,18 @@
 # Automates the "release test CI" flow used by Local Arena maintainers:
 #  1. base  = current checked-out branch
 #  2. pick  = next free test_build_N name (local + upstream remote)
-#  3. branch pick off base, strip CI signing from .github/workflows/release.yml
-#  4. commit "tmp: remove signing for test build"
-#  5. pick next free v1.4.3.3-Preview.M tag (local + upstream remote)
-#  6. tag pick, push branch + tag to the fork remote (default: upstream)
-#  7. prune older test_build_* branches and v1.4.3.3-Preview.* tags, keeping
+#  3. branch pick off base
+#  4. pick next free v1.4.3.3-Preview.M tag (local + upstream remote)
+#  5. tag pick, push branch + tag to the fork remote (default: upstream)
+#  6. prune older test_build_* branches and v1.4.3.3-Preview.* tags, keeping
 #     only the highest numeric suffix (local + upstream, auto-detected)
-#  8. checkout back to base
+#  7. checkout back to base
+#
+# The signing-strip step older versions of this script performed is gone:
+# test_build_18 permanently removed CI signing from .github/workflows/release.yml
+# and was merged into feature_main, so any branch cut from feature_main already
+# ships the unsigned workflow. No "tmp: remove signing for test build" commit is
+# created any more.
 #
 # Usage:
 #   scripts/auto-preview-release.sh               new test build, then prune
@@ -170,66 +175,21 @@ git ls-remote --heads "$UPSTREAM" "refs/heads/${BRANCH_NAME}" 2>/dev/null | grep
 git ls-remote --tags "$UPSTREAM" "refs/tags/${TAG_NAME}" 2>/dev/null | grep -q . \
     && die "tag ${TAG_NAME} already exists on ${UPSTREAM}"
 
+# --- sanity check: base must ship an unsigned release workflow --------------
+# test_build_18 removed the signing steps for good and merged into feature_main,
+# so any branch cut from feature_main already carries the unsigned workflow. If
+# the signing artefacts are back, the base branch is stale and CI would try to
+# sign without a key. Delete this block if you intentionally change that flow.
+WORKFLOW=".github/workflows/release.yml"
+[ -f "$WORKFLOW" ] || die "missing ${WORKFLOW}"
+if grep -q 'CSBIP_UPDATE_SIGNING_KEY\|Verify signed update assets\|pynacl' "$WORKFLOW"; then
+    die "signing artifacts still present in ${WORKFLOW}; refusing to push"
+fi
+
 # --- create test branch ------------------------------------------------------
 git switch -c "$BRANCH_NAME" "$BASE" >/dev/null
 restore_base() { git switch -q "$BASE" >/dev/null 2>&1 || true; }
 trap restore_base EXIT
-
-# --- strip signing from the release workflow --------------------------------
-WORKFLOW=".github/workflows/release.yml"
-[ -f "$WORKFLOW" ] || die "missing ${WORKFLOW}"
-python3 - "$WORKFLOW" > "${WORKFLOW}.tmp" <<'PY'
-import sys
-path = sys.argv[1]
-lines = open(path, encoding="utf-8").read().splitlines(keepends=True)
-
-def strip_block(lines):
-    out = []
-    skipping = False
-    for ln in lines:
-        if ln.startswith("      - name: Verify signed update assets"):
-            skipping = True
-            continue
-        if skipping:
-            if ln.startswith("      - name:"):
-                skipping = False
-            else:
-                continue
-        out.append(ln)
-    return out
-
-out = []
-for ln in strip_block(lines):
-    s = ln
-    if s.startswith("name: Build signed release"):
-        s = s.replace("Build signed release", "Build release (test)")
-    elif "CSBIP_UPDATE_SIGNING_KEY" in s:
-        continue  # env secret + the two guard lines under "Prepare build..."
-    elif s.strip() == '- "v1.4.3.3"':
-        continue  # only Preview tags trigger test builds
-    elif "Prepare build and signing tools" in s:
-        s = s.replace("Prepare build and signing tools", "Prepare build tools")
-    elif s.strip().startswith("python -m pip install"):
-        continue
-    out.append(s)
-sys.stdout.write("".join(out))
-PY
-mv "${WORKFLOW}.tmp" "$WORKFLOW"
-
-# Semantic self-check: only the Preview tag may trigger, and no signing remains.
-if grep -q 'CSBIP_UPDATE_SIGNING_KEY\|Verify signed update assets\|pynacl' "$WORKFLOW"; then
-    die "signing artifacts remain in ${WORKFLOW}; refusing to push"
-fi
-if ! grep -q 'v1.4.3.3-Preview.\*' "$WORKFLOW" || grep -q '"v1.4.3.3"' "$WORKFLOW"; then
-    die "unexpected tag trigger in ${WORKFLOW}; refusing to push"
-fi
-
-git add "$WORKFLOW"
-AUTHOR_NAME="$(git config user.name || true)"
-AUTHOR_EMAIL="$(git config user.email || true)"
-if [ -z "$AUTHOR_NAME" ]; then AUTHOR_NAME="Magichear"; fi
-if [ -z "$AUTHOR_EMAIL" ]; then AUTHOR_EMAIL="1596925336@qq.com"; fi
-git -c user.name="$AUTHOR_NAME" -c user.email="$AUTHOR_EMAIL" commit --no-verify -q -m "tmp: remove signing for test build"
 
 # --- tag, push, restore branch ----------------------------------------------
 git tag "$TAG_NAME"
@@ -247,7 +207,7 @@ fi
 REPO_URL="$(git config "remote.${UPSTREAM}.url")"
 WEB_URL="$(python3 -c "import sys,re;u=sys.argv[1];u=re.sub(r'^(git@[^:]+:|https?://[^/]+/|ssh://[^/]+/|git://[^/]+/)','',u);u=re.sub(r'\.git$','',u);print('https://github.com/'+u)" "$REPO_URL" 2>/dev/null || true)"
 
-# --- report the Actions run for this tag ----------------------------
+# --- report the Actions run for this tag ------------------------------------
 SLUG="$(python3 -c "import sys,re;u=sys.argv[1];u=re.sub(r'^(git@[^:]+:|https?://[^/]+/|ssh://[^/]+/|git://[^/]+/)','',u);u=re.sub(r'\.git$','',u);print(u)" "$REPO_URL" 2>/dev/null || true)"
 TAG_SHA="$(git rev-parse "$TAG_NAME" 2>/dev/null || true)"
 RUN_URL=""
