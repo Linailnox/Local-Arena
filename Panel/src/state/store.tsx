@@ -47,6 +47,7 @@ export type Store = {
   presets: PresetsState | null;
   teamLineup: TeamLineupState | null;
   timescaleToggleEnabled: boolean;
+  infiniteAmmoEnabled: boolean;
   /** Per-section "changed while CS2 running, pending restart" flags. Persisted,
    *  so each yellow light survives a full close/reopen of the panel. */
   aimPending: boolean;
@@ -86,6 +87,7 @@ export type Store = {
   applyNades: (value: NadesValue) => Promise<PresetsState | null>;
   applyTeamLineup: (input: TeamLineupInput) => Promise<TeamLineupState | null>;
   applyTimescaleToggle: (enabled: boolean) => Promise<boolean>;
+  applyInfiniteAmmo: (enabled: boolean) => Promise<boolean>;
   applyDropKnives: (
     bindKey: string,
     selected: number[]
@@ -183,6 +185,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [presets, setPresets] = useState<PresetsState | null>(null);
   const [teamLineup, setTeamLineup] = useState<TeamLineupState | null>(null);
   const [timescaleToggleEnabled, setTimescaleToggleEnabled] = useState(false);
+  const [infiniteAmmoEnabled, setInfiniteAmmoEnabled] = useState(false);
   // Per-section "changed while CS2 running, pending restart" flags. Persisted in
   // localStorage so each light survives a full close/reopen of the panel while
   // CS2 keeps running (the boot refreshAll clears them once CS2 is not running).
@@ -248,6 +251,22 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       } catch (e) {
         reportError(e);
         return null;
+      }
+    },
+    [directory, reportError]
+  );
+
+  const applyInfiniteAmmo = useCallback(
+    async (enabled: boolean) => {
+      setInfiniteAmmoEnabled(enabled);
+      const csgo = directory?.valid ? directory.selected : null;
+      if (!csgo) return false;
+      try {
+        const result = await api.setInfiniteAmmo(csgo, enabled);
+        return result;
+      } catch (e) {
+        reportError(e);
+        return false;
       }
     },
     [directory, reportError]
@@ -431,6 +450,7 @@ setNadesPending(false);
         api.getTeamLineup(csgo).then(setTeamLineup).catch(() => {});
       }
       api.getTimescaleToggle().then(setTimescaleToggleEnabled).catch(() => {});
+      api.getInfiniteAmmo().then(setInfiniteAmmoEnabled).catch(() => {});
     } catch (e) {
       // Keep the complete last-good snapshot, but refresh the process lock
       // independently so a transient disk scan cannot leave install disabled.
@@ -679,6 +699,7 @@ setNadesPending(false);
 presets,
 teamLineup,
     timescaleToggleEnabled,
+    infiniteAmmoEnabled,
     aimPending,
 nadesPending,
     teamLineupPending,
@@ -712,6 +733,7 @@ nadesPending,
     applyNades,
     applyTeamLineup,
     applyTimescaleToggle,
+    applyInfiniteAmmo,
     applyDropKnives,
   };
 

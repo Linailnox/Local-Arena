@@ -120,6 +120,15 @@ Expand-TarGz $rayTraceCssArchive $rayTraceCssExtract
 Expand-TarGz $rayTraceWindowsArchive $rayTraceWindowsExtract
 Expand-Archive -LiteralPath $botHiderZip -DestinationPath $botHiderExtract
 
+# Unix archive extraction preserves POSIX modes that upstream archives set to
+# hide content (e.g. execute-only metamod VDFs and dotnet framework files).
+# Windows ignores those bits, so make every extracted entry user-accessible.
+if ($IsLinux -or $IsMacOS) {
+    $mode = [IO.UnixFileMode]::UserRead -bor [IO.UnixFileMode]::UserWrite -bor [IO.UnixFileMode]::UserExecute
+    Get-ChildItem -LiteralPath $extract -Recurse -Force -ErrorAction SilentlyContinue |
+        ForEach-Object { $_.UnixFileMode = $_.UnixFileMode -bor $mode }
+}
+
 $payloadCandidates = @((Get-Item -LiteralPath $upstreamExtract)) +
     @(Get-ChildItem -LiteralPath $upstreamExtract -Directory -Recurse)
 $upstreamPayload = $payloadCandidates |

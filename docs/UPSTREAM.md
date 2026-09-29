@@ -3,15 +3,28 @@
 ## Base
 
 - Project: `ed0ard/CS2-Bot-Improver`
-- Packaged runtime base: `v1.4.1`
-- Synced upstream source version: `1.4.2`
-- Synced upstream commit: `43c455c6f85bbb6ffe80f137a5e911cfe0c903f2`
-- Plus release line: `1.4.2.1`
+- Synced upstream source commit: `7491e175f83e612dbb1c742c2241d454ed4c15ad` (`v1.4.4`)
+- Pinned Windows runtime asset: `CS2BotImprover.zip` (`v1.4.4`, see `scripts/dependencies.json`)
+- Plus release line: `1.4.3.x` test line; the merged payload tracks upstream `v1.4.4` enhanced-bot sources
 
-The repository stores source and configuration deltas. Upstream has marked its Panel and source tree as 1.4.2 but has
-not published a v1.4.2 release archive. The Windows package script therefore obtains the last official v1.4.1 layout,
-then overlays the synced 1.4.2 sources, BotHider v0.3.0 data, pinned engine-compatible runtimes, and current Plus builds
-instead of committing generated or third-party binaries.
+The repository stores source and configuration deltas. Upstream has marked its Panel and source tree as 1.4.4 and has
+published the `v1.4.4` release archive. The Windows package script obtains the official v1.4.4 layout, then overlays the
+synced sources, BotHider v0.4.0 data, pinned engine-compatible runtimes, and current Plus builds instead of committing
+generated or third-party binaries.
+
+### 2026-09 v1.4.4 merge notes
+
+- Adopted upstream `BotAI`, `BotState`, `BotControllerImpl`/`BotHiderImpl`, the `NadeSystem` partial-class rewrite,
+  the steamid-keyed `bot_info.json` schema, `BotHider`/`gamedata.json`, and the new `BotVision`/`BotController`
+  metamod payload (arrives from the pinned release archive).
+- Kept Local Arena versions: `Panel`, `README*`, `Commands.txt`, `BotRandomizer` (feature-gated skins/agents/music
+  pipeline), `BotAimImprover`/`BotBuy` custom builds, and the `NadeSystem` disconnected-pawn guard (now in
+  `NadeSystemPlugin.Replay.cs`).
+- Difficulty `overrides` DB mirrors are re-extracted from the normalized `v1.4.4` payload VPKs, so they carry the
+  new v1.4.4 pros (e.g. `forsaken`) while keeping valid `LookAngle` values.
+- Roster reconciliation: the pinned `v1.4.4` botprofile data no longer defines `Techno4K`; the Local Arena
+  `The MongolZ` five-man lineups (`match_catalog.json`, `Commands.txt`, Panel command browser) now use `Senzu`,
+  which exists in the shipped difficulty data, so packaging verification passes.
 
 ## Pinned Runtime Inputs
 
