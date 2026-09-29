@@ -107,12 +107,22 @@ fn lineup_scores_from_rounds(conn: &rusqlite::Connection, match_id: i64) -> Opti
     decided.then_some((score_a, score_b))
 }
 
-/// Replace the stored A/B counters with the round-row recomputation when available.
-fn apply_lineup_scores(conn: &rusqlite::Connection, m: &mut Cs2ssMatchSummary) {
-    if let Some((score_a, score_b)) = lineup_scores_from_rounds(conn, m.match_id) {
-        m.team_a_score = score_a;
-        m.team_b_score = score_b;
-    }
+/// Replace the stored A/B counters with the round-row recomputation when available,
+/// returning the scores that were applied so callers can derive a win/loss without
+/// querying the rounds twice.
+fn apply_lineup_scores(conn: &rusqlite::Connection, m: &mut Cs2ssMatchSummary) -> Option<(i64, i64)> {
+    let (score_a, score_b) = lineup_scores_from_rounds(conn, m.match_id)?;
+    m.team_a_score = score_a;
+    m.team_b_score = score_b;
+    Some((score_a, score_b))
+}
+
+/// Win/loss/draw for one player, derived from the same recomputed lineup scores the
+/// score column shows. `initial_team` is the side the player started on; a first-half
+/// CT start is lineup A (see `lineup_scores_from_rounds`), anything else is lineup B.
+fn player_result(score_a: i64, score_b: i64, initial_team: &str) -> &'static str {
+    let (mine, opponent) = if initial_team == "CT" { (score_a, score_b) } else { (score_b, score_a) };
+    if mine > opponent { "W" } else if mine < opponent { "L" } else { "D" }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -265,6 +275,10 @@ pub struct Cs2ssMatchPlayer {
     pub steam_id: String,
     pub name: String,
     pub team: String,
+    /// Side the player started on, using the same derivation as the match list so the
+    /// detail view and the list can never disagree about which lineup is "mine".
+    #[serde(rename = "initialTeam")]
+    pub initial_team: String,
     #[serde(rename = "isBot")]
     pub is_bot: bool,
     pub alive: bool,
@@ -371,6 +385,9 @@ pub struct Cs2ssPlayerMatchSummary {
     pub team: String,
     #[serde(rename = "initialTeam")]
     pub initial_team: String,
+    /// "W" / "L" / "D" from the recomputed lineup scores, or null when the rounds
+    /// decide nothing (see `player_result`).
+    pub result: Option<String>,
     #[serde(rename = "totalKills")]
     pub total_kills: i64,
     #[serde(rename = "totalDeaths")]
@@ -700,7 +717,7 @@ pub fn list_cs2ss_matches(csgo: String) -> Result<Vec<Cs2ssMatchSummary>> {
 
     let mut matches = matches;
     for m in &mut matches {
-        apply_lineup_scores(&conn, m);
+        let _ = apply_lineup_scores(&conn, m);
     }
 
     Ok(matches)
@@ -739,7 +756,7 @@ pub fn get_cs2ss_match_detail(csgo: String, match_id: i64) -> Result<Cs2ssMatchD
             },
         )
         .map_err(|e| AppError::invalid(format!("Match {match_id} not found: {e}")))?;
-    apply_lineup_scores(&conn, &mut m);
+    let _ = apply_lineup_scores(&conn, &mut m);
 
     let mut rs = conn
         .prepare(
@@ -829,8 +846,11 @@ pub fn get_cs2ss_match_detail(csgo: String, match_id: i64) -> Result<Cs2ssMatchD
                     dm_spawn_count, dm_completed_lives, dm_max_kill_streak,
                     dm_alive_seconds, dm_longest_life_seconds,
                     dm_burst_5s_2, dm_burst_5s_3, dm_burst_5s_4,
-                    dm_burst_10s_2, dm_burst_10s_3, dm_burst_10s_4
-             FROM match_players WHERE match_id = ?1"
+                    dm_burst_10s_2, dm_burst_10s_3, dm_burst_10s_4,
+                    COALESCE((SELECT rp0.team FROM round_players rp0
+                              WHERE rp0.steam_id = mp.steam_id AND rp0.match_id = mp.match_id
+                              ORDER BY rp0.round_player_id LIMIT 1), mp.team, '') as initial_team
+             FROM match_players mp WHERE mp.match_id = ?1"
         )
         .map_err(|e| AppError::invalid(format!("Query error: {e}")))?;
 
@@ -871,6 +891,7 @@ pub fn get_cs2ss_match_detail(csgo: String, match_id: i64) -> Result<Cs2ssMatchD
                 dm_burst_10s_2: row.get(31)?,
                 dm_burst_10s_3: row.get(32)?,
                 dm_burst_10s_4: row.get(33)?,
+                initial_team: row.get(34)?,
             })
         })
         .map_err(|e| AppError::invalid(format!("Query error: {e}")))?
@@ -987,6 +1008,7 @@ pub fn get_cs2ss_player_detail(csgo: String, steam_id: String) -> Result<Cs2ssPl
                 team_b_score: row.get(7)?,
                 team: row.get(8)?,
                 initial_team: row.get(9)?,
+                result: None,
                 total_kills: row.get(10)?,
                 total_deaths: row.get(11)?,
                 total_assists: row.get(12)?,
@@ -1013,6 +1035,7 @@ pub fn get_cs2ss_player_detail(csgo: String, steam_id: String) -> Result<Cs2ssPl
         if let Some((score_a, score_b)) = lineup_scores_from_rounds(&conn, pm.match_id) {
             pm.team_a_score = score_a;
             pm.team_b_score = score_b;
+            pm.result = Some(player_result(score_a, score_b, &pm.initial_team).to_string());
         }
     }
 
@@ -1077,6 +1100,9 @@ pub struct Cs2ssMatchWithStats {
     pub player_team: String,
     #[serde(rename = "playerInitialTeam")]
     pub player_initial_team: String,
+    /// "W" / "L" / "D" from the recomputed lineup scores, or null when the rounds
+    /// decide nothing (see `player_result`).
+    pub result: Option<String>,
     #[serde(rename = "playerKills")]
     pub player_kills: i64,
     #[serde(rename = "playerDeaths")]
@@ -1149,6 +1175,7 @@ pub fn list_cs2ss_matches_with_stats(csgo: String) -> Result<Vec<Cs2ssMatchWithS
                 },
                 player_team: row.get(16)?,
                 player_initial_team: row.get(17)?,
+                result: None,
                 player_kills: row.get(18)?, player_deaths: row.get(19)?,
                 player_assists: row.get(20)?, player_damage: row.get(21)?,
                 player_headshots: row.get(22)?, player_score: row.get(23)?,
@@ -1167,7 +1194,10 @@ pub fn list_cs2ss_matches_with_stats(csgo: String) -> Result<Vec<Cs2ssMatchWithS
 
     let mut list = list;
     for entry in &mut list {
-        apply_lineup_scores(&conn, &mut entry.match_summary);
+        // Only a recomputed, decided scoreline yields a result: the stored counters can
+        // be 0:0 or stale for rows written before the round-row recomputation existed.
+        entry.result = apply_lineup_scores(&conn, &mut entry.match_summary)
+            .map(|(a, b)| player_result(a, b, &entry.player_initial_team).to_string());
     }
 
     Ok(list)
@@ -1227,6 +1257,20 @@ mod tests {
             .unwrap()
             .as_nanos();
         std::env::temp_dir().join(format!("cs2ss-test-{suffix}"))
+    }
+
+    #[test]
+    fn player_result_follows_the_players_starting_side() {
+        // Lineup A is the first-half CT side, so the same scoreline is a win for a CT
+        // starter and a loss for a T starter.
+        assert_eq!(player_result(13, 11, "CT"), "W");
+        assert_eq!(player_result(13, 11, "T"), "L");
+        assert_eq!(player_result(11, 13, "CT"), "L");
+        assert_eq!(player_result(11, 13, "T"), "W");
+        assert_eq!(player_result(12, 12, "CT"), "D");
+        assert_eq!(player_result(12, 12, "T"), "D");
+        // Anything that is not a CT start counts as lineup B.
+        assert_eq!(player_result(13, 11, ""), "L");
     }
 
     fn setup_test_db(root: &std::path::Path) {
@@ -1440,6 +1484,50 @@ mod tests {
         let list = list_cs2ss_matches_with_stats(csgo).unwrap();
         assert_eq!(list[0].match_summary.team_a_score, 2, "both rounds went to lineup A");
         assert_eq!(list[0].match_summary.team_b_score, 0);
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn match_result_follows_the_recomputed_lineup_scores() {
+        let root = test_root();
+        setup_test_db(&root);
+        let csgo = root.to_str().unwrap().to_string();
+
+        let conn = open_db(&csgo).unwrap();
+        let match_id = insert_completed_match(&conn);
+        insert_player(&conn, match_id, "76561198000000001", "Player1");
+        // The stored counters claim a 0:2 loss; the round rows hold a 2:0 win for lineup A,
+        // which is Player1's first-half CT side even after the halftime swap.
+        conn.execute(
+            "UPDATE matches SET team_a_score = 0, team_b_score = 2, rounds_played = 2 WHERE match_id = ?1",
+            [match_id],
+        ).unwrap();
+        let round_id = insert_round(&conn, match_id, 0, "CT");
+        insert_round_player(&conn, round_id, match_id, "76561198000000001", "Player1", "CT");
+        insert_round_player(&conn, round_id, match_id, "76561198000000002", "Bot1", "T");
+        let round_id = insert_round(&conn, match_id, 1, "T");
+        insert_round_player(&conn, round_id, match_id, "76561198000000001", "Player1", "T");
+        insert_round_player(&conn, round_id, match_id, "76561198000000002", "Bot1", "CT");
+
+        // A second match with no round rows cannot be decided, so it must not claim a result.
+        let bare_id = insert_completed_match(&conn);
+        insert_player(&conn, bare_id, "76561198000000003", "Player2");
+
+        let list = list_cs2ss_matches_with_stats(csgo.clone()).unwrap();
+        let played = list.iter().find(|m| m.match_summary.match_id == match_id).unwrap();
+        assert_eq!(played.player_initial_team, "CT");
+        assert_eq!(played.match_summary.team_a_score, 2);
+        assert_eq!(played.match_summary.team_b_score, 0);
+        assert_eq!(played.result.as_deref(), Some("W"));
+
+        let bare = list.iter().find(|m| m.match_summary.match_id == bare_id).unwrap();
+        assert_eq!(bare.result, None, "no round rows means no recomputable result");
+
+        // The player page derives the same result through its own recomputation.
+        let detail = get_cs2ss_player_detail(csgo, "76561198000000001".to_string()).unwrap();
+        let pm = detail.matches.iter().find(|m| m.match_id == match_id).unwrap();
+        assert_eq!(pm.result.as_deref(), Some("W"));
 
         std::fs::remove_dir_all(&root).ok();
     }
