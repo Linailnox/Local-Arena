@@ -28,6 +28,103 @@ fn open_db(csgo: &str) -> Result<rusqlite::Connection> {
         .map_err(|e| AppError::invalid(format!("Cannot open CS2SS database: {e}")))
 }
 
+/// Recompute the lineup A/B scores from the per-round rows, the reliable source of
+/// truth. The stored match counters could drop wins (the opponent score stuck at zero
+/// after roster churn) or double count them (the own score one too many) when the
+/// plugin's in-memory bookkeeping drifted, while the round rows kept the real results.
+/// Lineup A is the set of players who were on CT in the first round they appear in
+/// (the pre-swap CT side); every decided round winner is attributed to exactly one
+/// lineup and never dropped. Returns None without recorded round winners to derive from.
+fn lineup_scores_from_rounds(conn: &rusqlite::Connection, match_id: i64) -> Option<(i64, i64)> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT r.round_number, r.winner_team, rp.steam_id, rp.team
+             FROM rounds r LEFT JOIN round_players rp ON rp.round_id = r.round_id
+             WHERE r.match_id = ?1
+             ORDER BY r.round_number, rp.round_player_id",
+        )
+        .ok()?;
+    let rows: Vec<(i64, Option<String>, Option<String>, Option<String>)> = stmt
+        .query_map([match_id], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+        })
+        .ok()?
+        .filter_map(|row| row.ok())
+        .collect();
+
+    let mut lineups: std::collections::HashMap<String, &'static str> = Default::default();
+    let mut rounds: Vec<(i64, Option<String>, Vec<(String, String)>)> = Vec::new();
+    for (round_number, winner_team, steam_id, team) in rows {
+        if rounds.last().map(|last| last.0) != Some(round_number) {
+            rounds.push((round_number, winner_team, Vec::new()));
+        }
+        let entry = rounds.last_mut().expect("round entry just ensured");
+        if let (Some(steam_id), Some(team)) = (steam_id, team) {
+            lineups
+                .entry(steam_id.clone())
+                .or_insert(if team == "CT" { "A" } else { "B" });
+            entry.2.push((steam_id, team));
+        }
+    }
+
+    let mut score_a = 0i64;
+    let mut score_b = 0i64;
+    let mut decided = false;
+    for (_, winner_team, players) in &rounds {
+        let Some(winner) = winner_team.as_deref() else {
+            continue;
+        };
+        if winner != "CT" && winner != "T" {
+            continue;
+        }
+        decided = true;
+        let mut votes_a = 0i64;
+        let mut votes_b = 0i64;
+        for (steam_id, _) in players.iter().filter(|(_, team)| team.as_str() == winner) {
+            match lineups.get(steam_id.as_str()).copied() {
+                Some("A") => votes_a += 1,
+                Some("B") => votes_b += 1,
+                _ => {}
+            }
+        }
+        // Tie or no roster rows for the winning side: fall back to the first-half
+        // CT = lineup A convention so the win still lands in exactly one bucket.
+        let winner_lineup = if votes_a > votes_b {
+            "A"
+        } else if votes_b > votes_a {
+            "B"
+        } else if winner == "CT" {
+            "A"
+        } else {
+            "B"
+        };
+        if winner_lineup == "A" {
+            score_a += 1;
+        } else {
+            score_b += 1;
+        }
+    }
+    decided.then_some((score_a, score_b))
+}
+
+/// Replace the stored A/B counters with the round-row recomputation when available,
+/// returning the scores that were applied so callers can derive a win/loss without
+/// querying the rounds twice.
+fn apply_lineup_scores(conn: &rusqlite::Connection, m: &mut Cs2ssMatchSummary) -> Option<(i64, i64)> {
+    let (score_a, score_b) = lineup_scores_from_rounds(conn, m.match_id)?;
+    m.team_a_score = score_a;
+    m.team_b_score = score_b;
+    Some((score_a, score_b))
+}
+
+/// Win/loss/draw for one player, derived from the same recomputed lineup scores the
+/// score column shows. `initial_team` is the side the player started on; a first-half
+/// CT start is lineup A (see `lineup_scores_from_rounds`), anything else is lineup B.
+fn player_result(score_a: i64, score_b: i64, initial_team: &str) -> &'static str {
+    let (mine, opponent) = if initial_team == "CT" { (score_a, score_b) } else { (score_b, score_a) };
+    if mine > opponent { "W" } else if mine < opponent { "L" } else { "D" }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Cs2ssPlayerOverview {
     #[serde(rename = "steamId")]
@@ -178,6 +275,10 @@ pub struct Cs2ssMatchPlayer {
     pub steam_id: String,
     pub name: String,
     pub team: String,
+    /// Side the player started on, using the same derivation as the match list so the
+    /// detail view and the list can never disagree about which lineup is "mine".
+    #[serde(rename = "initialTeam")]
+    pub initial_team: String,
     #[serde(rename = "isBot")]
     pub is_bot: bool,
     pub alive: bool,
@@ -284,6 +385,9 @@ pub struct Cs2ssPlayerMatchSummary {
     pub team: String,
     #[serde(rename = "initialTeam")]
     pub initial_team: String,
+    /// "W" / "L" / "D" from the recomputed lineup scores, or null when the rounds
+    /// decide nothing (see `player_result`).
+    pub result: Option<String>,
     #[serde(rename = "totalKills")]
     pub total_kills: i64,
     #[serde(rename = "totalDeaths")]
@@ -611,6 +715,11 @@ pub fn list_cs2ss_matches(csgo: String) -> Result<Vec<Cs2ssMatchSummary>> {
         .filter_map(|r| r.ok())
         .collect();
 
+    let mut matches = matches;
+    for m in &mut matches {
+        let _ = apply_lineup_scores(&conn, m);
+    }
+
     Ok(matches)
 }
 
@@ -618,7 +727,7 @@ pub fn list_cs2ss_matches(csgo: String) -> Result<Vec<Cs2ssMatchSummary>> {
 pub fn get_cs2ss_match_detail(csgo: String, match_id: i64) -> Result<Cs2ssMatchDetailResponse> {
     let conn = open_db(&csgo)?;
 
-    let m: Cs2ssMatchSummary = conn
+    let mut m: Cs2ssMatchSummary = conn
         .query_row(
             "SELECT match_id, map, started_at, ended_at, end_reason, rounds_played,
                     ct_score, t_score, team_a_score, team_b_score,
@@ -647,6 +756,7 @@ pub fn get_cs2ss_match_detail(csgo: String, match_id: i64) -> Result<Cs2ssMatchD
             },
         )
         .map_err(|e| AppError::invalid(format!("Match {match_id} not found: {e}")))?;
+    let _ = apply_lineup_scores(&conn, &mut m);
 
     let mut rs = conn
         .prepare(
@@ -736,8 +846,11 @@ pub fn get_cs2ss_match_detail(csgo: String, match_id: i64) -> Result<Cs2ssMatchD
                     dm_spawn_count, dm_completed_lives, dm_max_kill_streak,
                     dm_alive_seconds, dm_longest_life_seconds,
                     dm_burst_5s_2, dm_burst_5s_3, dm_burst_5s_4,
-                    dm_burst_10s_2, dm_burst_10s_3, dm_burst_10s_4
-             FROM match_players WHERE match_id = ?1"
+                    dm_burst_10s_2, dm_burst_10s_3, dm_burst_10s_4,
+                    COALESCE((SELECT rp0.team FROM round_players rp0
+                              WHERE rp0.steam_id = mp.steam_id AND rp0.match_id = mp.match_id
+                              ORDER BY rp0.round_player_id LIMIT 1), mp.team, '') as initial_team
+             FROM match_players mp WHERE mp.match_id = ?1"
         )
         .map_err(|e| AppError::invalid(format!("Query error: {e}")))?;
 
@@ -778,6 +891,7 @@ pub fn get_cs2ss_match_detail(csgo: String, match_id: i64) -> Result<Cs2ssMatchD
                 dm_burst_10s_2: row.get(31)?,
                 dm_burst_10s_3: row.get(32)?,
                 dm_burst_10s_4: row.get(33)?,
+                initial_team: row.get(34)?,
             })
         })
         .map_err(|e| AppError::invalid(format!("Query error: {e}")))?
@@ -894,6 +1008,7 @@ pub fn get_cs2ss_player_detail(csgo: String, steam_id: String) -> Result<Cs2ssPl
                 team_b_score: row.get(7)?,
                 team: row.get(8)?,
                 initial_team: row.get(9)?,
+                result: None,
                 total_kills: row.get(10)?,
                 total_deaths: row.get(11)?,
                 total_assists: row.get(12)?,
@@ -914,6 +1029,15 @@ pub fn get_cs2ss_player_detail(csgo: String, steam_id: String) -> Result<Cs2ssPl
         .map_err(|e| AppError::invalid(format!("Query error: {e}")))?
         .filter_map(|r| r.ok())
         .collect();
+
+    let mut player_matches = player_matches;
+    for pm in &mut player_matches {
+        if let Some((score_a, score_b)) = lineup_scores_from_rounds(&conn, pm.match_id) {
+            pm.team_a_score = score_a;
+            pm.team_b_score = score_b;
+            pm.result = Some(player_result(score_a, score_b, &pm.initial_team).to_string());
+        }
+    }
 
     let mut maps = conn
         .prepare(
@@ -976,6 +1100,9 @@ pub struct Cs2ssMatchWithStats {
     pub player_team: String,
     #[serde(rename = "playerInitialTeam")]
     pub player_initial_team: String,
+    /// "W" / "L" / "D" from the recomputed lineup scores, or null when the rounds
+    /// decide nothing (see `player_result`).
+    pub result: Option<String>,
     #[serde(rename = "playerKills")]
     pub player_kills: i64,
     #[serde(rename = "playerDeaths")]
@@ -1048,6 +1175,7 @@ pub fn list_cs2ss_matches_with_stats(csgo: String) -> Result<Vec<Cs2ssMatchWithS
                 },
                 player_team: row.get(16)?,
                 player_initial_team: row.get(17)?,
+                result: None,
                 player_kills: row.get(18)?, player_deaths: row.get(19)?,
                 player_assists: row.get(20)?, player_damage: row.get(21)?,
                 player_headshots: row.get(22)?, player_score: row.get(23)?,
@@ -1063,6 +1191,14 @@ pub fn list_cs2ss_matches_with_stats(csgo: String) -> Result<Vec<Cs2ssMatchWithS
         .map_err(|e| AppError::invalid(format!("Query error: {e}")))?
         .filter_map(|r| r.ok())
         .collect();
+
+    let mut list = list;
+    for entry in &mut list {
+        // Only a recomputed, decided scoreline yields a result: the stored counters can
+        // be 0:0 or stale for rows written before the round-row recomputation existed.
+        entry.result = apply_lineup_scores(&conn, &mut entry.match_summary)
+            .map(|(a, b)| player_result(a, b, &entry.player_initial_team).to_string());
+    }
 
     Ok(list)
 }
@@ -1121,6 +1257,20 @@ mod tests {
             .unwrap()
             .as_nanos();
         std::env::temp_dir().join(format!("cs2ss-test-{suffix}"))
+    }
+
+    #[test]
+    fn player_result_follows_the_players_starting_side() {
+        // Lineup A is the first-half CT side, so the same scoreline is a win for a CT
+        // starter and a loss for a T starter.
+        assert_eq!(player_result(13, 11, "CT"), "W");
+        assert_eq!(player_result(13, 11, "T"), "L");
+        assert_eq!(player_result(11, 13, "CT"), "L");
+        assert_eq!(player_result(11, 13, "T"), "W");
+        assert_eq!(player_result(12, 12, "CT"), "D");
+        assert_eq!(player_result(12, 12, "T"), "D");
+        // Anything that is not a CT start counts as lineup B.
+        assert_eq!(player_result(13, 11, ""), "L");
     }
 
     fn setup_test_db(root: &std::path::Path) {
@@ -1257,6 +1407,149 @@ mod tests {
              VALUES (?1, ?2, ?3, 'CT', 0, 1, 100, 20, 15, 5, 1800, 8, 45, 16000)",
             rusqlite::params![match_id, steam_id, name],
         ).unwrap();
+    }
+
+    fn insert_round(conn: &rusqlite::Connection, match_id: i64, round_number: i64, winner: &str) -> i64 {
+        conn.execute(
+            "INSERT INTO rounds (match_id, round_number, captured_at, source, winner_team, end_reason, ct_score, t_score, team_a_score, team_b_score)
+             VALUES (?1, ?2, '2025-01-01T00:00:00Z', 'event', ?3, 7, 0, 0, 0, 0)",
+            rusqlite::params![match_id, round_number, winner],
+        ).unwrap();
+        conn.last_insert_rowid()
+    }
+
+    fn insert_round_player(
+        conn: &rusqlite::Connection,
+        round_id: i64,
+        match_id: i64,
+        steam_id: &str,
+        name: &str,
+        team: &str,
+    ) {
+        conn.execute(
+            "INSERT INTO round_players (round_id, match_id, steam_id, name, team, is_bot, alive, health, kills, deaths, assists, damage, headshot_kills, total_kills, total_deaths, total_damage, score, money)
+             VALUES (?1, ?2, ?3, ?4, ?5, 0, 1, 100, 1, 0, 0, 100, 0, 1, 0, 100, 0, 0)",
+            rusqlite::params![round_id, match_id, steam_id, name, team],
+        ).unwrap();
+    }
+
+    #[test]
+    fn team_scores_recomputed_from_round_rows_when_stored_counters_are_wrong() {
+        let root = test_root();
+        setup_test_db(&root);
+        let csgo = root.to_str().unwrap().to_string();
+
+        let conn = open_db(&csgo).unwrap();
+        let match_id = insert_completed_match(&conn);
+        // The plugin's stored counters dropped every opponent win and double counted
+        // one own win; the round rows still hold the real 2:1 result.
+        conn.execute(
+            "UPDATE matches SET team_a_score = 14, team_b_score = 0, rounds_played = 3 WHERE match_id = ?1",
+            [match_id],
+        ).unwrap();
+        for (round_number, winner) in [(0i64, "CT"), (1, "CT"), (2, "T")] {
+            let round_id = insert_round(&conn, match_id, round_number, winner);
+            insert_round_player(&conn, round_id, match_id, "76561198000000001", "Player1", "CT");
+            insert_round_player(&conn, round_id, match_id, "76561198000000002", "Bot1", "T");
+        }
+
+        let list = list_cs2ss_matches_with_stats(csgo.clone()).unwrap();
+        assert_eq!(list[0].match_summary.team_a_score, 2);
+        assert_eq!(list[0].match_summary.team_b_score, 1);
+
+        let detail = get_cs2ss_match_detail(csgo, match_id).unwrap();
+        assert_eq!(detail.r#match.team_a_score, 2);
+        assert_eq!(detail.r#match.team_b_score, 1);
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn team_scores_follow_initial_lineups_across_side_swap() {
+        let root = test_root();
+        setup_test_db(&root);
+        let csgo = root.to_str().unwrap().to_string();
+
+        let conn = open_db(&csgo).unwrap();
+        let match_id = insert_completed_match(&conn);
+        // Round 0: Player1 starts on CT (lineup A), Bot1 on T (lineup B); CT wins.
+        let round_id = insert_round(&conn, match_id, 0, "CT");
+        insert_round_player(&conn, round_id, match_id, "76561198000000001", "Player1", "CT");
+        insert_round_player(&conn, round_id, match_id, "76561198000000002", "Bot1", "T");
+        // Round 1 after the halftime swap: sides exchanged and T (Player1's lineup) wins.
+        let round_id = insert_round(&conn, match_id, 1, "T");
+        insert_round_player(&conn, round_id, match_id, "76561198000000001", "Player1", "T");
+        insert_round_player(&conn, round_id, match_id, "76561198000000002", "Bot1", "CT");
+
+        let list = list_cs2ss_matches_with_stats(csgo).unwrap();
+        assert_eq!(list[0].match_summary.team_a_score, 2, "both rounds went to lineup A");
+        assert_eq!(list[0].match_summary.team_b_score, 0);
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn match_result_follows_the_recomputed_lineup_scores() {
+        let root = test_root();
+        setup_test_db(&root);
+        let csgo = root.to_str().unwrap().to_string();
+
+        let conn = open_db(&csgo).unwrap();
+        let match_id = insert_completed_match(&conn);
+        insert_player(&conn, match_id, "76561198000000001", "Player1");
+        // The stored counters claim a 0:2 loss; the round rows hold a 2:0 win for lineup A,
+        // which is Player1's first-half CT side even after the halftime swap.
+        conn.execute(
+            "UPDATE matches SET team_a_score = 0, team_b_score = 2, rounds_played = 2 WHERE match_id = ?1",
+            [match_id],
+        ).unwrap();
+        let round_id = insert_round(&conn, match_id, 0, "CT");
+        insert_round_player(&conn, round_id, match_id, "76561198000000001", "Player1", "CT");
+        insert_round_player(&conn, round_id, match_id, "76561198000000002", "Bot1", "T");
+        let round_id = insert_round(&conn, match_id, 1, "T");
+        insert_round_player(&conn, round_id, match_id, "76561198000000001", "Player1", "T");
+        insert_round_player(&conn, round_id, match_id, "76561198000000002", "Bot1", "CT");
+
+        // A second match with no round rows cannot be decided, so it must not claim a result.
+        let bare_id = insert_completed_match(&conn);
+        insert_player(&conn, bare_id, "76561198000000003", "Player2");
+
+        let list = list_cs2ss_matches_with_stats(csgo.clone()).unwrap();
+        let played = list.iter().find(|m| m.match_summary.match_id == match_id).unwrap();
+        assert_eq!(played.player_initial_team, "CT");
+        assert_eq!(played.match_summary.team_a_score, 2);
+        assert_eq!(played.match_summary.team_b_score, 0);
+        assert_eq!(played.result.as_deref(), Some("W"));
+
+        let bare = list.iter().find(|m| m.match_summary.match_id == bare_id).unwrap();
+        assert_eq!(bare.result, None, "no round rows means no recomputable result");
+
+        // The player page derives the same result through its own recomputation.
+        let detail = get_cs2ss_player_detail(csgo, "76561198000000001".to_string()).unwrap();
+        let pm = detail.matches.iter().find(|m| m.match_id == match_id).unwrap();
+        assert_eq!(pm.result.as_deref(), Some("W"));
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn team_scores_kept_without_round_rows() {
+        let root = test_root();
+        setup_test_db(&root);
+        let csgo = root.to_str().unwrap().to_string();
+
+        let conn = open_db(&csgo).unwrap();
+        let match_id = insert_completed_match(&conn);
+        conn.execute(
+            "UPDATE matches SET team_a_score = 13, team_b_score = 11 WHERE match_id = ?1",
+            [match_id],
+        ).unwrap();
+
+        let list = list_cs2ss_matches_with_stats(csgo).unwrap();
+        assert_eq!(list[0].match_summary.team_a_score, 13);
+        assert_eq!(list[0].match_summary.team_b_score, 11);
+
+        std::fs::remove_dir_all(&root).ok();
     }
 
     #[test]
