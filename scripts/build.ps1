@@ -32,9 +32,52 @@ function Resolve-ToolExecutable {
     throw "Build tool $Label was not found: $Value"
 }
 
+# Windows distributions ship the cross-build tools with an .exe suffix while
+# POSIX hosts expose the same tools without it. Prefer an explicit directory,
+# then fall back to PATH, accepting either spelling on both hosts.
+function Resolve-PlatformTool {
+    param([string]$Directory, [string]$Name, [string]$Label)
+    $candidates = @()
+    if ($Directory) {
+        $candidates += (Join-Path $Directory "$Name.exe")
+        $candidates += (Join-Path $Directory $Name)
+    }
+    $candidates += "$Name.exe", $Name
+    foreach ($candidate in $candidates) {
+        if ($candidate -match '[\\/]' -and (Test-Path -LiteralPath $candidate -PathType Leaf)) {
+            return (Resolve-Path -LiteralPath $candidate).Path
+        }
+        $command = Get-Command $candidate -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($command) { return $command.Source }
+    }
+    throw "Build tool $Label was not found: $Name"
+}
+
+# Node installs npm.cmd, npm.ps1 and npm side by side. Prefer the shim that
+# matches the host: the cmd shim on Windows (never the PowerShell shim), and the
+# POSIX shim elsewhere, where the on-PATH Windows npm.cmd cannot be executed.
+function Resolve-NpmTool {
+    $names = if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) {
+        @("npm.cmd", "npm.exe", "npm")
+    }
+    else {
+        @("npm", "npm.cmd", "npm.exe")
+    }
+    foreach ($candidate in $names) {
+        $command = Get-Command $candidate -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($command) { return $command.Source }
+    }
+    throw "Build tool npm was not found: npm"
+}
+
 if (-not $DotNet) { $DotNet = "dotnet" }
 if (-not $Cargo) { $Cargo = "cargo" }
 if (-not $Rustc) { $Rustc = "rustc" }
+# The declared default stays a Windows MSVC toolchain. On a POSIX host that
+# toolchain cannot act as the host compiler, so it is only forced there when the
+# caller asked for it explicitly; otherwise the host default toolchain is used.
+$onWindowsHost = [System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT
+$toolchainWasRequested = $PSBoundParameters.ContainsKey("RustToolchain")
 $DotNet = Resolve-ToolExecutable $DotNet "dotnet"
 $Cargo = Resolve-ToolExecutable $Cargo "cargo"
 $Rustc = Resolve-ToolExecutable $Rustc "rustc"
@@ -91,7 +134,7 @@ function Get-RayTraceApi {
     if (-not $dll) {
         if (Test-Path -LiteralPath $extract) { Remove-Item -LiteralPath $extract -Recurse -Force }
         New-Item -ItemType Directory -Path $extract -Force | Out-Null
-        $tar = (Get-Command tar.exe -ErrorAction Stop).Source
+        $tar = Resolve-PlatformTool $null "tar" "tar"
         & $tar -xzf $archive -C $extract
         if ($LASTEXITCODE -ne 0) { throw "Failed to extract $archive" }
         $dll = Get-ChildItem -LiteralPath $extract -Filter "RayTraceApi.dll" -File -Recurse |
@@ -106,11 +149,7 @@ $cargo = (Get-Command $Cargo -ErrorAction Stop).Source
 $rustc = (Get-Command $Rustc -ErrorAction Stop).Source
 
 $npm = if ($Npm) { Resolve-ToolExecutable $Npm "npm" }
-else {
-    $command = Get-Command npm.cmd -ErrorAction SilentlyContinue
-    if (-not $command) { $command = Get-Command npm -ErrorAction Stop }
-    $command.Source
-}
+else { Resolve-NpmTool }
 
 $environmentNames = @(
     "CARGO_HOME",
@@ -143,22 +182,14 @@ try {
     $env:NUGET_PACKAGES = Join-Path $cache "nuget\packages"
     $env:npm_config_cache = Join-Path $cache "npm"
     $env:RUSTC = $rustc
-    $env:RUSTUP_TOOLCHAIN = $RustToolchain
+    if ($onWindowsHost -or $toolchainWasRequested) { $env:RUSTUP_TOOLCHAIN = $RustToolchain }
 
     if (-not $LlvmBin) { $LlvmBin = Join-Path $cache "toolchains\llvm\bin" }
     if (-not $XwinCache) { $XwinCache = Join-Path $cache "xwin" }
-    $clang = Join-Path $LlvmBin "clang-cl.exe"
-    $linker = Join-Path $LlvmBin "lld-link.exe"
-    $resourceCompiler = Join-Path $LlvmBin "llvm-rc.exe"
-    foreach ($tool in @($clang, $linker, $resourceCompiler)) {
-        if (-not (Test-Path -LiteralPath $tool)) {
-            throw "LLVM tool not found: $tool"
-        }
-    }
-    $cargoXwin = Join-Path $env:CARGO_HOME "bin\cargo-xwin.exe"
-    if (-not (Test-Path -LiteralPath $cargoXwin)) {
-        throw "cargo-xwin is not installed in the configured Cargo home: $cargoXwin"
-    }
+    $clang = Resolve-PlatformTool $LlvmBin "clang-cl" "clang-cl"
+    $linker = Resolve-PlatformTool $LlvmBin "lld-link" "lld-link"
+    $resourceCompiler = Resolve-PlatformTool $LlvmBin "llvm-rc" "llvm-rc"
+    $cargoXwin = Resolve-PlatformTool (Join-Path $env:CARGO_HOME "bin") "cargo-xwin" "cargo-xwin"
 
     $env:XWIN_CACHE_DIR = $XwinCache
     $env:RC = $resourceCompiler
@@ -166,9 +197,9 @@ try {
     $targetDirectory = Join-Path $panel "src-tauri\target-msvc"
     $env:CARGO_TARGET_DIR = $targetDirectory
     $nodePath = if ($NodeBin) { (Resolve-Path -LiteralPath $NodeBin).Path } else { $null }
-    $toolPaths = @((Split-Path $cargo), (Split-Path $rustc), $LlvmBin, (Split-Path $cargoXwin), $nodePath) |
+    $toolPaths = @((Split-Path $cargo), (Split-Path $rustc), $LlvmBin, (Split-Path $clang), (Split-Path $cargoXwin), $nodePath) |
         Where-Object { $_ } | Select-Object -Unique
-    $env:PATH = ($toolPaths -join ";") + ";" + $env:PATH
+    $env:PATH = ($toolPaths -join [IO.Path]::PathSeparator) + [IO.Path]::PathSeparator + $env:PATH
 
     if (-not $SkipNpmInstall) {
         Invoke-Checked $npm @("ci") $panel

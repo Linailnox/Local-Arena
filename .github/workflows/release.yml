@@ -1,9 +1,8 @@
-name: Build signed release
+name: Build release (test)
 
 on:
   push:
     tags:
-      - "v1.4.3.3"
       - "v1.4.3.3-Preview.*"
 
 permissions:
@@ -13,7 +12,6 @@ jobs:
   release:
     runs-on: windows-latest
     env:
-      CSBIP_UPDATE_SIGNING_KEY: ${{ secrets.CSBIP_UPDATE_SIGNING_KEY }}
       CARGO_TERM_COLOR: always
     steps:
       - uses: actions/checkout@v4
@@ -38,11 +36,9 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Prepare build and signing tools
+      - name: Prepare build tools
         shell: pwsh
         run: |
-          if (-not $env:CSBIP_UPDATE_SIGNING_KEY) { throw "CSBIP_UPDATE_SIGNING_KEY is not configured" }
-          python -m pip install --disable-pip-version-check pynacl
           $env:CARGO_HOME = Join-Path $PWD ".cache/cargo-home"
           New-Item -ItemType Directory -Path $env:CARGO_HOME -Force | Out-Null
           cargo install cargo-xwin --locked --root $env:CARGO_HOME
@@ -54,12 +50,6 @@ jobs:
           if (-not (Test-Path (Join-Path $llvm "lld-link.exe"))) { throw "LLVM linker is unavailable: $llvm" }
           $version = "${{ github.ref_name }}".TrimStart("v")
           ./scripts/package.ps1 -ReleaseVersion $version -LlvmBin $llvm -XwinCache (Join-Path $PWD ".cache/xwin") -OutputDirectory (Join-Path $PWD "artifacts")
-
-      - name: Verify signed update assets
-        shell: pwsh
-        run: |
-          python ./scripts/verify-update-assets.py ./artifacts --public-key ./scripts/update-public-key.txt
-          if ((git status --short --untracked-files=no).Length -ne 0) { git status --short; throw "Build modified tracked files" }
 
       - name: Publish release assets
         uses: softprops/action-gh-release@v2

@@ -40,11 +40,13 @@ export default function PresetsPanel({ onBack }: { onBack?: () => void }) {
     csgoPath,
     teamLineup,
     timescaleToggleEnabled,
+    infiniteAmmoEnabled,
     applyAim,
     applyNades,
     applyBotItem,
     applyTeamLineup,
     applyTimescaleToggle,
+    applyInfiniteAmmo,
     aimPending,
     nadesPending,
     botItemsPending,
@@ -60,6 +62,7 @@ export default function PresetsPanel({ onBack }: { onBack?: () => void }) {
   const [friendlyIdx, setFriendlyIdx] = useState<string | null>(null);
   const [enemyIdx, setEnemyIdx] = useState<string | null>(null);
   const [excludedPlayer, setExcludedPlayer] = useState<string | null>(null);
+  const [duel, setDuel] = useState(false);
 
   useEffect(() => {
     if (teamLineup) {
@@ -67,20 +70,28 @@ export default function PresetsPanel({ onBack }: { onBack?: () => void }) {
       setFriendlyIdx(teamLineup.friendly_team_index);
       setEnemyIdx(teamLineup.enemy_team_index);
       setExcludedPlayer(teamLineup.excluded_player);
+      setDuel(teamLineup.duel);
     }
   }, [teamLineup]);
 
   const saveLineup = useCallback(
-    (enabled: boolean, friendly: string | null, enemy: string | null, excluded: string | null) => {
+    (
+      enabled: boolean,
+      friendly: string | null,
+      enemy: string | null,
+      excluded: string | null,
+      duelMode = duel
+    ) => {
       if (!csgoPath) return;
       applyTeamLineup({
         enabled,
         friendly_team_index: friendly,
         enemy_team_index: enemy,
         excluded_player: excluded,
+        duel: duelMode,
       });
     },
-    [csgoPath, applyTeamLineup]
+    [csgoPath, applyTeamLineup, duel]
   );
 
   const aimSupported = presets?.aim_supported ?? false;
@@ -114,16 +125,32 @@ export default function PresetsPanel({ onBack }: { onBack?: () => void }) {
     ? "yellow"
     : "green";
 
+  const FORSAKEN_ID = "forsaken";
+  const SOLO_ID = "solo";
+  const forsakenOption = { value: FORSAKEN_ID, label: "forsaken" };
+  const soloOption = { value: SOLO_ID, label: t("pre.soloTeam") };
+  const firstOf = (idx: string | null): string | null => {
+    if (!idx) return null;
+    return TEAMS.find((t) => String(t.index) === idx)?.players[0] ?? null;
+  };
+
   const friendlyTeam = TEAMS.find((t) => String(t.index) === friendlyIdx) ?? null;
 
-  const teamOptions = TEAMS.filter((t) => String(t.index) !== enemyIdx).map((t) => ({
-    value: String(t.index),
-    label: t.name,
-  }));
-  const enemyOptions = TEAMS.filter((t) => String(t.index) !== friendlyIdx).map((t) => ({
-    value: String(t.index),
-    label: t.name,
-  }));
+  const teamOptions = [
+    ...TEAMS.filter((t) => String(t.index) !== enemyIdx).map((t) => ({
+      value: String(t.index),
+      label: t.name,
+    })),
+    ...(enemyIdx === FORSAKEN_ID ? [] : [forsakenOption]),
+    soloOption,
+  ];
+  const enemyOptions = [
+    ...TEAMS.filter((t) => String(t.index) !== friendlyIdx).map((t) => ({
+      value: String(t.index),
+      label: t.name,
+    })),
+    ...(friendlyIdx === FORSAKEN_ID ? [] : [forsakenOption]),
+  ];
 
   return (
     <SubPage title={t("pre.title")} onBack={onBack}>
@@ -159,6 +186,17 @@ export default function PresetsPanel({ onBack }: { onBack?: () => void }) {
           <p className="selection-detail" aria-live="polite">
             {t(nadesOption.descriptionKey)}
           </p>
+          <div className="botitem">
+            <span className="botitem__label">{t("pre.infiniteAmmo")}</span>
+            <Toggle
+              ariaLabel={t("pre.infiniteAmmo")}
+              checked={infiniteAmmoEnabled}
+              tone={!cfgPresent ? "red" : "green"}
+              disabled={disabled}
+              onChange={(next) => applyInfiniteAmmo(next)}
+            />
+          </div>
+          <p className="selection-detail">{t("pre.infiniteAmmoHint")}</p>
         </Section>
 
         <Section title={t("bi.title")} status={itemsStatus}>
@@ -213,16 +251,35 @@ export default function PresetsPanel({ onBack }: { onBack?: () => void }) {
                 onChange={(next) => {
                   setLineupEnabled(next);
                   if (next) {
-                    const f = friendlyIdx || "1";
-                    const e = enemyIdx || "8";
-                    const team = TEAMS.find(t => String(t.index) === f);
-                    const ex = excludedPlayer || team?.players[0] || null;
+                    let f = friendlyIdx;
+                    let e = enemyIdx;
+                    let ex = excludedPlayer;
+                    let d = duel;
+                    if (e == null) e = "8";
+                    if (e === FORSAKEN_ID) {
+                      if (f === SOLO_ID) {
+                        ex = null;
+                        d = false;
+                      } else if (d) {
+                        f = null;
+                        ex = null;
+                      } else if (f == null || f === FORSAKEN_ID) {
+                        f = "1";
+                        ex = firstOf("1");
+                      }
+                    } else {
+                      d = false;
+                      if (f == null) f = "1";
+                      if (f === FORSAKEN_ID || f === SOLO_ID) ex = null;
+                      else if (ex == null) ex = firstOf(f);
+                    }
                     if (f !== friendlyIdx) setFriendlyIdx(f);
                     if (e !== enemyIdx) setEnemyIdx(e);
                     if (ex !== excludedPlayer) setExcludedPlayer(ex);
-                    saveLineup(next, f, e, ex);
+                    if (d !== duel) setDuel(d);
+                    saveLineup(next, f, e, ex, d);
                   } else {
-                    saveLineup(false, friendlyIdx, enemyIdx, excludedPlayer);
+                    saveLineup(false, friendlyIdx, enemyIdx, excludedPlayer, duel);
                   }
                 }}
               />
@@ -237,17 +294,38 @@ export default function PresetsPanel({ onBack }: { onBack?: () => void }) {
                     ariaLabel={t("pre.friendlyTeam")}
                     placeholder={t("pre.friendlyTeam")}
                     value={friendlyIdx}
-                    disabled={disabled}
+                    disabled={disabled || (enemyIdx === FORSAKEN_ID && duel)}
                     onChange={(v) => {
-                      setFriendlyIdx(v);
-                      const team = TEAMS.find(t => String(t.index) === v);
-                      const firstPlayer = team?.players[0] ?? null;
-                      setExcludedPlayer(firstPlayer);
-                      saveLineup(lineupEnabled, v, enemyIdx, firstPlayer);
+                      if (v === SOLO_ID) {
+                        const e = enemyIdx ?? "8";
+                        setFriendlyIdx(v);
+                        setEnemyIdx(e);
+                        setExcludedPlayer(null);
+                        setDuel(false);
+                        saveLineup(lineupEnabled, v, e, null, false);
+                      } else if (v === FORSAKEN_ID) {
+                        let e = enemyIdx;
+                        if (e == null || e === FORSAKEN_ID) e = "8";
+                        setFriendlyIdx(v);
+                        setEnemyIdx(e);
+                        setExcludedPlayer(null);
+                        setDuel(false);
+                        saveLineup(lineupEnabled, v, e, null, false);
+                      } else {
+                        setFriendlyIdx(v);
+                        const firstPlayer = firstOf(v);
+                        setExcludedPlayer(firstPlayer);
+                        const d = enemyIdx === FORSAKEN_ID ? duel : false;
+                        saveLineup(lineupEnabled, v, enemyIdx, firstPlayer, d);
+                      }
                     }}
                     options={teamOptions}
                   />
                 </div>
+
+                {enemyIdx === FORSAKEN_ID && (
+                  <p className="selection-detail">{t("pre.forsakenEnemy")}</p>
+                )}
 
                 {friendlyTeam && (
                   <div className="teamlineup__exclusions">
@@ -261,7 +339,7 @@ export default function PresetsPanel({ onBack }: { onBack?: () => void }) {
                           onClick={() => {
                             const next = excludedPlayer === player ? null : player;
                             setExcludedPlayer(next);
-                            saveLineup(lineupEnabled, friendlyIdx, enemyIdx, next);
+                            saveLineup(lineupEnabled, friendlyIdx, enemyIdx, next, enemyIdx === FORSAKEN_ID ? duel : false);
                           }}
                         >
                           {player}
@@ -280,12 +358,68 @@ export default function PresetsPanel({ onBack }: { onBack?: () => void }) {
                     value={enemyIdx}
                     disabled={disabled}
                     onChange={(v) => {
-                      setEnemyIdx(v);
-                      saveLineup(lineupEnabled, friendlyIdx, v, excludedPlayer);
+                      if (v === FORSAKEN_ID) {
+                        const d = duel && friendlyIdx !== SOLO_ID;
+                        let f = friendlyIdx;
+                        let ex = excludedPlayer;
+                        if (f === SOLO_ID) {
+                          ex = null;
+                        } else if (d) {
+                          f = null;
+                          ex = null;
+                        } else if (f == null || f === FORSAKEN_ID) {
+                          f = "1";
+                          ex = firstOf("1");
+                        }
+                        setFriendlyIdx(f);
+                        setEnemyIdx(v);
+                        setExcludedPlayer(ex);
+                        setDuel(d);
+                        saveLineup(lineupEnabled, f, v, ex, d);
+                      } else {
+                        setEnemyIdx(v);
+                        setDuel(false);
+                        saveLineup(lineupEnabled, friendlyIdx, v, excludedPlayer, false);
+                      }
                     }}
                     options={enemyOptions}
                   />
                 </div>
+
+                {enemyIdx === FORSAKEN_ID && friendlyIdx !== SOLO_ID && (
+                  <div className="teamlineup__select">
+                    <span className="teamlineup__select-label">{t("pre.forsakenDuel")}</span>
+                    <Toggle
+                      ariaLabel={t("pre.forsakenDuel")}
+                      checked={duel}
+                      tone={!cfgPresent ? "red" : "green"}
+                      disabled={disabled}
+                      onChange={(next) => {
+                        setDuel(next);
+                        if (next) {
+                          setFriendlyIdx(null);
+                          setExcludedPlayer(null);
+                          saveLineup(lineupEnabled, null, enemyIdx, null, true);
+                        } else {
+                          const f = friendlyIdx ?? "1";
+                          const ex = firstOf(f);
+                          setFriendlyIdx(f);
+                          setExcludedPlayer(ex);
+                          saveLineup(lineupEnabled, f, enemyIdx, ex, false);
+                        }
+                      }}
+                    />
+                    <p className="selection-detail">{t("pre.forsakenDuelHint")}</p>
+                  </div>
+                )}
+
+                {friendlyIdx === FORSAKEN_ID && (
+                  <p className="selection-detail">{t("pre.forsakenFriend")}</p>
+                )}
+
+                {friendlyIdx === SOLO_ID && (
+                  <p className="selection-detail">{t("pre.soloFriend")}</p>
+                )}
 
                 <p className="selection-detail">{t("pre.appliesNextLaunch")}</p>
               </div>

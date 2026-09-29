@@ -351,6 +351,7 @@ export type TeamLineupInput = {
   friendly_team_index: string | null;
   enemy_team_index: string | null;
   excluded_player: string | null;
+  duel: boolean;
 };
 
 export type TeamLineupState = {
@@ -358,6 +359,7 @@ export type TeamLineupState = {
   friendly_team_index: string | null;
   enemy_team_index: string | null;
   excluded_player: string | null;
+  duel: boolean;
 };
 
 export type AppearanceStyle = "paper" | "clean" | "compact" | "immersive";
@@ -719,6 +721,10 @@ export const api = {
     invoke<boolean>("set_timescale_toggle", { csgo, enabled }),
   getTimescaleToggle: () =>
     invoke<boolean>("get_timescale_toggle"),
+  setInfiniteAmmo: (csgo: string, enabled: boolean) =>
+    invoke<boolean>("set_infinite_ammo", { csgo, enabled }),
+  getInfiniteAmmo: () =>
+    invoke<boolean>("get_infinite_ammo"),
   getDropKnives: (csgo: string) =>
     invoke<DropKnivesState>("get_drop_knives", { csgo }),
   setDropKnives: (csgo: string, bindKey: string, selected: number[]) =>
