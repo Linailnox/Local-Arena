@@ -1,13 +1,13 @@
 {
   "upstream": {
     "repository": "https://github.com/ed0ard/CS2-Bot-Improver",
-    "baseCommit": "d1d83982db88fbdb686b2bf13aa8c6f9d65a4604",
-    "sourceCommit": "d1d83982db88fbdb686b2bf13aa8c6f9d65a4604",
-    "release": "v1.4.3",
+    "baseCommit": "7491e175f83e612dbb1c742c2241d454ed4c15ad",
+    "sourceCommit": "7491e175f83e612dbb1c742c2241d454ed4c15ad",
+    "release": "v1.4.4",
     "windowsAsset": {
       "name": "CS2BotImprover.zip",
-      "url": "https://github.com/ed0ard/CS2-Bot-Improver/releases/download/v1.4.3/CS2BotImprover.zip",
-      "sha256": "b59800f0d33b306b9aa74b3607e4e4fa2cd87609816f00097da2fdc0da2c40a1"
+      "url": "https://github.com/ed0ard/CS2-Bot-Improver/releases/download/v1.4.4/CS2BotImprover.zip",
+      "sha256": "cba05fdc239bf0e3e95dff7d8670863fe69de9fb03ade8512b6d4f79f88664db"
     }
   },
   "metamod": {
@@ -22,13 +22,13 @@
   },
   "counterStrikeSharp": {
     "repository": "https://github.com/roflmuffin/CounterStrikeSharp",
-    "release": "v1.0.371",
+    "release": "v1.0.373",
     "windowsAsset": {
-      "name": "counterstrikesharp-with-runtime-windows-1.0.371.zip",
-      "url": "https://github.com/roflmuffin/CounterStrikeSharp/releases/download/v1.0.371/counterstrikesharp-with-runtime-windows-1.0.371.zip",
-      "sha256": "ab66ef273dfd41379f04777c80dd3c7fcae09c59cf3c689bd40b69b95b99af6e"
+      "name": "counterstrikesharp-with-runtime-windows-1.0.373.zip",
+      "url": "https://github.com/roflmuffin/CounterStrikeSharp/releases/download/v1.0.373/counterstrikesharp-with-runtime-windows-1.0.373.zip",
+      "sha256": "16d1db8e48ccea5ef3f030a1841575d6c006345c6920e4f6691135ef8907e695"
     },
-    "windowsCoreSha256": "3faafeaf00f03774061b567f47be3a568c234cf130d4680d1106dd4a0818e708"
+    "windowsCoreSha256": "75100a3056d9040392f47b6e492f1b823cfcd898203343b79363971405aa2c4a"
   },
   "rayTrace": {
     "repository": "https://github.com/FUNPLAY-pro-CS2/Ray-Trace",
@@ -48,12 +48,12 @@
   },
   "botHider": {
     "repository": "https://github.com/XBribo/CS2-Bot-Hider",
-    "release": "v0.3.3",
+    "release": "v0.4.0",
     "windowsAsset": {
-      "name": "BotHider-windows-0.3.3.zip",
-      "url": "https://github.com/XBribo/CS2-Bot-Hider/releases/download/v0.3.3/BotHider-windows-0.3.3.zip",
-      "sha256": "838f23217687462d87bbfab49d9cd9b6ae602d65f80fad3cc0758b38533642bc"
+      "name": "BotHider-Windows-0.4.0.zip",
+      "url": "https://github.com/XBribo/CS2-Bot-Hider/releases/download/v0.4.0/BotHider-Windows-0.4.0.zip",
+      "sha256": "904fdfd36bd052b98671ba29e4ed7b9ef4e87d6d0d1128efef9caba037f2e784"
     },
-    "windowsDllSha256": "1c0559a2da917c60b8d3dbb3e4f2b673a499bb52b879241e63fe34b3f803cd9d"
+    "windowsDllSha256": "c673fe398ed8e6d4ea9b25183e26ff3dfb013d92fecd5996e5e357df7145e0dd"
   }
 }

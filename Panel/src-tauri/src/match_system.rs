@@ -239,8 +239,25 @@ fn profile_names(csgo: &Path, difficulty: &str) -> Result<Vec<String>> {
 
 fn identity_names(csgo: &Path) -> Result<HashSet<String>> {
     let path = csgo.join("addons/BotHider/bot_info.json");
-    let identities: serde_json::Map<String, serde_json::Value> = read_json(&path)?;
-    Ok(identities.keys().map(|name| name.to_ascii_lowercase()).collect())
+    let source = fs::read_to_string(&path)
+        .map_err(|error| AppError::invalid(format!("Cannot read {}: {error}", path.display())))?;
+    let root: serde_json::Map<String, serde_json::Value> = serde_json::from_str(&source)
+        .map_err(|error| AppError::invalid(format!("Cannot parse {}: {error}", path.display())))?;
+    let mut names = HashSet::new();
+    if let Some(players) = root.get("players").and_then(|value| value.as_object()) {
+        // v1.4.4+ schema: { "players": { "<steamAccountId>": { "player_name": ... } } }
+        for entry in players.values() {
+            if let Some(name) = entry.get("player_name").and_then(|value| value.as_str()) {
+                if !name.trim().is_empty() {
+                    names.insert(name.to_ascii_lowercase());
+                }
+            }
+        }
+    } else {
+        // Legacy flat schema: top-level keys are the identity names.
+        names.extend(root.keys().map(|key| key.to_ascii_lowercase()));
+    }
+    Ok(names)
 }
 
 fn profiles_with_identities(profiles: Vec<String>, identities: &HashSet<String>) -> Vec<String> {
