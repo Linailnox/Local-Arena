@@ -80,9 +80,14 @@ export default function StatsMatchDetail({ csgo, matchId, onBack }: Props) {
 
     const hl = rps.filter(p => badges(p, t).length > 0).sort((a, b) => a.roundNumber - b.roundNumber);
 
+    let myRun = 0;
+    let oppRun = 0;
     const tl = rs.map(r => {
       const pr = rps.find(rp => rp.roundNumber === r.roundNumber && rp.steamId === s.steamId);
-      return { r, pr };
+      // Running score from the player's perspective (own : opponent) so the timeline
+      // adds up to the big score in the hero instead of the raw A/B counters.
+      if (pr && r.winnerTeam && pr.team === r.winnerTeam) myRun++; else oppRun++;
+      return { r, pr, myRun, oppRun };
     });
 
     return { match, s, pw, ow, rows, hl, tl, myTeam };
@@ -258,9 +263,9 @@ export default function StatsMatchDetail({ csgo, matchId, onBack }: Props) {
       <div className="stats-panel-block">
         <div className="stats-panel-block__title"><div><span>{t("stats.roundLog")}</span><h2>{t("stats.roundTimeline")}</h2></div></div>
         <div className="stats-round-grid">
-          {tl.map(({ r, pr }) => (
+          {tl.map(({ r, pr, myRun, oppRun }) => (
             <div key={r.roundId} className="stats-round-card">
-              <div className="stats-round-card__top"><b>R{r.roundNumber + 1}</b><span>{r.teamAScore}:{r.teamBScore}</span></div>
+              <div className="stats-round-card__top"><b>R{r.roundNumber + 1}</b><span>{myRun}:{oppRun}</span></div>
               <div className="stats-round-card__result"><span className={r.winnerTeam === "CT" ? "ct" : "t"}>{r.winnerTeam}</span></div>
               <p>{cs2ssRoundEndReasonLabel(r.endReason)}</p>
               <div className="stats-round-card__stats"><span>{pr?.kills ?? 0}K</span><span>{pr?.damage ?? 0} DMG</span><span>{pr?.survived ? t("stats.survived") : `${pr?.deaths ?? 0}D`}</span></div>
