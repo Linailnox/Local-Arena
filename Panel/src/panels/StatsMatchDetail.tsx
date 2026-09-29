@@ -67,14 +67,17 @@ export default function StatsMatchDetail({ csgo, matchId, onBack }: Props) {
     if (mps.length === 0) return { empty: true, match, status: match.status } as const;
 
     const s = mps.find(p => !p.isBot) ?? mps[0];
-    const myTeam = rps.find(rp => rp.steamId === s.steamId)?.team ?? s.team;
-    const hf = match.teamAScore + match.teamBScore === match.roundsPlayed;
-    const pw = hf ? (myTeam === "CT" ? match.teamAScore : match.teamBScore) : rs.filter(r => rps.find(rp => rp.roundNumber === r.roundNumber && rp.steamId === s.steamId)?.team === r.winnerTeam).length;
-    const ow = hf ? (myTeam === "CT" ? match.teamBScore : match.teamAScore) : match.roundsPlayed - pw;
+    // The backend recomputes the A/B scores from the round rows and derives each player's
+    // starting side exactly like the match list does, so the hero cannot disagree with the
+    // list. There is deliberately no client-side fallback: that is what made the two views
+    // diverge whenever the stored counters and the round rows disagreed.
+    const myTeam = s.initialTeam;
+    const pw = myTeam === "CT" ? match.teamAScore : match.teamBScore;
+    const ow = myTeam === "CT" ? match.teamBScore : match.teamAScore;
 
     const rows = mps.map(mp => {
       const r = cs2ssCalcRating(mp.totalKills, mp.totalDeaths, mp.totalAssists, mp.totalDamage, mp.totalHeadshotKills, match.roundsPlayed, { kastRounds: mp.kastRounds, tradeKills: mp.tradeKills, multikill2: mp.multikill2, multikill3: mp.multikill3, multikill4: mp.multikill4, multikill5: mp.multikill5, clutchAttempts: mp.clutchAttempts, clutchesWon: mp.clutchesWon });
-      const mpInitTeam = rps.find(rp => rp.steamId === mp.steamId)?.team ?? mp.team;
+      const mpInitTeam = mp.initialTeam;
       return { mp, side: mpInitTeam === myTeam ? "mine" : "enemy", r, adr: cs2ssCalcAdr(mp.totalDamage, match.roundsPlayed), kast: cs2ssCalcKast(mp.kastRounds, match.roundsPlayed) };
     }).sort((a, b) => b.r - a.r);
 
@@ -84,9 +87,12 @@ export default function StatsMatchDetail({ csgo, matchId, onBack }: Props) {
     let oppRun = 0;
     const tl = rs.map(r => {
       const pr = rps.find(rp => rp.roundNumber === r.roundNumber && rp.steamId === s.steamId);
-      // Running score from the player's perspective (own : opponent) so the timeline
-      // adds up to the big score in the hero instead of the raw A/B counters.
-      if (pr && r.winnerTeam && pr.team === r.winnerTeam) myRun++; else oppRun++;
+      // Running score from the player's perspective (own : opponent). Only decided rounds
+      // that have a row for this player move it, matching how the backend recomputes the
+      // A/B totals, so the last timeline value equals the hero's big score.
+      if (pr && (r.winnerTeam === "CT" || r.winnerTeam === "T")) {
+        if (pr.team === r.winnerTeam) myRun++; else oppRun++;
+      }
       return { r, pr, myRun, oppRun };
     });
 
