@@ -76,6 +76,7 @@ export const EN = {
   "stats.deleteMatches": "Delete matches",
   "stats.confirmDelete": "Confirm delete",
   "stats.selected": "{n} selected",
+  "stats.wl": "W/L",
   "stats.roundsShort": "{count} rds",
   "stats.rounds": "Rounds",
   "stats.minutesShort": "{count} min",

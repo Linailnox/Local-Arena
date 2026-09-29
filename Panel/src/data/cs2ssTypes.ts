@@ -1,3 +1,6 @@
+/** Win / loss / draw for one player, computed by the backend from the recomputed lineup scores. */
+export type Cs2ssMatchResult = "W" | "L" | "D";
+
 export interface Cs2ssPlayerOverview {
   steamId: string;
   name: string;
@@ -94,6 +97,8 @@ export interface Cs2ssMatchPlayer {
   steamId: string;
   name: string;
   team: "CT" | "T";
+  /** Side this player started on; the backend derives it exactly like the match list does. */
+  initialTeam: string;
   isBot: boolean;
   alive: boolean;
   health: number;
@@ -157,6 +162,8 @@ export interface Cs2ssPlayerMatchSummary {
   teamBScore: number;
   team: string;
   initialTeam: string;
+  /** "W" / "L" / "D" from the recomputed lineup scores; null when the rounds decide nothing. */
+  result?: Cs2ssMatchResult | null;
   totalKills: number;
   totalDeaths: number;
   totalAssists: number;
@@ -273,6 +280,8 @@ export interface Cs2ssDmOverview {
 export interface Cs2ssMatchWithStats extends Cs2ssMatchSummary {
   playerTeam: string;
   playerInitialTeam: string;
+  /** "W" / "L" / "D" from the recomputed lineup scores; null when the rounds decide nothing. */
+  result?: Cs2ssMatchResult | null;
   playerKills: number;
   playerDeaths: number;
   playerAssists: number;
