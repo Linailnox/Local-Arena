@@ -133,6 +133,10 @@ struct AppConfig {
     #[serde(default)]
     team_lineup_excluded: Option<String>,
     #[serde(default)]
+    team_lineup_duel: bool,
+    #[serde(default)]
+    nades_infinite_ammo: bool,
+    #[serde(default)]
     timescale_toggle_enabled: bool,
 }
 
@@ -160,6 +164,8 @@ impl Default for AppConfig {
             team_lineup_friendly: None,
             team_lineup_enemy: None,
             team_lineup_excluded: None,
+            team_lineup_duel: false,
+            nades_infinite_ammo: false,
             timescale_toggle_enabled: false,
         }
     }
@@ -257,6 +263,7 @@ struct TeamLineupState {
     friendly_team_index: Option<String>,
     enemy_team_index: Option<String>,
     excluded_player: Option<String>,
+    duel: bool,
 }
 
 #[derive(Deserialize)]
@@ -265,6 +272,7 @@ struct TeamLineupInput {
     friendly_team_index: Option<String>,
     enemy_team_index: Option<String>,
     excluded_player: Option<String>,
+    duel: bool,
 }
 #[derive(Serialize)]
 struct DropKnivesState {
@@ -758,6 +766,50 @@ fn replace_managed_cfg_command(csgo: &Path, command: &str, replacement: &str) ->
     Ok(())
 }
 
+const LEGACY_LINEUP_START: &str = "// managed_team_lineup_start";
+const LEGACY_LINEUP_END: &str = "// managed_team_lineup_end";
+
+/// Older Panel builds wrote the auto lineup straight into the managed bot cfgs as
+/// a `// managed_team_lineup_start ... end` block. That block runs
+/// `bot_kick; bot_quota 0` when the gamemode cfg execs the bot config, so a stale
+/// copy makes offline/practice games spawn no bots. The current lineup feature
+/// goes through `.csbip/team-lineup.json` and the TeamLineupInjector plugin, so
+/// the legacy block is dead weight and is removed unconditionally.
+fn strip_legacy_team_lineup_blocks(csgo: &Path) {
+    for canonical in cfg_paths(csgo) {
+        let path = mode_layout::active_or_disabled(&canonical).unwrap_or(canonical);
+        strip_legacy_team_lineup_block(&path);
+    }
+}
+
+fn strip_legacy_team_lineup_block(path: &Path) {
+    let Ok(text) = fs::read_to_string(path) else {
+        return;
+    };
+    // Only touch files that carry a complete managed block, so a truncated file
+    // can never lose everything after an unmatched start marker.
+    if !text.contains(LEGACY_LINEUP_START) || !text.contains(LEGACY_LINEUP_END) {
+        return;
+    }
+    let mut lines = Vec::new();
+    let mut skipping = false;
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed == LEGACY_LINEUP_START {
+            skipping = true;
+            continue;
+        }
+        if skipping {
+            if trimmed == LEGACY_LINEUP_END {
+                skipping = false;
+            }
+            continue;
+        }
+        lines.push(line.to_string());
+    }
+    let _ = fs::write(path, format!("{}\r\n", lines.join("\r\n")));
+}
+
 fn replace_cfg_command(path: &Path, command: &str, replacement: &str) -> Result<()> {
     let text = fs::read_to_string(path)?;
     let mut found = false;
@@ -1134,6 +1186,17 @@ fn launch_request(mode: LaunchMode) -> (Vec<&'static str>, String) {
     }
 }
 
+/// Keep the injector's lineup file aligned with the persisted toggle. A stale
+/// roster left behind by an older build (or by an interrupted write) must never
+/// survive a disabled setting, because the injector would keep acting on it.
+fn reconcile_team_lineup_file(root: &Path, enabled: bool) {
+    if enabled {
+        return;
+    }
+    let lineup_path = root.join(".csbip").join("team-lineup.json");
+    let _ = fs::remove_file(lineup_path);
+}
+
 #[tauri::command]
 fn launch_cs2(app: AppHandle) -> Result<LaunchResult> {
     let mut config = read_config(&app)?;
@@ -1142,6 +1205,8 @@ fn launch_cs2(app: AppHandle) -> Result<LaunchResult> {
         AppError::directory("Select the CS2 game/csgo directory before launching")
     })?;
     let root = csgo_path(configured_path)?;
+    reconcile_team_lineup_file(&root, config.team_lineup_enabled);
+    strip_legacy_team_lineup_blocks(&root);
     ensure_target_not_running(&root)?;
     let state = local_state_root(&app)?;
     mode_layout::recover(&state, &root)?;
@@ -1187,7 +1252,25 @@ fn prepare_and_launch_match(app: AppHandle, csgo: String, input: PrepareMatchInp
         "high" => "High",
         _ => return Err(AppError::invalid("Difficulty must be low, medium, or high")),
     };
-    let previous_mode = LaunchMode::parse(read_config(&app)?.mode.as_deref()).map_err(AppError::invalid)?;
+    let current_config = read_config(&app)?;
+    let previous_mode =
+        LaunchMode::parse(current_config.mode.as_deref()).map_err(AppError::invalid)?;
+    // A Plus match always builds its own 5v5 roster, so the auto team lineup must
+    // never survive into it regardless of the persisted toggle. Deleting it here
+    // (not only when the toggle is off) closes the window where the Match panel
+    // gate could not see a stale enabled lineup in the store.
+    let lineup_path = root.join(".csbip").join("team-lineup.json");
+    let had_lineup = lineup_path.is_file();
+    reconcile_team_lineup_file(&root, false);
+    if had_lineup {
+        logging::append(
+            &state,
+            "INFO",
+            "match.lineup_cleared",
+            &format!("removed={}", lineup_path.display()),
+        );
+    }
+    strip_legacy_team_lineup_blocks(&root);
     mode_layout::recover(&state, &root)?;
     apply_launch_mode(&root, LaunchMode::Bots).map_err(AppError::invalid)?;
     mode_layout::set_preview(&state, &root, false)?;
@@ -1836,7 +1919,7 @@ fn team_lineup_meta(index: &str) -> Option<(&'static str, &'static str, &'static
         "3" => Some(("fal", "Falcons", &["NiKo", "TeSeS", "m0NESY", "karrigan", "kyousuke"])),
         "4" => Some(("mouz", "MOUZ", &["jL", "torzsi", "Spinx", "xelex", "xertioN"])),
         "5" => Some(("faze", "FaZe Clan", &["enkay J", "frozen", "Twistzz", "broky", "jcobbb"])),
-        "6" => Some(("mngz", "The MongolZ", &["bLitz", "Techno4K", "mzinho", "910", "cobrazera"])),
+        "6" => Some(("mngz", "The MongolZ", &["bLitz", "Senzu", "mzinho", "910", "cobrazera"])),
         "7" => Some(("navi", "Natus Vincere", &["Aleksib", "iM", "b1t", "w0nderful", "makazze"])),
         "8" => Some(("spir", "Spirit", &["sh1ro", "magixx", "tN1R", "zont1x", "donk"])),
         "9" => Some(("g2", "G2 Esports", &["huNter-", "NertZ", "SunPayus", "HeavyGod", "MATYS"])),
@@ -1889,55 +1972,129 @@ struct LineupJsonConfig {
     friendly_team: Option<LineupJsonTeam>,
     enemy_team: Option<LineupJsonTeam>,
     excluded_player: Option<String>,
+    solo: bool,
 }
 
 #[tauri::command]
 fn set_team_lineup(app: AppHandle, csgo: String, input: TeamLineupInput) -> Result<TeamLineupState> {
+    const FORSAKEN: &str = "forsaken";
+    const SOLO: &str = "solo";
     let root = csgo_path(&csgo)?;
     let mut config = read_config(&app)?;
 
-    config.team_lineup_enabled = input.enabled;
-    config.team_lineup_friendly = input.friendly_team_index.clone();
-    config.team_lineup_enemy = input.enemy_team_index.clone();
-    config.team_lineup_excluded = input.excluded_player.clone();
+    let friendly_sel = input.friendly_team_index.as_deref();
+    let enemy_sel = input.enemy_team_index.as_deref();
+    let friendly_is_forsaken = friendly_sel == Some(FORSAKEN);
+    let friendly_is_solo = friendly_sel == Some(SOLO);
+    let enemy_is_forsaken = enemy_sel == Some(FORSAKEN);
+    // "1v1 duel": forsaken is alone on the enemy side and the friendly lineup is
+    // dropped so only the human player remains on their own team. A friendly
+    // "solo" pick means the same thing by itself, so the duel flag is ignored.
+    let duel = input.duel && enemy_is_forsaken && !friendly_is_solo;
 
-    let json_config = if input.enabled && (input.friendly_team_index.is_some() || input.enemy_team_index.is_some()) {
-        let friendly = input.friendly_team_index.as_deref()
-            .and_then(team_lineup_meta)
-            .map(|(logo, name, players)| LineupJsonTeam {
-                logo: logo.to_string(),
-                name: name.to_string(),
-                players: players.iter().map(|s| s.to_string()).collect(),
-            });
-        let enemy = input.enemy_team_index.as_deref()
-            .and_then(team_lineup_meta)
-            .map(|(logo, name, players)| LineupJsonTeam {
-                logo: logo.to_string(),
-                name: name.to_string(),
-                players: players.iter().map(|s| s.to_string()).collect(),
-            });
-        LineupJsonConfig {
+    if friendly_is_forsaken && enemy_is_forsaken {
+        return Err(AppError::invalid(
+            "forsaken cannot be selected on both sides at the same time",
+        ));
+    }
+    if enemy_sel == Some(SOLO) {
+        return Err(AppError::invalid(
+            "solo is only available on your own side",
+        ));
+    }
+    // A reduced friendly side (player + forsaken, or the player alone) still
+    // needs a configured enemy roster to face.
+    if (friendly_is_forsaken || friendly_is_solo) && enemy_sel.is_none() {
+        return Err(AppError::invalid(
+            "an enemy team is required when your side is forsaken or solo",
+        ));
+    }
+
+    let friendly_index = if duel {
+        None
+    } else {
+        input.friendly_team_index.clone()
+    };
+    let enemy_index = input.enemy_team_index.clone();
+
+    config.team_lineup_enabled = input.enabled;
+    config.team_lineup_friendly = friendly_index.clone();
+    config.team_lineup_enemy = enemy_index.clone();
+    config.team_lineup_excluded = if friendly_is_forsaken || friendly_is_solo || duel {
+        None
+    } else {
+        input.excluded_player.clone()
+    };
+    config.team_lineup_duel = duel;
+
+    let forsaken_team = || LineupJsonTeam {
+        logo: String::new(),
+        name: FORSAKEN.to_string(),
+        players: vec![FORSAKEN.to_string()],
+    };
+
+    let json_config = if input.enabled && (friendly_index.is_some() || enemy_index.is_some()) {
+        let friendly = if friendly_is_forsaken {
+            Some(forsaken_team())
+        } else if friendly_is_solo {
+            // Solo: the friendly side fields no bots at all, so no team is injected.
+            None
+        } else {
+            friendly_index
+                .as_deref()
+                .and_then(team_lineup_meta)
+                .map(|(logo, name, players)| LineupJsonTeam {
+                    logo: logo.to_string(),
+                    name: name.to_string(),
+                    players: players.iter().map(|s| s.to_string()).collect(),
+                })
+        };
+        let enemy = if enemy_is_forsaken {
+            Some(forsaken_team())
+        } else {
+            enemy_index
+                .as_deref()
+                .and_then(team_lineup_meta)
+                .map(|(logo, name, players)| LineupJsonTeam {
+                    logo: logo.to_string(),
+                    name: name.to_string(),
+                    players: players.iter().map(|s| s.to_string()).collect(),
+                })
+        };
+        Some(LineupJsonConfig {
             enabled: true,
             friendly_team: friendly,
             enemy_team: enemy,
-            excluded_player: input.excluded_player.clone(),
-        }
+            excluded_player: config.team_lineup_excluded.clone(),
+            solo: friendly_is_solo,
+        })
     } else {
-        LineupJsonConfig {
-            enabled: false,
-            friendly_team: None,
-            enemy_team: None,
-            excluded_player: None,
-        }
+        None
     };
 
     let csbip = root.join(".csbip");
-    fs::create_dir_all(&csbip).ok();
     let lineup_path = csbip.join("team-lineup.json");
-    let json = serde_json::to_string_pretty(&json_config)
-        .map_err(|e| AppError::io(format!("Failed to serialize lineup config: {e}")))?;
-    fs::write(&lineup_path, json)
-        .map_err(|e| AppError::io(format!("Failed to write team-lineup.json: {e}")))?;
+    match json_config {
+        Some(json_config) => {
+            fs::create_dir_all(&csbip).ok();
+            let json = serde_json::to_string_pretty(&json_config)
+                .map_err(|e| AppError::io(format!("Failed to serialize lineup config: {e}")))?;
+            fs::write(&lineup_path, json)
+                .map_err(|e| AppError::io(format!("Failed to write team-lineup.json: {e}")))?;
+        }
+        None => {
+            // Disabled: drop the file entirely. Leaving an `enabled: false`
+            // roster behind let the injector keep acting on stale data after
+            // the feature was switched off.
+            if let Err(error) = fs::remove_file(&lineup_path) {
+                if error.kind() != std::io::ErrorKind::NotFound {
+                    return Err(AppError::io(format!(
+                        "Failed to remove team-lineup.json: {error}"
+                    )));
+                }
+            }
+        }
+    }
 
     write_config(&app, &config)?;
 
@@ -1946,6 +2103,7 @@ fn set_team_lineup(app: AppHandle, csgo: String, input: TeamLineupInput) -> Resu
         friendly_team_index: config.team_lineup_friendly.clone(),
         enemy_team_index: config.team_lineup_enemy.clone(),
         excluded_player: config.team_lineup_excluded.clone(),
+        duel: config.team_lineup_duel,
     })
 }
 
@@ -1959,6 +2117,7 @@ fn get_team_lineup(app: AppHandle, csgo: String) -> Result<TeamLineupState> {
         friendly_team_index: config.team_lineup_friendly.clone(),
         enemy_team_index: config.team_lineup_enemy.clone(),
         excluded_player: config.team_lineup_excluded.clone(),
+        duel: config.team_lineup_duel,
     })
 }
 
@@ -1980,6 +2139,27 @@ fn set_timescale_toggle(app: AppHandle, csgo: String, enabled: bool) -> Result<b
 fn get_timescale_toggle(app: AppHandle) -> Result<bool> {
     let config = read_config(&app)?;
     Ok(config.timescale_toggle_enabled)
+}
+
+#[tauri::command]
+fn set_infinite_ammo(app: AppHandle, csgo: String, enabled: bool) -> Result<bool> {
+    let root = csgo_path(&csgo)?;
+    let value = if enabled {
+        "sv_infinite_ammo 2"
+    } else {
+        "sv_infinite_ammo 0"
+    };
+    replace_managed_cfg_command(&root, "sv_infinite_ammo", value)?;
+    let mut config = read_config(&app)?;
+    config.nades_infinite_ammo = enabled;
+    write_config(&app, &config)?;
+    Ok(enabled)
+}
+
+#[tauri::command]
+fn get_infinite_ammo(app: AppHandle) -> Result<bool> {
+    let config = read_config(&app)?;
+    Ok(config.nades_infinite_ammo)
 }
 
 #[tauri::command]
@@ -3215,6 +3395,50 @@ mod tests {
     }
 
     #[test]
+    fn reconcile_team_lineup_file_only_removes_a_disabled_roster() {
+        let root = test_root();
+        let csbip = root.join(".csbip");
+        fs::create_dir_all(&csbip).unwrap();
+        let lineup = csbip.join("team-lineup.json");
+        fs::write(&lineup, b"{\"enabled\":true}").unwrap();
+
+        reconcile_team_lineup_file(&root, true);
+        assert!(lineup.is_file(), "an enabled lineup file must be preserved");
+
+        reconcile_team_lineup_file(&root, false);
+        assert!(!lineup.exists(), "a disabled lineup file must be removed");
+        // Missing files are not an error and the call stays idempotent.
+        reconcile_team_lineup_file(&root, false);
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn strip_legacy_team_lineup_blocks_removes_the_managed_cfg_block() {
+        let root = test_root();
+        let cfg = root.join("cfg");
+        fs::create_dir_all(&cfg).unwrap();
+        for name in ["my_bot_normal_config.cfg", "my_bot_ffa_config.cfg"] {
+            fs::write(
+                cfg.join(name),
+                "bh_namesource 1\r\n// managed_team_lineup_start\r\nbot_kick;bot_quota 0;bot_add_ct \"apEX\"\r\n// managed_team_lineup_end\r\nsv_infinite_ammo 2\r\n",
+            )
+            .unwrap();
+        }
+
+        strip_legacy_team_lineup_blocks(&root);
+
+        for name in ["my_bot_normal_config.cfg", "my_bot_ffa_config.cfg"] {
+            let text = fs::read_to_string(cfg.join(name)).unwrap();
+            assert!(!text.contains("managed_team_lineup"));
+            assert!(!text.contains("bot_quota 0"));
+            assert!(text.contains("bh_namesource 1"));
+            assert!(text.contains("sv_infinite_ammo 2"));
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn managed_demo_location_accepts_missing_demo_and_rejects_escape() {
         let root = test_root();
         let managed = root.join("demos/csbip");
@@ -4124,7 +4348,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![get_config, save_config, should_present_welcome_story, detect_directories, select_directory,
             cleanup_backups, validate_files, get_difficulty, set_difficulty, get_mode, set_mode,
             reconcile_launch_options, launch_cs2, reconcile_core_json, get_bot_items, set_bot_item,
-            get_presets, set_aim, set_nades, set_team_lineup, get_team_lineup, set_timescale_toggle, get_timescale_toggle, get_drop_knives, set_drop_knives,
+            get_presets, set_aim, set_nades, set_team_lineup, get_team_lineup, set_timescale_toggle, get_timescale_toggle, set_infinite_ammo, get_infinite_ammo, get_drop_knives, set_drop_knives,
             get_knife_customizer, save_knife_customizer, export_cosmetics_preset,
             import_cosmetics_preset, get_runtime_snapshot, get_cs2_process,
             inspect_installation, get_install_plan, install_payload, repair_payload,
