@@ -2,7 +2,7 @@
   "upstream": {
     "repository": "https://github.com/ed0ard/CS2-Bot-Improver",
     "baseCommit": "7491e175f83e612dbb1c742c2241d454ed4c15ad",
-    "sourceCommit": "7491e175f83e612dbb1c742c2241d454ed4c15ad",
+    "sourceCommit": "abb2c0fc34e48183048134cfca0d2021db6b8d45",
     "release": "v1.4.4",
     "windowsAsset": {
       "name": "CS2BotImprover.zip",

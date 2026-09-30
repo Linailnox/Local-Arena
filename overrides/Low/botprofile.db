@@ -367,6 +367,10 @@ ProSlow+SniperPro+SniperPersonality "broky"
 	VoicePitch = 50
 End
 
+ProPrecise+SniperPro+SniperPersonality "JBOEN"
+	VoicePitch = 104
+End
+
 ProSlow+RiflePro+RiflePersonality "karrigan"
 	VoicePitch = 70
 End
@@ -1513,6 +1517,9 @@ ProSteady+RiflePro+RiflePersonality "K1-FiDa"
 End
 ProFast+RiflePro+RiflePersonality "Luken"
 	VoicePitch = 104
+End
+ProSlow+RiflePro+RiflePersonality "max"
+	VoicePitch = 90
 End
 ProSteady+RiflePro+RiflePersonality "dgt"
 	VoicePitch = 93
