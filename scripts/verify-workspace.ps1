@@ -100,6 +100,7 @@ else {
         "addons/counterstrikesharp/plugins/BotBuy/BotBuy.cs",
         "addons/counterstrikesharp/plugins/BotBuy/BotBuy.csproj",
         "addons/counterstrikesharp/plugins/BotRandomizer/BotRandomizer.cs",
+        "addons/counterstrikesharp/plugins/BotRandomizer/BotRandomizer.csproj",
         "addons/counterstrikesharp/plugins/BotRandomizer/Cosmetics/CosmeticModels.cs",
         "addons/counterstrikesharp/plugins/BotRandomizer/bot_randomizer_options.json",
         "addons/counterstrikesharp/plugins/BotControllerImpl/BotControllerImpl.csproj",
