@@ -27,8 +27,8 @@ public sealed class BotRandomizerPlugin : BasePlugin
     private bool _giveNamedItemErrorLogged;
 
     public override string ModuleName => "BotRandomizer";
-    public override string ModuleVersion => "1.3.0";
-    public override string ModuleAuthor => "ed0ard, Misaka17032 & unicbm";
+    public override string ModuleVersion => "1.3.2";
+    public override string ModuleAuthor => "ed0ard, Misaka17032, unicbm & XBribo";
     public override string ModuleDescription =>
         "Stable per-bot knives, gloves, weapon skins, stickers, charms, agents and music kits";
 
@@ -102,8 +102,8 @@ public sealed class BotRandomizerPlugin : BasePlugin
         {
             writer = new MemoryFunctionWithReturn<nint, string, float, int>(
                 RuntimeInformation.IsOSPlatform(OSPlatform.Linux)
-                    ? "55 48 89 E5 41 57 41 56 49 89 FE 41 55 41 54 53 48 89 F3 48 83 EC ? F3 0F 11 85"
-                    : "40 53 55 41 56 48 81 EC ? ? ? ? 0F 29 74 24");
+                    ? "55 48 89 E5 41 57 41 56 41 55 49 89 FD 41 54 53 48 89 F3 48 83 EC ? F3 0F 11 85"
+                    : "48 89 4C 24 ? 53 41 55 41 56");
         }
         catch (Exception exception)
         {
@@ -143,10 +143,10 @@ public sealed class BotRandomizerPlugin : BasePlugin
         _applicator?.Reset();
         if (_options.Agents)
         {
-            foreach (var model in RandomizerAssets.CounterTerroristModels)
-                Server.PrecacheModel(model);
-            foreach (var model in RandomizerAssets.TerroristModels)
-                Server.PrecacheModel(model);
+            foreach (var agent in RandomizerAssets.CounterTerroristAgents)
+                Server.PrecacheModel(agent.ModelPath);
+            foreach (var agent in RandomizerAssets.TerroristAgents)
+                Server.PrecacheModel(agent.ModelPath);
         }
     }
 
@@ -162,7 +162,95 @@ public sealed class BotRandomizerPlugin : BasePlugin
     {
         foreach (var player in Utilities.GetPlayers())
             ConsumePendingReroll(player);
+        // Deferred one frame so this round's intro entities already exist. Rerolls are consumed
+        // first, so the intro publishes the loadout the bot will actually spawn with.
+        Server.NextFrame(ApplyIntroAgents);
         return HookResult.Continue;
+    }
+
+    // Updates both teams only while the game is preparing the team intro
+    private void ApplyIntroAgents()
+    {
+        if (!_options.Agents)
+            return;
+
+        var gameRules = Utilities
+            .FindAllEntitiesByDesignerName<CCSGameRulesProxy>("cs_gamerules")
+            .FirstOrDefault()
+            ?.GameRules;
+
+        if (gameRules is null || !gameRules.TeamIntroPeriod)
+            return;
+
+        ApplyIntroAgentsForTeam(
+            "team_intro_counterterrorist",
+            RandomizerAssets.CounterTerroristTeam,
+            gameRules.CTTeamIntroVariant);
+        ApplyIntroAgentsForTeam(
+            "team_intro_terrorist",
+            RandomizerAssets.TerroristTeam,
+            gameRules.TTeamIntroVariant);
+    }
+
+    // Matches bot controllers to active intro positions and publishes their agent items
+    private void ApplyIntroAgentsForTeam(string designerName, byte team, int introVariant)
+    {
+        var teamPlayers = Utilities.GetPlayers()
+            .Where(player => player.IsValid && player.TeamNum == team)
+            .OrderBy(player => player.Slot)
+            .ToList();
+        var bots = teamPlayers
+            .Where(player => player is { IsBot: true, IsHLTV: false })
+            .ToList();
+
+        if (bots.Count == 0)
+            return;
+
+        var previews = Utilities
+            .FindAllEntitiesByDesignerName<CCSGO_TeamPreviewCharacterPosition>(designerName)
+            .Where(preview => preview.IsValid && preview.Variant == introVariant)
+            .OrderBy(preview => preview.Ordinal)
+            .Take(teamPlayers.Count)
+            .ToList();
+        var unmatchedBots = new List<CCSPlayerController>(bots);
+        var unmatchedPreviews = new List<CCSGO_TeamPreviewCharacterPosition>(previews);
+
+        foreach (var bot in bots.Where(bot => bot.SteamID != 0))
+        {
+            var preview = unmatchedPreviews.FirstOrDefault(candidate => candidate.Xuid == bot.SteamID);
+            if (preview is null)
+                continue;
+
+            ApplyIntroAgent(preview, bot);
+            unmatchedBots.Remove(bot);
+            unmatchedPreviews.Remove(preview);
+        }
+
+        var botPreviews = unmatchedPreviews
+            .Where(preview => preview.Xuid == 0)
+            .OrderBy(preview => preview.Ordinal)
+            .ToList();
+        var pairCount = Math.Min(unmatchedBots.Count, botPreviews.Count);
+
+        for (var i = 0; i < pairCount; i++)
+            ApplyIntroAgent(botPreviews[i], unmatchedBots[i]);
+    }
+
+    private void ApplyIntroAgent(
+        CCSGO_TeamPreviewCharacterPosition preview,
+        CCSPlayerController bot)
+    {
+        var state = GetOrCreateState(bot);
+        if (state is null)
+            return;
+
+        // Publishes the very agent this bot's pawn is given at spawn, so the intro and the
+        // in-game model always match.
+        preview.AgentItem.ItemDefinitionIndex = state.Loadout.AgentDefIndex;
+        Utilities.SetStateChanged(
+            preview,
+            "CCSGO_TeamPreviewCharacterPosition",
+            "m_agentItem");
     }
 
     private HookResult OnPlayerSpawn(EventPlayerSpawn @event, GameEventInfo info)
