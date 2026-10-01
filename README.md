@@ -21,7 +21,7 @@ CS2-Bot-Improver enhances Counter-Strike 2 bots for offline matches and private 
 
 | Field | Improvements |
 | --- | --- |
-| **Aim and combat** | More accurate, human-like aim; spraying, flicking, smoke spamming, and anti-flash |
+| **Aim and combat** | More accurate, human-like aim and FOV; spraying, flicking, smoke spamming, and anti-flash |
 | **Grenades** | Situational Smoke, Flashbang, HE grenade, and Molotov throwing |
 | **Movement** | Better movement and fixes for most bot-stuck situations |
 | **Strategy** | Smarter, more organized bots with improved awareness and decision-making |
