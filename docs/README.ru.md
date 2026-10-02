@@ -158,7 +158,15 @@ negev     m249
 
 ### Настройки
 
-Нажмите значок <img width="31" height="32" alt="Настройки" src="https://github.com/user-attachments/assets/7f94176b-79f1-4e22-9495-4589c4dea9eb" /> в правом верхнем углу, чтобы открыть **Settings**.
+Нажмите значок <img width="31" height="32" alt="Настройки" src="https://github.com/user-attachments/assets/7f94176b-79f1-4e22-9495-4589c4dea9eb" /> в правом верхнем углу, чтобы открыть **Настройки**.
+
+### Правила
+
+Откройте **Настройки** и нажмите **Правила**, чтобы настроить игровые правила.
+
+Нажмите **Сбросить все**, чтобы восстановить правила по умолчанию.
+
+<img width="360" height="385" alt="Rules" src="https://github.com/user-attachments/assets/ce7ce3b9-4f35-4921-b455-a42c816c30bd" />
 
 ### Просмотр команд
 
