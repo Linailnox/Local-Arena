@@ -1,13 +1,13 @@
 {
   "upstream": {
     "repository": "https://github.com/ed0ard/CS2-Bot-Improver",
-    "baseCommit": "7491e175f83e612dbb1c742c2241d454ed4c15ad",
-    "sourceCommit": "abb2c0fc34e48183048134cfca0d2021db6b8d45",
-    "release": "v1.4.4",
+    "baseCommit": "d9914454d8691b509bae4cd671a7a8bd9dcb174f",
+    "sourceCommit": "d9914454d8691b509bae4cd671a7a8bd9dcb174f",
+    "release": "v1.4.5",
     "windowsAsset": {
       "name": "CS2BotImprover.zip",
-      "url": "https://github.com/ed0ard/CS2-Bot-Improver/releases/download/v1.4.4/CS2BotImprover.zip",
-      "sha256": "cba05fdc239bf0e3e95dff7d8670863fe69de9fb03ade8512b6d4f79f88664db"
+      "url": "https://github.com/ed0ard/CS2-Bot-Improver/releases/download/v1.4.5/CS2BotImprover.zip",
+      "sha256": "ae37b86533abfe0547c5ad4346d478cd846727509fc092842a81240eb0130140"
     }
   },
   "metamod": {
@@ -22,13 +22,13 @@
   },
   "counterStrikeSharp": {
     "repository": "https://github.com/roflmuffin/CounterStrikeSharp",
-    "release": "v1.0.373",
+    "release": "v1.0.376",
     "windowsAsset": {
-      "name": "counterstrikesharp-with-runtime-windows-1.0.373.zip",
-      "url": "https://github.com/roflmuffin/CounterStrikeSharp/releases/download/v1.0.373/counterstrikesharp-with-runtime-windows-1.0.373.zip",
-      "sha256": "16d1db8e48ccea5ef3f030a1841575d6c006345c6920e4f6691135ef8907e695"
+      "name": "counterstrikesharp-with-runtime-windows-1.0.376.zip",
+      "url": "https://github.com/roflmuffin/CounterStrikeSharp/releases/download/v1.0.376/counterstrikesharp-with-runtime-windows-1.0.376.zip",
+      "sha256": "4f2777545a0940351450440288e7487509d539f770e66cf1c30cc2419084c5f8"
     },
-    "windowsCoreSha256": "75100a3056d9040392f47b6e492f1b823cfcd898203343b79363971405aa2c4a"
+    "windowsCoreSha256": "1353cbbf1b92e2a12f1dd36cb37fcdd34d31bc7da40ece47a873f8d7eb1e9c9c"
   },
   "rayTrace": {
     "repository": "https://github.com/FUNPLAY-pro-CS2/Ray-Trace",

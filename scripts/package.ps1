@@ -207,29 +207,35 @@ if (Test-Path -LiteralPath $linuxBotHiderVdf) {
 }
 
 # Plus configuration overlays. Source files are deliberately not copied into the release payload.
-Copy-Item -LiteralPath (Join-Path $repo "addons\BotHider\bot_info.json") -Destination (Join-Path $payload "addons\BotHider\bot_info.json") -Force
-Copy-Item -LiteralPath (Join-Path $repo "addons\BotHider\gamedata.json") -Destination (Join-Path $payload "addons\BotHider\gamedata.json") -Force
-Copy-Item -LiteralPath (Join-Path $repo "addons\BotHider\map_whitelist.json") -Destination (Join-Path $payload "addons\BotHider\map_whitelist.json") -Force
-Copy-Item -LiteralPath (Join-Path $repo "addons\metamod\BotHider.vdf") -Destination (Join-Path $payload "addons\metamod\BotHider.vdf") -Force
+$botHiderConfigs = Join-Path $repo "addons\BotHider\configs\addons\BotHider"
+Copy-Item -LiteralPath (Join-Path $botHiderConfigs "bot_info.json") -Destination (Join-Path $payload "addons\BotHider\bot_info.json") -Force
+Copy-Item -LiteralPath (Join-Path $botHiderConfigs "gamedata.json") -Destination (Join-Path $payload "addons\BotHider\gamedata.json") -Force
 Copy-Item -LiteralPath (Join-Path $repo "cfg\my_bot_ffa_config.cfg") -Destination (Join-Path $payload "cfg\my_bot_ffa_config.cfg") -Force
 Copy-Item -LiteralPath (Join-Path $repo "cfg\my_bot_normal_config.cfg") -Destination (Join-Path $payload "cfg\my_bot_normal_config.cfg") -Force
+# The grenade catalog lives in counterstrikesharp/data in the repository while the
+# plugin loads grenades from its module directory; mirror the committed source over
+# the payload copy so the shipped catalog always matches the repository.
+Copy-Tree (Join-Path $repo "addons\counterstrikesharp\data\NadeSystem\grenades") (Join-Path $payload "addons\counterstrikesharp\plugins\NadeSystem\grenades")
+# Behavior-tree overrides are repository-owned and absent from the upstream release zip.
+Copy-Tree (Join-Path $repo "overrides\scripts") (Join-Path $payload "overrides\scripts")
 
 $pluginBuild = Join-Path $repo "addons\counterstrikesharp\plugins\PlayerKnifeCustomizer\bin\Release\net10.0"
-$botImplBuild = Join-Path $repo "addons\counterstrikesharp\plugins\BotHiderImpl\bin\Release\net10.0"
-$botApiBuild = Join-Path $repo "addons\counterstrikesharp\shared\BotHiderApi\bin\Release\net10.0"
+$botImplBuild = Join-Path $repo "addons\BotHider\csharp\BotHiderImpl\bin\Release\net10.0"
+$botApiBuild = Join-Path $repo "addons\BotHider\csharp\BotHiderApi\bin\Release\net10.0"
 $upstreamPluginBuilds = @(
     @{ Name = "BotAI"; Framework = "net10.0" },
     @{ Name = "BotAimImprover"; Framework = "net10.0" },
     @{ Name = "BotBuy"; Framework = "net8.0" },
-    @{ Name = "BotControllerImpl"; Framework = "net10.0" },
+    @{ Name = "BotControllerImpl"; Framework = "net10.0"; BuildDir = "addons\BotController\csharp\BotControllerImpl" },
     @{ Name = "BotRandomizer"; Framework = "net10.0" },
     @{ Name = "NadeSystem"; Framework = "net10.0" },
-    @{ Name = "RoundDamageRecap"; Framework = "net10.0" },
-    @{ Name = "PlusMatchCoordinator"; Framework = "net8.0" },
-    @{ Name = "TeamLineupInjector"; Framework = "net8.0" }
+    @{ Name = "RoundDamageRecap"; Framework = "net8.0" },
+    @{ Name = "PlusMatchCoordinator"; Framework = "net10.0" },
+    @{ Name = "TeamLineupInjector"; Framework = "net10.0" }
 )
 foreach ($plugin in $upstreamPluginBuilds) {
-    $build = Join-Path $repo "addons\counterstrikesharp\plugins\$($plugin.Name)\bin\Release\$($plugin.Framework)"
+    $buildRoot = if ($plugin.BuildDir) { $plugin.BuildDir } else { "addons\counterstrikesharp\plugins\$($plugin.Name)" }
+    $build = Join-Path $repo "$buildRoot\bin\Release\$($plugin.Framework)"
     if (-not (Test-Path -LiteralPath (Join-Path $build "$($plugin.Name).dll"))) {
         throw "Expected upstream plugin build output was not produced: $build"
     }
@@ -255,13 +261,11 @@ if ($telemetryDifference.Count -gt 0) {
     throw "OfflineMatchTelemetry staged deployment does not match the release allowlist."
 }
 Copy-Tree $telemetryStage (Join-Path $payload "addons\counterstrikesharp\plugins\OfflineMatchTelemetry")
-$botControllerApiBuild = Join-Path $repo "addons\counterstrikesharp\shared\BotControllerApi\bin\Release\net10.0"
+$botControllerApiBuild = Join-Path $repo "addons\BotController\csharp\BotControllerApi\bin\Release\net10.0"
 if (-not (Test-Path -LiteralPath (Join-Path $botControllerApiBuild "BotControllerApi.dll"))) {
     throw "Expected BotController shared API build output was not produced: $botControllerApiBuild"
 }
 Copy-Tree $botControllerApiBuild (Join-Path $payload "addons\counterstrikesharp\shared\BotControllerApi")
-Copy-Item -LiteralPath (Join-Path $repo "addons\counterstrikesharp\plugins\BotRandomizer\bot_randomizer_options.json") `
-    -Destination (Join-Path $payload "addons\counterstrikesharp\plugins\BotRandomizer\bot_randomizer_options.json") -Force
 Copy-Tree $pluginBuild (Join-Path $payload "addons\counterstrikesharp\plugins\PlayerKnifeCustomizer")
 Copy-Tree $botImplBuild (Join-Path $payload "addons\counterstrikesharp\plugins\BotHiderImpl")
 Copy-Tree $botApiBuild (Join-Path $payload "addons\counterstrikesharp\shared\BotHiderApi")
@@ -377,7 +381,6 @@ $manifestEntries = foreach ($topLevel in @("addons", "cfg", "overrides")) {
         else { "runtime" }
         $preserveConfig = $relative -like "*/PlayerKnifeCustomizer/player_*_presets.json" -or
             $relative -in @(
-                "addons/counterstrikesharp/plugins/BotRandomizer/bot_randomizer_options.json",
                 "cfg/my_bot_ffa_config.cfg",
                 "cfg/my_bot_normal_config.cfg",
                 "overrides/botprofile.vpk"
