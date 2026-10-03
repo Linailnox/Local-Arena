@@ -3,15 +3,62 @@
 ## Base
 
 - Project: `ed0ard/CS2-Bot-Improver`
-- Packaged runtime base: `v1.4.1`
-- Synced upstream source version: `1.4.2`
-- Synced upstream commit: `43c455c6f85bbb6ffe80f137a5e911cfe0c903f2`
-- Plus release line: `1.4.2.1`
+- Synced upstream source commit: `abb2c0fc34e48183048134cfca0d2021db6b8d45` (upstream `main`, post-`v1.4.4`, 2026-09-25)
+- Last synced upstream release: `7491e175f83e612dbb1c742c2241d454ed4c15ad` (`v1.4.4`), still the newest upstream tag
+- Pinned Windows runtime asset: `CS2BotImprover.zip` (`v1.4.4`, see `scripts/dependencies.json`)
+- Plus release line: `1.4.3.x` test line; the merged payload tracks upstream `main` BotRandomizer plus the `v1.4.4` enhanced-bot sources
+- `scripts/dependencies.json`: `upstream.baseCommit` stays on the pinned release commit, `upstream.sourceCommit`
+  follows the upstream revision whose sources are merged. Packaging verification diffs the upstream-owned modules
+  against `sourceCommit`, so bump it whenever a sync merge lands.
 
-The repository stores source and configuration deltas. Upstream has marked its Panel and source tree as 1.4.2 but has
-not published a v1.4.2 release archive. The Windows package script therefore obtains the last official v1.4.1 layout,
-then overlays the synced 1.4.2 sources, BotHider v0.3.0 data, pinned engine-compatible runtimes, and current Plus builds
-instead of committing generated or third-party binaries.
+The repository stores source and configuration deltas. Upstream has marked its Panel and source tree as 1.4.4 and has
+published the `v1.4.4` release archive. The Windows package script obtains the official v1.4.4 layout, then overlays the
+synced sources, BotHider v0.4.0 data, pinned engine-compatible runtimes, and current Plus builds instead of committing
+generated or third-party binaries.
+
+### 2026-09 v1.4.4 merge notes
+
+- Adopted upstream `BotAI`, `BotState`, `BotControllerImpl`/`BotHiderImpl`, the `NadeSystem` partial-class rewrite,
+  the steamid-keyed `bot_info.json` schema, `BotHider`/`gamedata.json`, and the new `BotVision`/`BotController`
+  metamod payload (arrives from the pinned release archive).
+- Kept Local Arena versions: `Panel`, `README*`, `Commands.txt`, `BotRandomizer` (feature-gated skins/agents/music
+  pipeline), `BotAimImprover`/`BotBuy` custom builds, and the `NadeSystem` disconnected-pawn guard (now in
+  `NadeSystemPlugin.Replay.cs`).
+- Difficulty `overrides` DB mirrors are re-extracted from the normalized `v1.4.4` payload VPKs, so they carry the
+  new v1.4.4 pros (e.g. `forsaken`) while keeping valid `LookAngle` values.
+- Roster reconciliation: the pinned `v1.4.4` botprofile data no longer defines `Techno4K`; the Local Arena
+  `The MongolZ` five-man lineups (`match_catalog.json`, `Commands.txt`, Panel command browser) now use `Senzu`,
+  which exists in the shipped difficulty data, so packaging verification passes.
+
+### 2026-09 upstream `main` merge notes
+
+Merge base was the `v1.4.4` source commit, so the merge carried only upstream's 27 post-release commits. Adopted
+upstream's `BotRandomizer` `1.3.2` revision rather than the older Local Arena copy:
+
+- Team-intro publication: one frame after `round_prestart`, while `TeamIntroPeriod` is active, `ApplyIntroAgents` /
+  `ApplyIntroAgentsForTeam` / `ApplyIntroAgent` publish each bot's rolled agent on the
+  `team_intro_counterterrorist` / `team_intro_terrorist` preview entities (`m_agentItem`). Preview slots are matched
+  to bots by `Xuid` first and the remaining `Xuid == 0` slots are then paired with the remaining bots by `Ordinal`;
+  human-owned slots are never written to. The intermediate `TeamIntroPreview.cs` / `m_xuid` variant that upstream's
+  1.3.2 commit introduced is not part of upstream's current revision (PR #141 removed it), so it is not adopted here.
+- `AgentDefinition` (agent model plus economy definition index) replaces the plain model lists, and
+  `BotCosmeticLoadout` carries `AgentDefIndex`, so the intro entity and the spawned pawn can never disagree.
+- The economic-attribute writer signature follows upstream's refresh. If cosmetics ever stop applying after a game
+  update, check the `[BotRandomizer] SetOrAddAttributeValueByName signature failed` log line before changing code.
+- Local Arena feature gates are preserved and re-applied on top of the upstream revision: `LoadOptions`,
+  `bot_randomizer_options.json` (`skins` / `profiles` / `agents` / `music`), `EnabledScope`, the
+  `HasVisibleFeatures` early-outs, and the per-feature guards. Intro publication is gated on `agents`, so the
+  option semantics are unchanged from the previous Local Arena build.
+- Deliberate deviation: `BotRandomizer.csproj` compiles against `CounterStrikeSharp.API` `1.0.373`, not upstream's
+  `1.0.375`, because the packaged runtime is pinned to CounterStrikeSharp `v1.0.373` in `scripts/dependencies.json`.
+- Roster: upstream's `JBOEN` (FaZe) and `max` (9z) botprofile entries are adopted in all three difficulty mirrors;
+  `Commands.txt` already referenced both players.
+- Files upstream still owns stay dropped in Local Arena: `.github/ISSUE_TEMPLATE/*`, `docs/README.ru.md`,
+  `docs/README.zh-CN.md`, and upstream's `README.md` rewrite. Local Arena keeps its own `README.md` /
+  `README.zh-CN.md`.
+- Known data gap, inherited from upstream: seven `Commands.txt` players still have no botprofile entry anywhere
+  (`HObbit`, `MATYS`, `S1ren`, `b1t`, `dav1deus`, `doc`, `flayy`). Upstream's own database lacks them too, so no
+  profile values were invented; they fall back to the game's default profile.
 
 ## Pinned Runtime Inputs
 

@@ -65,9 +65,18 @@ function Copy-Tree {
     Copy-Item -Path (Join-Path $Source "*") -Destination $Destination -Recurse -Force
 }
 
+function Resolve-TarTool {
+    # Windows ships tar.exe; POSIX hosts expose the same tool as tar.
+    foreach ($candidate in @("tar.exe", "tar")) {
+        $command = Get-Command $candidate -ErrorAction SilentlyContinue
+        if ($command) { return $command.Source }
+    }
+    throw "tar was not found on PATH."
+}
+
 function Expand-TarGz {
     param([string]$Archive, [string]$Destination)
-    $tar = (Get-Command tar.exe -ErrorAction Stop).Source
+    $tar = Resolve-TarTool
     New-Item -ItemType Directory -Path $Destination -Force | Out-Null
     & $tar -xzf $Archive -C $Destination
     if ($LASTEXITCODE -ne 0) { throw "Failed to extract $Archive" }
@@ -119,6 +128,15 @@ Expand-Archive -LiteralPath $counterStrikeSharpZip -DestinationPath $counterStri
 Expand-TarGz $rayTraceCssArchive $rayTraceCssExtract
 Expand-TarGz $rayTraceWindowsArchive $rayTraceWindowsExtract
 Expand-Archive -LiteralPath $botHiderZip -DestinationPath $botHiderExtract
+
+# Unix archive extraction preserves POSIX modes that upstream archives set to
+# hide content (e.g. execute-only metamod VDFs and dotnet framework files).
+# Windows ignores those bits, so make every extracted entry user-accessible.
+if ($IsLinux -or $IsMacOS) {
+    $mode = [IO.UnixFileMode]::UserRead -bor [IO.UnixFileMode]::UserWrite -bor [IO.UnixFileMode]::UserExecute
+    Get-ChildItem -LiteralPath $extract -Recurse -Force -ErrorAction SilentlyContinue |
+        ForEach-Object { $_.UnixFileMode = $_.UnixFileMode -bor $mode }
+}
 
 $payloadCandidates = @((Get-Item -LiteralPath $upstreamExtract)) +
     @(Get-ChildItem -LiteralPath $upstreamExtract -Directory -Recurse)
