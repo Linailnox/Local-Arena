@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
@@ -14,7 +14,7 @@
       <ExcludeAssets>runtime</ExcludeAssets>
     </PackageReference>
     <ProjectReference Include="..\..\shared\MatchCore\MatchCore.csproj" />
-    <ProjectReference Include="..\..\shared\BotHiderApi\BotHiderApi.csproj">
+    <ProjectReference Include="..\..\..\BotHider\csharp\BotHiderApi\BotHiderApi.csproj">
       <Private>false</Private>
     </ProjectReference>
   </ItemGroup>

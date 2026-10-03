@@ -3,20 +3,19 @@
 ## Base
 
 - Project: `ed0ard/CS2-Bot-Improver`
-- Synced upstream source commit: `abb2c0fc34e48183048134cfca0d2021db6b8d45` (upstream `main`, post-`v1.4.4`, 2026-09-25)
-- Last synced upstream release: `7491e175f83e612dbb1c742c2241d454ed4c15ad` (`v1.4.4`), still the newest upstream tag
-- Pinned Windows runtime asset: `CS2BotImprover.zip` (`v1.4.4`, see `scripts/dependencies.json`)
-- Plus release line: `1.4.3.x` test line; the merged payload tracks upstream `main` BotRandomizer plus the `v1.4.4` enhanced-bot sources
+- Synced upstream source commit: `d9914454d8691b509bae4cd671a7a8bd9dcb174f` (upstream `main` = tag `v1.4.5`, 2026-10-02)
+- Last synced upstream release: `d9914454d8691b509bae4cd671a7a8bd9dcb174f` (`v1.4.5`), the newest upstream tag
+- Pinned Windows runtime asset: `CS2BotImprover.zip` (`v1.4.5`, see `scripts/dependencies.json`)
+- Plus release line: `1.4.3.x` test line; the merged payload tracks the upstream `v1.4.5` enhanced-bot submodules
 - `scripts/dependencies.json`: `upstream.baseCommit` stays on the pinned release commit, `upstream.sourceCommit`
-  follows the upstream revision whose sources are merged. Packaging verification diffs the upstream-owned modules
-  against `sourceCommit`, so bump it whenever a sync merge lands.
+  follows the upstream revision whose sources are merged. Packaging verification asserts every submodule gitlink and
+  upstream-owned tree against `sourceCommit`, so bump it whenever a sync merge lands.
 
-The repository stores source and configuration deltas. Upstream has marked its Panel and source tree as 1.4.4 and has
-published the `v1.4.4` release archive. The Windows package script obtains the official v1.4.4 layout, then overlays the
-synced sources, BotHider v0.4.0 data, pinned engine-compatible runtimes, and current Plus builds instead of committing
-generated or third-party binaries.
+The repository stores source and configuration deltas. Upstream has published the `v1.4.5` release archive, and the
+Windows package script obtains that official layout, then overlays the pinned submodule builds, BotHider v0.4.0 data,
+pinned engine-compatible runtimes, and current Plus builds instead of committing generated or third-party binaries.
 
-### 2026-09 v1.4.4 merge notes
+### 2026-09 v1.4.4 merge notes (historical)
 
 - Adopted upstream `BotAI`, `BotState`, `BotControllerImpl`/`BotHiderImpl`, the `NadeSystem` partial-class rewrite,
   the steamid-keyed `bot_info.json` schema, `BotHider`/`gamedata.json`, and the new `BotVision`/`BotController`
@@ -30,7 +29,7 @@ generated or third-party binaries.
   `The MongolZ` five-man lineups (`match_catalog.json`, `Commands.txt`, Panel command browser) now use `Senzu`,
   which exists in the shipped difficulty data, so packaging verification passes.
 
-### 2026-09 upstream `main` merge notes
+### 2026-09 upstream `main` merge notes (historical)
 
 Merge base was the `v1.4.4` source commit, so the merge carried only upstream's 27 post-release commits. Adopted
 upstream's `BotRandomizer` `1.3.2` revision rather than the older Local Arena copy:
@@ -58,23 +57,89 @@ upstream's `BotRandomizer` `1.3.2` revision rather than the older Local Arena co
   `README.zh-CN.md`.
 - Known data gap, inherited from upstream: seven `Commands.txt` players still have no botprofile entry anywhere
   (`HObbit`, `MATYS`, `S1ren`, `b1t`, `dav1deus`, `doc`, `flayy`). Upstream's own database lacks them too, so no
-  profile values were invented; they fall back to the game's default profile.
+  profile values were invented; they fall back to the game's default profile. `verify-workspace.ps1` exempts exactly
+  this list from the featured-player assertion through `$inheritedProfileGap`.
+
+### 2026-10 upstream `v1.4.5` merge notes (current)
+
+Merge base was the previous sync commit (`abb2c0f`, post-`v1.4.4`); the merge adopts upstream `main` at `d991445`
+(tag `v1.4.5`, 2026-10-02). Upstream converted its enhanced-bot sources into git submodules and Local Arena adopts
+that structure verbatim. Every pointer must stay byte-identical to the pinned commit: `verify-workspace.ps1`
+compares all nine gitlinks plus the upstream-owned trees (`RoundDamageRecap`, `plugins/disabled`,
+`counterstrikesharp/data`) against `sourceCommit` and fails on any divergence.
+
+| Submodule path | Upstream repository | Pinned commit |
+|---|---|---|
+| `addons/BotHider` | `XBribo/CS2-Bot-Hider` | `12069c25a756deedc72f8fc116ac3b18045d1223` |
+| `addons/BotController` | `XBribo/CS2-Bot-Controller` | `451c7ba8ddb007eeb4d72edf291f6e0cbb051e56` |
+| `addons/BotVision` | `XBribo/CS2-Bot-Vision` | `33ab01fc5ec4e27b6f07aff653d54638ad84ebcb` |
+| `addons/counterstrikesharp/plugins/BotAI` | `ed0ard/CS2-BotAI` | `1bcd6dbe310fc059081baa9b56f6145b8a628967` |
+| `addons/counterstrikesharp/plugins/BotAimImprover` | `ed0ard/CS2-Bullseye-Bot` | `c3d10f5f5e31302589032bb579dfc342c9ea5639` |
+| `addons/counterstrikesharp/plugins/BotBuy` | `ed0ard/CS2-Bot-Buy` | `a4e8fded12dda5353e5c36eb2ff8cddd11d5193e` |
+| `addons/counterstrikesharp/plugins/BotRandomizer` | `ed0ard/CS2-Bot-Randomizer` | `5b16e1447f4e5d3032a1625ac368c90f81b929ac` |
+| `addons/counterstrikesharp/plugins/BotState` | `ed0ard/CS2-Smarter-Bot` | `30e791f2f615452b3403f352e731116632a71887` |
+| `addons/counterstrikesharp/plugins/NadeSystem` | `ed0ard/CS2-Bot-NadeSystem` | `21788dc3fb61ca62db6a14b9657fd61cbbc888f1` |
+
+Adopted with the merge:
+
+- Upstream's new content: the five `cfg` rush files, the nine updated `gamemode_*.cfg` files, the four
+  behavior-tree overrides (`overrides/scripts/{Low,Medium,High}/bt_config.kv3`, `overrides/scripts/bt_default.kv3`),
+  the `README` 1.4.5 hunks, and upstream's revised `RoundDamageRecap` (net8.0, CSS 1.0.367).
+- The submodule structure: the former in-repo copies of `BotHiderImpl`, `BotControllerImpl`,
+  `shared/BotControllerApi`, `shared/BotHiderApi`, `addons/metamod/*.vdf`, and `addons/BotHider/*.json` are gone.
+  Committed BotHider data now lives at `addons/BotHider/configs/addons/BotHider/`.
+- CounterStrikeSharp moves from `v1.0.373` to `v1.0.376`: the runtime upstream's `v1.4.5` payload ships (verified
+  byte-identical core DLL) and the maximum compile-time pin among the submodules (`BotRandomizer` 1.0.376). The
+  pinned `windowsCoreSha256` follows.
+
+Local modifications dismantled by the submodule conversion (functional losses versus the previous Local Arena build):
+
+- `BotBuy`: the PLUS purchase gate (`ManagedMatchRuntimeStore.IsPurchasingAllowed`) and purchase telemetry hooks.
+- `RoundDamageRecap`: the PLUS statistics yield (`PlusManagedPaths.ActiveMatchPath` ownership).
+- `BotAimImprover`: the managed schema-targeting build; upstream's signature-hook `2.1.3` ships instead.
+- `NadeSystem`: the disconnected-pawn guard in `NadeSystemPlugin.Replay.cs`.
+- `BotHiderImpl`: the forced `EnsureBotInfoNameSource()` bootstrap; upstream ships the `bh_namesource` console
+  command instead, and both Local Arena `my_bot_*` configs still set `bh_namesource 1`, so the name chain now
+  survives through configuration rather than a forced initialization.
+- `BotRandomizer`: the `bot_randomizer_options.json` feature gates (`LoadOptions` / `EnabledScope` /
+  `HasVisibleFeatures`); the options file is neither read nor shipped any more.
+- `map_whitelist.json` (no consumer remained) and `plugins/disabled/CS2_ExecAfter` (deleted upstream).
+- `bot_info.json` no longer carries the local `vsm` / `2035477657` identity entry.
+
+Tooling adaptations:
+
+- `verify-workspace.ps1`: the module diff is replaced by gitlink/upstream-tree/removed-path assertions; upstream
+  content checks and the dropped-mod gates are gone; the repo grenade catalog is read from
+  `addons/counterstrikesharp/data/NadeSystem/grenades`; the built-plugin list follows the measured TFMs
+  (`RoundDamageRecap` net8.0, `PlusMatchCoordinator` and `TeamLineupInjector` net10.0, `BotControllerImpl` built
+  from `addons/BotController/csharp/BotControllerImpl`); the documented profile gap is exempted through
+  `$inheritedProfileGap`.
+- `package.ps1`: the payload base bumps to the `v1.4.5` zip; BotHider data is sourced from the submodule `configs`
+  tree; build outputs come from the submodule `csharp` trees; explicit copies carry the NadeSystem grenade catalog
+  (`data/NadeSystem/grenades` → payload `plugins/NadeSystem/grenades`) and the behavior-tree overrides, both of
+  which are absent or stale in the release zip; `bot_randomizer_options.json` staging is removed.
+- `build.ps1`: impl project paths point into the submodules, and the unused `RayTraceApiPath` MSBuild plumbing was
+  removed together with the reverted `BotAimImprover`/`NadeSystem` csproj edits.
+- `installer.rs`: `disabled/CS2_ExecAfter` is dropped from `SUITE_OWNED_ROOTS`.
+- `.github/workflows/build.yml` and `release.yml` check out with `submodules: recursive`.
 
 ## Pinned Runtime Inputs
 
 The machine-readable source of truth is `scripts/dependencies.json`.
 
-- `CS2BotImprover.zip` supplies the official Windows runtime layout.
+- `CS2BotImprover.zip` (`v1.4.5`) supplies the official Windows runtime layout.
 - MetaMod 2.0.0-git1406 supplies the engine 26 loader.
-- CounterStrikeSharp v1.0.371 with its bundled .NET runtime replaces the stale v1.4.1 copy.
+- CounterStrikeSharp `v1.0.376` with its bundled .NET runtime replaces the stale v1.4.1 copy.
 - RayTrace v1.0.16 supplies both the native module and CounterStrikeSharp API/implementation.
-- `BotHider-windows-0.3.0.zip` supplies the native BotHider module.
-- BotAI includes the tested Windows signature refresh from upstream PR #75 (`3db93ba`).
-- BotAI, BotAimImprover, BotBuy, and NadeSystem are rebuilt from the pinned source tree so post-v1.4.1 fixes are not
-  replaced by older release DLLs.
-- BotAimImprover and NadeSystem receive `RayTraceApi.dll` from the verified v1.0.16 archive through an explicit
-  MSBuild property; clean builds do not depend on an ignored `libs` file left on the developer machine.
-- Plus-built `BotHiderImpl`, `BotHiderApi`, and `PlayerKnifeCustomizer` assemblies overlay their upstream locations.
+- `BotHider-Windows-0.4.0.zip` supplies the native BotHider module, the metamod `BotHider.vdf`, and the payload
+  `config.json` / `bot_info.json` / `gamedata.json` baseline (the committed submodule copies overlay the latter two).
+- `BotAI`, `BotAimImprover`, `BotBuy`, `BotRandomizer`, `NadeSystem`, `BotState`, `RoundDamageRecap`, and the
+  `BotController`/`BotHider` csharp trees are built from the pinned git submodules, so release DLLs are never copied
+  from an older archive. `BotState` and `BotVision` binaries still arrive from the pinned release archive.
+- `BotControllerImpl` builds from `addons/BotController/csharp/BotControllerImpl`; the API assemblies build from
+  their submodule `csharp` projects; payload destinations stay `plugins/<Name>/…` and `shared/<Name>/…`.
+- Plus-built `PlayerKnifeCustomizer`, `PlusMatchCoordinator`, `TeamLineupInjector`, `MatchCore`, and
+  `OfflineMatchTelemetry` assemblies overlay their upstream locations.
 - The Plus Panel replaces the upstream Panel executable while retaining the same standalone workflow.
 
 Every downloaded archive and each critical runtime DLL is SHA-256 verified before packaging.
@@ -94,14 +159,15 @@ Weapon images and localized skin names are derived from `Nereziel/cs2-WeaponPain
 English fallback because that source does not provide an Indonesian skin-name table. This fallback affects display
 only; item application uses numeric catalog identifiers.
 
-BotHider is maintained at `XBribo/CS2-Bot-Hider`. The package tracks v0.3.0, which supplies the current Windows
+BotHider is maintained at `XBribo/CS2-Bot-Hider`. The package tracks `v0.4.0`, which supplies the current Windows
 identity synchronization, team-join scope, entity-packing protection, and gamedata-driven
 `CServerSideClient::SetName` target. Packaging verifies the official release archive and native DLL hashes without
 binary patching.
 
-`BotHiderImpl` supplements native name publication only for slots reported by BotHider as managed bots, through
-`CBasePlayerController.m_iszPlayerName`, and forces the Plus `bot_info.json` name source before bots are created. It
-does not write names for human-player slots. Steam IDs, avatars, cards,
+`BotHiderImpl` is built from the pinned `CS2-Bot-Hider` submodule and supplements native name publication only for
+slots reported by BotHider as managed bots, through `CBasePlayerController.m_iszPlayerName`. The upstream
+`bh_namesource` console command selects the `bot_info.json` display-name source, and both Local Arena `my_bot_*`
+configs set `bh_namesource 1`. It does not write names for human-player slots. Steam IDs, avatars, cards,
 crosshair codes, ping, scoreboard flair, bot disguise, respawn behavior, and every upstream enhanced-bot module stay
 on their existing paths. The repository can verify this isolation and the package layout automatically, but the final
 host-local scoreboard result still requires an in-game Enhanced Bots practice match.

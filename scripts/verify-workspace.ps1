@@ -71,59 +71,77 @@ if (-not $baseAvailable) {
     Add-Failure "Pinned upstream commit is unavailable: $base"
 }
 else {
-    $upstreamModules = @(
+    # Upstream plugin sources are vendored as git submodules. Every pointer must
+    # stay byte-identical to the pinned upstream commit so local edits cannot
+    # slip into a release build.
+    $submodulePaths = @(
+        "addons/BotController",
+        "addons/BotHider",
+        "addons/BotVision",
         "addons/counterstrikesharp/plugins/BotAI",
         "addons/counterstrikesharp/plugins/BotAimImprover",
         "addons/counterstrikesharp/plugins/BotBuy",
-        "addons/counterstrikesharp/plugins/BotControllerImpl",
-        "addons/counterstrikesharp/plugins/BotHiderImpl",
         "addons/counterstrikesharp/plugins/BotRandomizer",
         "addons/counterstrikesharp/plugins/BotState",
-        "addons/counterstrikesharp/plugins/NadeSystem",
-        "addons/counterstrikesharp/plugins/RoundDamageRecap",
-        "overrides"
+        "addons/counterstrikesharp/plugins/NadeSystem"
     )
-    $changed = @(
-        foreach ($module in $upstreamModules) {
-            & git -C $repo diff --ignore-space-at-eol --quiet $base -- $module
-            if ($LASTEXITCODE -eq 1) {
-                & git -C $repo diff --ignore-space-at-eol --name-only $base -- $module
-            }
-            elseif ($LASTEXITCODE -ne 0) {
-                Add-Failure "Unable to compare upstream enhanced-bot module: $module"
-            }
+    foreach ($path in $submodulePaths) {
+        $expectedLine = & git -C $repo ls-tree $base -- $path
+        $actualLine = & git -C $repo ls-tree HEAD -- $path
+        $expected = if ($expectedLine) { ($expectedLine -split '\s+')[2] } else { $null }
+        $actual = if ($actualLine) { ($actualLine -split '\s+')[2] } else { $null }
+        if (-not $expected -or -not $actual) {
+            Add-Failure "Submodule gitlink is missing for comparison: $path"
         }
+        elseif ($expected -ne $actual) {
+            Add-Failure "Submodule pointer diverged from upstream $base`: $path ($actual != $expected)"
+        }
+    }
+    # Regular upstream trees must match the pinned commit exactly.
+    $upstreamTrees = @(
+        "addons/counterstrikesharp/plugins/RoundDamageRecap",
+        "addons/counterstrikesharp/plugins/disabled",
+        "addons/counterstrikesharp/data"
     )
-    $allowedUpstreamChanges = @(
-        "addons/counterstrikesharp/plugins/BotAimImprover/BotAimImprover.cs",
-        "addons/counterstrikesharp/plugins/BotAimImprover/BotAimImprover.csproj",
-        "addons/counterstrikesharp/plugins/BotBuy/BotBuy.cs",
-        "addons/counterstrikesharp/plugins/BotBuy/BotBuy.csproj",
-        "addons/counterstrikesharp/plugins/BotRandomizer/BotRandomizer.cs",
-        "addons/counterstrikesharp/plugins/BotRandomizer/BotRandomizer.csproj",
-        "addons/counterstrikesharp/plugins/BotRandomizer/Cosmetics/CosmeticModels.cs",
-        "addons/counterstrikesharp/plugins/BotRandomizer/bot_randomizer_options.json",
-        "addons/counterstrikesharp/plugins/BotControllerImpl/BotControllerImpl.csproj",
-        "addons/counterstrikesharp/plugins/BotControllerImpl/BotController.NativeApi.cs",
-        "addons/counterstrikesharp/plugins/BotControllerImpl/BotControllerApiImpl.cs",
-        "addons/counterstrikesharp/plugins/BotControllerImpl/BotControllerCapability.cs",
-        "addons/counterstrikesharp/plugins/BotControllerImpl/BotControllerImplPlugin.cs",
-        "addons/counterstrikesharp/plugins/BotControllerImpl/MotionRecording.cs",
-        "addons/counterstrikesharp/plugins/BotControllerImpl/ReplayDriver.cs",
-        "addons/counterstrikesharp/plugins/BotHiderImpl/BotHiderImpl.csproj",
-        "addons/counterstrikesharp/plugins/BotHiderImpl/BotHiderImplPlugin.cs",
-        "addons/counterstrikesharp/plugins/NadeSystem/NadeSystem.cs",
-        "addons/counterstrikesharp/plugins/NadeSystem/NadeSystem.csproj",
-        "addons/counterstrikesharp/plugins/NadeSystem/NadeSystemPlugin.Replay.cs",
-        "addons/counterstrikesharp/plugins/RoundDamageRecap/RoundDamageRecap.cs",
-        "addons/counterstrikesharp/plugins/RoundDamageRecap/RoundDamageRecap.csproj",
+    foreach ($path in $upstreamTrees) {
+        & git -C $repo diff --quiet --ignore-space-at-eol $base HEAD -- $path
+        if ($LASTEXITCODE -eq 1) {
+            Add-Failure "Upstream content was modified locally: $path"
+        }
+        elseif ($LASTEXITCODE -ne 0) {
+            Add-Failure "Unable to compare upstream content: $path"
+        }
+    }
+    # Paths upstream removed in the submodule conversion must stay removed.
+    $removedUpstreamPaths = @(
+        "addons/metamod",
+        "addons/counterstrikesharp/shared/BotControllerApi",
+        "addons/counterstrikesharp/shared/BotHiderApi",
+        "addons/counterstrikesharp/plugins/BotControllerImpl",
+        "addons/counterstrikesharp/plugins/BotHiderImpl",
+        "addons/counterstrikesharp/plugins/disabled/CS2_ExecAfter"
+    )
+    foreach ($path in $removedUpstreamPaths) {
+        $entry = & git -C $repo ls-tree HEAD -- $path
+        if ($entry) {
+            Add-Failure "Path removed by upstream must stay removed: $path"
+        }
+    }
+    # Local difficulty tuning is the only allowed overrides divergence.
+    $allowedOverrideChanges = @(
         "overrides/Low/botprofile.db",
         "overrides/Medium/botprofile.db",
         "overrides/High/botprofile.db"
     )
-    $unexpectedChanges = @($changed | Where-Object { $_ -notin $allowedUpstreamChanges })
-    if ($unexpectedChanges.Count -gt 0) {
-        Add-Failure "Upstream enhanced-bot modules were modified: $($unexpectedChanges -join ', ')"
+    $overrideChanges = @(& git -C $repo diff --name-only $base HEAD -- overrides)
+    if ($LASTEXITCODE -ne 0) {
+        Add-Failure "Unable to compare overrides against upstream $base"
+    }
+    else {
+        $unexpectedOverrides = @($overrideChanges | Where-Object { $_ -notin $allowedOverrideChanges })
+        if ($unexpectedOverrides.Count -gt 0) {
+            Add-Failure "Overrides diverged from upstream: $($unexpectedOverrides -join ', ')"
+        }
     }
 }
 
@@ -132,20 +150,6 @@ if ($botAiProject -match 'Tmp\\ArchiveV02\\Common') {
     Add-Failure "BotAI still references the machine-specific Common.dll path."
 }
 
-$botAimImprover = Get-Content -LiteralPath (Join-Path $repo "addons/counterstrikesharp/plugins/BotAimImprover/BotAimImprover.cs") -Raw
-$botBehaviorPolicy = Get-Content -LiteralPath (Join-Path $repo "addons/counterstrikesharp/shared/MatchCore/BotBehaviorPolicy.cs") -Raw
-if ($botAimImprover -match 'MemoryFunction|DynamicHook|\.Hook\(' -or
-    $botAimImprover -match 'WindowsOffsets|LinuxOffsets|ReadIntPtr|ReadInt32|ReadByte' -or
-    $botAimImprover -notmatch 'RegisterListener<Listeners\.OnTick>\(OnTick\)' -or
-    $botAimImprover -notmatch 'pawn\?\.Bot' -or
-    $botAimImprover -notmatch 'bot\.TargetSpot' -or
-    $botAimImprover -notmatch 'BotAimPolicy\.SelectPriority' -or
-    $botAimImprover -notmatch 'AimPointIndex' -or
-    $botAimImprover -notmatch 'TargetSpot write verification failed' -or
-    $botBehaviorPolicy -notmatch 'BotAimMode\.Head when string\.Equals\(weapon, "weapon_awp"' -or
-    $botBehaviorPolicy -notmatch 'BotAimMode\.Head => BotAimPriority\.Head') {
-    Add-Failure "BotAimImprover must use managed CCSBot schema targeting without native function hooks or manual offsets."
-}
 $panelBackend = Get-Content -LiteralPath (Join-Path $repo "Panel/src-tauri/src/lib.rs") -Raw
 if ($panelBackend -match 'aim_supported: true' -or
     $panelBackend -notmatch 'aim_supported,' -or
@@ -154,32 +158,15 @@ if ($panelBackend -match 'aim_supported: true' -or
     Add-Failure "Panel backend must expose the managed bot aim modes on Windows."
 }
 
-$botBuy = Get-Content -LiteralPath (Join-Path $repo "addons/counterstrikesharp/plugins/BotBuy/BotBuy.cs") -Raw
-if (([regex]::Matches($botBuy, 'AddTimer\(').Count -ne 1) -or
-    ([regex]::Matches($botBuy, 'ScheduleRound\(').Count -lt 12) -or
-    $botBuy -notmatch 'BotCallbackGeneration' -or
-    $botBuy -notmatch 'TimerFlags\.STOP_ON_MAPCHANGE' -or
-    $botBuy -notmatch 'ResolvePlayer\(userId\)' -or
-    $botBuy -notmatch 'ManagedMatchRuntimeStore\.IsPurchasingAllowed' -or
-    $botBuy -notmatch 'HasWeapon\(player, oldItem\)') {
-    Add-Failure "BotBuy no longer guards delayed callbacks against invalid CounterStrikeSharp controllers."
-}
-
-# NadeSystem was refactored upstream (v1.4.4) into partial files. The Local
-# Arena disconnected-pawn guard and the Less-mode markers now live in the
-# replay partial; scan that file instead of the monolithic NadeSystem.cs.
+# NadeSystem is a pinned upstream submodule; the disconnected-pawn guard is a
+# dropped local modification. Only the Less-mode markers are still asserted.
 $nadeSystem = Get-Content -LiteralPath (Join-Path $repo "addons/counterstrikesharp/plugins/NadeSystem/NadeSystemPlugin.Replay.cs") -Raw
-if ($nadeSystem -notmatch 'if \(!bot\.IsValid\) return;' -or
-    $nadeSystem -notmatch 'botPawn = bot\.PlayerPawn\?\.Value;' -or
-    $nadeSystem -notmatch 'catch \(Exception\)\s*\{\s*return;\s*\}') {
-    Add-Failure "NadeSystem no longer guards delayed callbacks against disconnected bot pawns."
-}
 if ($nadeSystem -notmatch '_botNadesMode == "less"' -or
     $nadeSystem -notmatch 'LessModeAllows\(' -or
     $nadeSystem -notmatch 'IncrementBotCount\(') {
     Add-Failure "NadeSystem no longer contains the upstream 1.4.3 Less mode limits."
 }
-$nadeDataRoot = Join-Path $repo "addons/counterstrikesharp/plugins/NadeSystem/grenades"
+$nadeDataRoot = Join-Path $repo "addons/counterstrikesharp/data/NadeSystem/grenades"
 $nadeDataFiles = @(Get-ChildItem -LiteralPath $nadeDataRoot -Filter "*.json" -File -ErrorAction SilentlyContinue)
 if ($nadeDataFiles.Count -ne 48) {
     Add-Failure "NadeSystem must ship the frozen 48-file grenade catalog; found $($nadeDataFiles.Count)."
@@ -202,12 +189,6 @@ if ($matchCoordinator -notmatch 'private void EnsureInitialHumanSide\(\)' -or
     ([regex]::Matches($matchCoordinator, 'EnsureInitialHumanSide\(\);').Count -ne 2) -or
     ([regex]::Matches($matchCoordinator, '\.SwitchTeam\(').Count -ne 1)) {
     Add-Failure "PlusMatchCoordinator may force the local player back to the initial side after halftime."
-}
-
-$roundDamageRecap = Get-Content -LiteralPath (Join-Path $repo "addons/counterstrikesharp/plugins/RoundDamageRecap/RoundDamageRecap.cs") -Raw
-if ($roundDamageRecap -notmatch 'PlusManagedPaths\.ActiveMatchPath' -or
-    $roundDamageRecap -notmatch 'PlusMatchCoordinator owns match statistics') {
-    Add-Failure "RoundDamageRecap no longer yields PLUS match statistics ownership."
 }
 
 $matchPanel = Get-Content -LiteralPath (Join-Path $repo "Panel/src/panels/MatchPanel.tsx") -Raw
@@ -238,12 +219,11 @@ $requiredSources = @(
     "addons/counterstrikesharp/plugins/BotRandomizer/Cosmetics/CosmeticModels.cs",
     "addons/counterstrikesharp/plugins/BotRandomizer/charm_placements.json",
     "addons/counterstrikesharp/plugins/BotRandomizer/cosmetic_catalog.json",
-    "addons/counterstrikesharp/plugins/BotControllerImpl/BotControllerImplPlugin.cs",
-    "addons/counterstrikesharp/plugins/BotRandomizer/bot_randomizer_options.json",
+    "addons/BotController/csharp/BotControllerImpl/BotControllerImplPlugin.cs",
     "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/PlayerKnifeCustomizer.cs",
     "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/sticker_weapon_ids.json",
     "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/player_cosmetic_catalog.json",
-    "addons/counterstrikesharp/plugins/BotHiderImpl/BotHiderImplPlugin.cs",
+    "addons/BotHider/csharp/BotHiderImpl/BotHiderImplPlugin.cs",
     "addons/counterstrikesharp/plugins/TeamLineupInjector/TeamLineupInjector.cs",
     "addons/counterstrikesharp/plugins/TeamLineupInjector/TeamLineupInjector.csproj",
     "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/OfflineMatchTelemetry.cs",
@@ -254,19 +234,6 @@ foreach ($relative in $requiredSources) {
 }
 
 $playerCosmetics = Get-Content -LiteralPath (Join-Path $repo "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/PlayerKnifeCustomizer.cs") -Raw
-$botRandomizer = Get-Content -LiteralPath (Join-Path $repo "addons/counterstrikesharp/plugins/BotRandomizer/BotRandomizer.cs") -Raw
-$botRandomizerModels = Get-Content -LiteralPath (Join-Path $repo "addons/counterstrikesharp/plugins/BotRandomizer/Cosmetics/CosmeticModels.cs") -Raw
-if ($botRandomizer -notmatch 'LoadOptions\(\);' -or
-    $botRandomizer -notmatch '_options\.Skins && _weaponItemViews\?\.NativeAvailable' -or
-    $botRandomizer -notmatch 'includeStickers: true' -or
-    $botRandomizer -notmatch 'includeCharms: true' -or
-    $botRandomizer -notmatch 'IsBot: true, IsHLTV: false' -or
-    $botRandomizerModels -notmatch 'JsonPropertyName\("skins"\)' -or
-    $botRandomizerModels -notmatch 'JsonPropertyName\("profiles"\)' -or
-    $botRandomizerModels -notmatch 'JsonPropertyName\("agents"\)' -or
-    $botRandomizerModels -notmatch 'JsonPropertyName\("music"\)') {
-    Add-Failure "BotRandomizer no longer combines upstream Bot cosmetics with Local Arena feature gates."
-}
 if ($playerCosmetics -notmatch 'IsBot: false, IsHLTV: false' -or
     $playerCosmetics -notmatch 'DecorationReleaseEnabled = true' -or
     $playerCosmetics -notmatch 'CharmAttributePlanner' -or
@@ -313,9 +280,8 @@ if ($playerCosmetics -match "RegisterListener<Listeners\.OnEntitySpawned>" -or
 }
 
 $jsonFiles = @(
-    "addons/BotHider/bot_info.json",
-    "addons/BotHider/gamedata.json",
-    "addons/BotHider/map_whitelist.json",
+    "addons/BotHider/configs/addons/BotHider/bot_info.json",
+    "addons/BotHider/configs/addons/BotHider/gamedata.json",
     "Panel/src/data/gloveSkins.json",
     "Panel/src/data/musicKits.json",
     "Panel/src/data/skinImages.json",
@@ -429,9 +395,14 @@ if ($teamLineupInjector -match 'mp_restartgame 1') {
 
 $matchCatalog = Get-Content -LiteralPath (Join-Path $repo "addons/counterstrikesharp/plugins/PlusMatchCoordinator/match_catalog.json") -Raw | ConvertFrom-Json
 $featuredPlayers = @($matchCatalog.teams | ForEach-Object { $_.players } | Sort-Object -Unique)
+# Documented inherited gap (docs/UPSTREAM.md): these roster/Commands.txt players
+# have no botprofile entry in upstream's data either, and the game falls back to
+# the default profile for them, so they are exempt from the profile assertion.
+$inheritedProfileGap = @("HObbit", "MATYS", "S1ren", "b1t", "dav1deus", "doc", "flayy")
 
 function Assert-BotProfileContent([string]$Profile, [string]$Label) {
     foreach ($player in $featuredPlayers) {
+        if ($player -in $inheritedProfileGap) { continue }
         if ($Profile -notmatch ('"' + [regex]::Escape($player) + '"')) {
             Add-Failure "$Label is missing featured player $player."
         }
@@ -451,14 +422,7 @@ function Assert-BotProfileContent([string]$Profile, [string]$Label) {
     }
 }
 
-    $botHiderImpl = Get-Content -LiteralPath (Join-Path $repo "addons/counterstrikesharp/plugins/BotHiderImpl/BotHiderImplPlugin.cs") -Raw
-if ($botHiderImpl -notmatch "foreach \(int slot in managedSlots\)" -or
-    $botHiderImpl -notmatch "player\.PlayerName = name" -or
-    $botHiderImpl -notmatch 'ModuleVersion => "0\.4\.0"' -or
-    $botHiderImpl -notmatch "EnsureBotInfoNameSource\(\)") {
-    Add-Failure "BotHiderImpl no longer preserves the v0.4.0 managed-name integration."
-}
-$botHiderGameData = Get-Content -LiteralPath (Join-Path $repo "addons/BotHider/gamedata.json") -Raw
+$botHiderGameData = Get-Content -LiteralPath (Join-Path $repo "addons/BotHider/configs/addons/BotHider/gamedata.json") -Raw
 if ($botHiderGameData -notmatch '"CServerSideClient::SetName"' -or
     $botHiderGameData -notmatch '"CNetworkGameServer::PackEntities"') {
     Add-Failure "BotHider gamedata no longer contains the v0.3.3 name and identity targets."
@@ -647,7 +611,6 @@ if ($PackageRoot) {
             $expectedPreserveConfigs = @(
                 "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/player_knife_presets.json",
                 "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/player_gun_presets.json",
-                "addons/counterstrikesharp/plugins/BotRandomizer/bot_randomizer_options.json",
                 "cfg/my_bot_ffa_config.cfg",
                 "cfg/my_bot_normal_config.cfg",
                 "overrides/botprofile.vpk"
@@ -739,15 +702,16 @@ if ($PackageRoot) {
         @{ Name = "BotAI"; Framework = "net10.0" },
         @{ Name = "BotAimImprover"; Framework = "net10.0" },
         @{ Name = "BotBuy"; Framework = "net8.0" },
-        @{ Name = "BotControllerImpl"; Framework = "net10.0" },
+        @{ Name = "BotControllerImpl"; Framework = "net10.0"; BuildDir = "addons/BotController/csharp/BotControllerImpl" },
         @{ Name = "BotRandomizer"; Framework = "net10.0" },
         @{ Name = "NadeSystem"; Framework = "net10.0" },
-        @{ Name = "RoundDamageRecap"; Framework = "net10.0" }
-        @{ Name = "PlusMatchCoordinator"; Framework = "net8.0" }
+        @{ Name = "RoundDamageRecap"; Framework = "net8.0" },
+        @{ Name = "PlusMatchCoordinator"; Framework = "net10.0" }
     )
     foreach ($plugin in $builtPlugins) {
         $packageDll = Join-Path $package "addons/counterstrikesharp/plugins/$($plugin.Name)/$($plugin.Name).dll"
-        $buildDll = Join-Path $repo "addons/counterstrikesharp/plugins/$($plugin.Name)/bin/Release/$($plugin.Framework)/$($plugin.Name).dll"
+        $buildRoot = if ($plugin.BuildDir) { $plugin.BuildDir } else { "addons/counterstrikesharp/plugins/$($plugin.Name)" }
+        $buildDll = Join-Path $repo "$buildRoot/bin/Release/$($plugin.Framework)/$($plugin.Name).dll"
         if ((Test-Path -LiteralPath $packageDll) -and (Test-Path -LiteralPath $buildDll) -and
             ((Get-FileHash -LiteralPath $packageDll -Algorithm SHA256).Hash -ne
                 (Get-FileHash -LiteralPath $buildDll -Algorithm SHA256).Hash)) {
@@ -762,7 +726,7 @@ if ($failures.Count -gt 0) {
 }
 
 Write-Host "Workspace verification passed."
-Write-Host "Bot identities: $($counts['addons/BotHider/bot_info.json'])"
+Write-Host "Bot identities: $($counts['addons/BotHider/configs/addons/BotHider/bot_info.json'])"
 Write-Host "Weapon skins: $($counts['Panel/src/data/weaponSkins.json'])"
 Write-Host "Glove skins: $($counts['Panel/src/data/gloveSkins.json'])"
 Write-Host "Music kits: $($counts['Panel/src/data/musicKits.json'])"

@@ -124,27 +124,6 @@ function Get-VerifiedAsset {
     return $path
 }
 
-function Get-RayTraceApi {
-    $inputs = Join-Path $cache "build-inputs\raytrace-$($manifest.rayTrace.release)"
-    $archive = Get-VerifiedAsset $manifest.rayTrace.cssAsset $inputs
-    $extract = Join-Path $inputs "extract"
-    $dll = Get-ChildItem -LiteralPath $extract -Filter "RayTraceApi.dll" -File -Recurse -ErrorAction SilentlyContinue |
-        Where-Object { $_.FullName -match '[\\/]shared[\\/]RayTraceApi[\\/]' } |
-        Select-Object -First 1
-    if (-not $dll) {
-        if (Test-Path -LiteralPath $extract) { Remove-Item -LiteralPath $extract -Recurse -Force }
-        New-Item -ItemType Directory -Path $extract -Force | Out-Null
-        $tar = Resolve-PlatformTool $null "tar" "tar"
-        & $tar -xzf $archive -C $extract
-        if ($LASTEXITCODE -ne 0) { throw "Failed to extract $archive" }
-        $dll = Get-ChildItem -LiteralPath $extract -Filter "RayTraceApi.dll" -File -Recurse |
-            Where-Object { $_.FullName -match '[\\/]shared[\\/]RayTraceApi[\\/]' } |
-            Select-Object -First 1
-    }
-    if (-not $dll) { throw "Pinned RayTraceApi.dll was not found in $archive" }
-    return $dll.FullName
-}
-
 $cargo = (Get-Command $Cargo -ErrorAction Stop).Source
 $rustc = (Get-Command $Rustc -ErrorAction Stop).Source
 
@@ -208,17 +187,16 @@ try {
     Invoke-Checked $npm @("run", "test:install-gate") $panel
     Invoke-Checked $npm @("run", "build") $panel
 
-    $rayTraceApi = Get-RayTraceApi
     $pluginProjects = @(
         @{ Path = "addons\counterstrikesharp\plugins\BotAI\BotAI.csproj"; Properties = @() },
-        @{ Path = "addons\counterstrikesharp\plugins\BotAimImprover\BotAimImprover.csproj"; Properties = @("-p:RayTraceApiPath=$rayTraceApi") },
+        @{ Path = "addons\counterstrikesharp\plugins\BotAimImprover\BotAimImprover.csproj"; Properties = @() },
         @{ Path = "addons\counterstrikesharp\plugins\BotBuy\BotBuy.csproj"; Properties = @() },
-        @{ Path = "addons\counterstrikesharp\plugins\BotControllerImpl\BotControllerImpl.csproj"; Properties = @() },
+        @{ Path = "addons\BotController\csharp\BotControllerImpl\BotControllerImpl.csproj"; Properties = @() },
         @{ Path = "addons\counterstrikesharp\plugins\BotRandomizer\BotRandomizer.csproj"; Properties = @() },
-        @{ Path = "addons\counterstrikesharp\plugins\NadeSystem\NadeSystem.csproj"; Properties = @("-p:RayTraceApiPath=$rayTraceApi") },
+        @{ Path = "addons\counterstrikesharp\plugins\NadeSystem\NadeSystem.csproj"; Properties = @() },
         @{ Path = "addons\counterstrikesharp\plugins\RoundDamageRecap\RoundDamageRecap.csproj"; Properties = @() },
         @{ Path = "addons\counterstrikesharp\plugins\PlayerKnifeCustomizer\PlayerKnifeCustomizer.csproj"; Properties = @() },
-        @{ Path = "addons\counterstrikesharp\plugins\BotHiderImpl\BotHiderImpl.csproj"; Properties = @() },
+        @{ Path = "addons\BotHider\csharp\BotHiderImpl\BotHiderImpl.csproj"; Properties = @() },
         @{ Path = "addons\counterstrikesharp\plugins\TeamLineupInjector\TeamLineupInjector.csproj"; Properties = @() },
         @{ Path = "addons\counterstrikesharp\plugins\PlusMatchCoordinator\PlusMatchCoordinator.csproj"; Properties = @() }
     )
