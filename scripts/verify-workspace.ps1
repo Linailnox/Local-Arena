@@ -702,7 +702,7 @@ if ($PackageRoot) {
         @{ Name = "BotAI"; Framework = "net10.0" },
         @{ Name = "BotAimImprover"; Framework = "net10.0" },
         @{ Name = "BotBuy"; Framework = "net8.0" },
-        @{ Name = "BotControllerImpl"; Framework = "net10.0"; BuildDir = "addons/BotController/csharp/BotControllerImpl" },
+        @{ Name = "BotControllerImpl"; BuildDir = "addons/BotController/csharp/BotControllerImpl"; Output = "bin/Release" },
         @{ Name = "BotRandomizer"; Framework = "net10.0" },
         @{ Name = "NadeSystem"; Framework = "net10.0" },
         @{ Name = "RoundDamageRecap"; Framework = "net8.0" },
@@ -711,7 +711,10 @@ if ($PackageRoot) {
     foreach ($plugin in $builtPlugins) {
         $packageDll = Join-Path $package "addons/counterstrikesharp/plugins/$($plugin.Name)/$($plugin.Name).dll"
         $buildRoot = if ($plugin.BuildDir) { $plugin.BuildDir } else { "addons/counterstrikesharp/plugins/$($plugin.Name)" }
-        $buildDll = Join-Path $repo "$buildRoot/bin/Release/$($plugin.Framework)/$($plugin.Name).dll"
+        # BotController submodule projects disable AppendTargetFrameworkToOutputPath, so their
+        # outputs land directly in bin/Release instead of a per-TFM folder.
+        $relativeBuild = if ($plugin.Output) { $plugin.Output } else { "bin/Release/$($plugin.Framework)" }
+        $buildDll = Join-Path $repo "$buildRoot/$relativeBuild/$($plugin.Name).dll"
         if ((Test-Path -LiteralPath $packageDll) -and (Test-Path -LiteralPath $buildDll) -and
             ((Get-FileHash -LiteralPath $packageDll -Algorithm SHA256).Hash -ne
                 (Get-FileHash -LiteralPath $buildDll -Algorithm SHA256).Hash)) {
