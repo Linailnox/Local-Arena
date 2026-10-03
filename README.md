@@ -366,6 +366,7 @@ The upstream project is a source dependency and attribution target, not a Local 
 - [Metamod:Source](https://github.com/alliedmodders/metamod-source)
 - [CounterStrikeSharp](https://github.com/roflmuffin/CounterStrikeSharp)
 - [Ray-Trace](https://github.com/FUNPLAY-pro-CS2/Ray-Trace)
+- [CS2-Bullseye-Bot](https://github.com/ed0ard/CS2-Bullseye-Bot)
 - [CS2-Bot-Randomizer](https://github.com/ed0ard/CS2-Bot-Randomizer)
 - [CS2-Bot-Hider](https://github.com/XBribo/CS2-Bot-Hider)
 - [CS2-Bot-Controller](https://github.com/XBribo/CS2-Bot-Controller)
