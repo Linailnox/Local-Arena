@@ -226,7 +226,7 @@ $upstreamPluginBuilds = @(
     @{ Name = "BotAI"; Framework = "net10.0" },
     @{ Name = "BotAimImprover"; Framework = "net10.0" },
     @{ Name = "BotBuy"; Framework = "net8.0" },
-    @{ Name = "BotControllerImpl"; Framework = "net10.0"; BuildDir = "addons\BotController\csharp\BotControllerImpl" },
+    @{ Name = "BotControllerImpl"; BuildDir = "addons\BotController\csharp\BotControllerImpl"; Output = "bin\Release" },
     @{ Name = "BotRandomizer"; Framework = "net10.0" },
     @{ Name = "NadeSystem"; Framework = "net10.0" },
     @{ Name = "RoundDamageRecap"; Framework = "net8.0" },
@@ -235,7 +235,10 @@ $upstreamPluginBuilds = @(
 )
 foreach ($plugin in $upstreamPluginBuilds) {
     $buildRoot = if ($plugin.BuildDir) { $plugin.BuildDir } else { "addons\counterstrikesharp\plugins\$($plugin.Name)" }
-    $build = Join-Path $repo "$buildRoot\bin\Release\$($plugin.Framework)"
+    # BotController submodule projects disable AppendTargetFrameworkToOutputPath, so their
+    # outputs land directly in bin\Release instead of a per-TFM folder.
+    $relativeBuild = if ($plugin.Output) { $plugin.Output } else { "bin\Release\$($plugin.Framework)" }
+    $build = Join-Path $repo "$buildRoot\$relativeBuild"
     if (-not (Test-Path -LiteralPath (Join-Path $build "$($plugin.Name).dll"))) {
         throw "Expected upstream plugin build output was not produced: $build"
     }
@@ -261,7 +264,7 @@ if ($telemetryDifference.Count -gt 0) {
     throw "OfflineMatchTelemetry staged deployment does not match the release allowlist."
 }
 Copy-Tree $telemetryStage (Join-Path $payload "addons\counterstrikesharp\plugins\OfflineMatchTelemetry")
-$botControllerApiBuild = Join-Path $repo "addons\BotController\csharp\BotControllerApi\bin\Release\net10.0"
+$botControllerApiBuild = Join-Path $repo "addons\BotController\csharp\BotControllerApi\bin\Release"
 if (-not (Test-Path -LiteralPath (Join-Path $botControllerApiBuild "BotControllerApi.dll"))) {
     throw "Expected BotController shared API build output was not produced: $botControllerApiBuild"
 }
