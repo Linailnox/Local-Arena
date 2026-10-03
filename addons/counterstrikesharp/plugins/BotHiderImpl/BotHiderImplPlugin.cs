@@ -15,7 +15,7 @@ namespace BotHiderImpl;
 public class BotHiderImplPlugin : BasePlugin
 {
     public override string ModuleName => "BotHiderImpl";
-    public override string ModuleVersion => "0.3.3";
+    public override string ModuleVersion => "0.4.0";
     public override string ModuleAuthor => "XBribo";
     public override string ModuleDescription =>
         "BotHider CSS Plugin";
@@ -81,13 +81,6 @@ public class BotHiderImplPlugin : BasePlugin
 
     private void OnClientDisconnect(int slot) => ResetAppliedSlot(slot, 0UL);
 
-    // Match end
-    [GameEventHandler]
-    public HookResult OnWinPanelMatch(EventCsWinPanelMatch @event, GameEventInfo info)
-    {
-        return HookResult.Continue;
-    }
-
     // Round start — respawn managed bots that ended the prior round dead.
     [GameEventHandler]
     public HookResult OnRoundStart(EventRoundStart @event, GameEventInfo info)
@@ -118,6 +111,60 @@ public class BotHiderImplPlugin : BasePlugin
     {
         StartFastApplyWindow();
         return HookResult.Continue;
+    }
+
+    // Schedules managed bots to approve a newly started vote
+    [GameEventHandler]
+    public HookResult OnVoteOptions(EventVoteOptions @event, GameEventInfo info)
+    {
+        Server.NextFrame(AcceptVoteForManagedBots);
+        return HookResult.Continue;
+    }
+
+    // Casts a yes vote from every valid managed bot
+    private void AcceptVoteForManagedBots()
+    {
+        if (_client == null) return;
+
+        var voteController = Utilities
+            .FindAllEntitiesByDesignerName<CVoteController>("vote_controller")
+            .FirstOrDefault(controller => controller.IsValid);
+        if (voteController == null)
+        {
+            Server.PrintToConsole("[BotHider] automatic vote failed: vote controller not found");
+            return;
+        }
+
+        Span<int> votesCast = voteController.VotesCast;
+        Span<int> optionCounts = voteController.VoteOptionCount;
+        int onlyTeam = voteController.OnlyTeamToVote;
+        int accepted = 0;
+
+        foreach (int slot in _client.GetManagedSlots())
+        {
+            if ((uint)slot >= (uint)votesCast.Length) continue;
+
+            var player = Utilities.GetPlayerFromSlot(slot);
+            if (player == null || !player.IsValid) continue;
+            if (onlyTeam >= (int)CsTeam.Terrorist && (int)player.Team != onlyTeam) continue;
+
+            votesCast[slot] = 0;
+            accepted++;
+
+            var voteEvent = new EventVoteCast(true)
+            {
+                Team = onlyTeam,
+                Userid = player,
+                VoteOption = 0
+            };
+            voteEvent.FireEvent(false);
+        }
+
+        if (accepted == 0) return;
+        optionCounts[0] += accepted;
+        Utilities.SetStateChanged(
+            voteController, "CVoteController", "m_nVoteOptionCount");
+        Server.PrintToConsole($"[BotHider] automatic yes votes cast={accepted}");
     }
 
     // Respawn any managed bot that is not alive
@@ -521,16 +568,31 @@ public class BotHiderImplPlugin : BasePlugin
             : $"[BotHider] avatar rejected slot={slot}: {error}");
     }
 
-    // bh_disguise <0|1> — toggle the m_bFakePlayer disguise
-    [ConsoleCommand("bh_disguise", "Toggle disguise: bh_disguise <0|1>")]
-    public void OnDisguise(CCSPlayerController? player, CommandInfo cmd)
+    // bh_identity_mode <player|bot> - changes the managed-bot identity mode
+    [ConsoleCommand("bh_identity_mode", "Set identity mode: bh_identity_mode <player|bot>")]
+    public void OnIdentityMode(CCSPlayerController? player, CommandInfo cmd)
     {
         if (_client == null) { cmd.ReplyToCommand("[BotHider] not initialized"); return; }
-        if (cmd.ArgCount < 2 || !int.TryParse(cmd.GetArg(1), out int v))
-        { cmd.ReplyToCommand("usage: bh_disguise <0|1>"); return; }
-        bool enabled = v != 0;
-        bool ok = _client.SetDisguise(enabled);
-        cmd.ReplyToCommand($"[BotHider] disguise -> {(enabled ? "ON" : "OFF")} ({ok})");
+        BotIdentityMode mode;
+        if (cmd.ArgCount < 2)
+        {
+            cmd.ReplyToCommand("usage: bh_identity_mode <player|bot>");
+            return;
+        }
+
+        string value = cmd.GetArg(1);
+        if (value.Equals("player", StringComparison.OrdinalIgnoreCase))
+            mode = BotIdentityMode.Player;
+        else if (value.Equals("bot", StringComparison.OrdinalIgnoreCase))
+            mode = BotIdentityMode.Bot;
+        else
+        {
+            cmd.ReplyToCommand("usage: bh_identity_mode <player|bot>");
+            return;
+        }
+
+        bool ok = _client.SetIdentityMode(mode);
+        cmd.ReplyToCommand($"[BotHider] identity mode -> {mode.ToString().ToLowerInvariant()} ({ok})");
     }
 
     // bh_namesource <0|1> — 0=botprofile name (default), 1=bot_info.json name
@@ -600,8 +662,8 @@ internal sealed class BotHiderCapabilityApi : IBotHiderApi
     public bool SetBotAvatar(int slot, string pngPath) =>
         _client.SetBotAvatar(slot, pngPath);
 
-    // Toggles the global disguise behavior.
-    public bool SetDisguise(bool enabled) => _client.SetDisguise(enabled);
+    // Changes the global managed-bot identity mode
+    public bool SetIdentityMode(BotIdentityMode mode) => _client.SetIdentityMode(mode);
 
     // Toggles the global display-name source behavior.
     public bool SetNameSource(bool useBotInfo) => _client.SetNameSource(useBotInfo);

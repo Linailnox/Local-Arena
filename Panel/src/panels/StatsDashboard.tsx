@@ -5,6 +5,7 @@ import { api } from "../lib/api";
 import type { Cs2ssOverviewResponse, Cs2ssPlayerDetailResponse, Cs2ssDmOverview, Cs2ssMatchWithStats } from "../data/cs2ssTypes";
 import { cs2ssCalcRating, cs2ssCalcAdr, cs2ssCalcKast } from "../data/cs2ssRating";
 import { cs2ssMapLabel } from "../data/cs2ssMaps";
+import { cs2ssResultColor } from "../data/cs2ssResult";
 import StatsMatchHistory from "./StatsMatchHistory";
 import StatsMatchDetail from "./StatsMatchDetail";
 import { useStore } from "../state/store";
@@ -217,11 +218,12 @@ const [o, ms] = await Promise.all([api.getCs2ssOverview(csgo), api.listCs2ssMatc
         <div className="stats-panel-block">
           <div className="stats-panel-block__title"><div><span>{t("stats.recent")}</span><h2>{t("stats.recentMatches")}</h2></div></div>
           {recent.length > 0 ? (
-<table className="stats-table"><thead><tr><th>{t("stats.map")}</th><th>{t("stats.date")}</th><th>{t("stats.score")}</th><th>K/D/A</th><th>ADR</th><th>{t("stats.rating")}</th></tr></thead>
+<table className="stats-table"><thead><tr><th style={{ width: 44 }}>{t("stats.wl")}</th><th>{t("stats.map")}</th><th>{t("stats.date")}</th><th>{t("stats.score")}</th><th>K/D/A</th><th>ADR</th><th>{t("stats.rating")}</th></tr></thead>
               <tbody>{recent.map(m => (
                 <tr key={m.matchId} onClick={() => { setSelMatch(m.matchId); setSub("matchDetail"); }} style={{ cursor: "pointer" }}>
+                  <td style={{ fontWeight: 700, fontSize: 13, color: m.result ? cs2ssResultColor(m.result) : undefined, textAlign: "center" }}>{m.result ?? "-"}</td>
                   <td style={{ fontWeight: 600 }}>{cs2ssMapLabel(m.map)}</td><td style={{ color: "var(--text-secondary)", fontSize: 12 }}>{fmtD(m.startedAt)}</td>
-                  <td className="stats-table__score">{m.team === "CT" ? m.teamBScore : m.teamAScore} : {m.team === "CT" ? m.teamAScore : m.teamBScore}</td>
+                  <td className="stats-table__score">{m.initialTeam === "CT" ? m.teamAScore : m.teamBScore} : {m.initialTeam === "CT" ? m.teamBScore : m.teamAScore}</td>
                   <td>{m.totalKills}/{m.totalDeaths}/{m.totalAssists}</td><td>{cs2ssCalcAdr(m.totalDamage, m.roundsPlayed).toFixed(1)}</td>
                   <td><span style={{ fontWeight: 700, color: rcol(m.r) }}>{m.r.toFixed(2)}</span></td>
                 </tr>
