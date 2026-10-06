@@ -188,15 +188,7 @@ try {
     Invoke-Checked $npm @("run", "build") $panel
 
     $pluginProjects = @(
-        @{ Path = "addons\counterstrikesharp\plugins\BotAI\BotAI.csproj"; Properties = @() },
-        @{ Path = "addons\counterstrikesharp\plugins\BotAimImprover\BotAimImprover.csproj"; Properties = @() },
-        @{ Path = "addons\counterstrikesharp\plugins\BotBuy\BotBuy.csproj"; Properties = @() },
-        @{ Path = "addons\BotController\csharp\BotControllerImpl\BotControllerImpl.csproj"; Properties = @() },
-        @{ Path = "addons\counterstrikesharp\plugins\BotRandomizer\BotRandomizer.csproj"; Properties = @() },
-        @{ Path = "addons\counterstrikesharp\plugins\NadeSystem\NadeSystem.csproj"; Properties = @() },
-        @{ Path = "addons\counterstrikesharp\plugins\RoundDamageRecap\RoundDamageRecap.csproj"; Properties = @() },
         @{ Path = "addons\counterstrikesharp\plugins\PlayerKnifeCustomizer\PlayerKnifeCustomizer.csproj"; Properties = @() },
-        @{ Path = "addons\BotHider\csharp\BotHiderImpl\BotHiderImpl.csproj"; Properties = @() },
         @{ Path = "addons\counterstrikesharp\plugins\TeamLineupInjector\TeamLineupInjector.csproj"; Properties = @() },
         @{ Path = "addons\counterstrikesharp\plugins\PlusMatchCoordinator\PlusMatchCoordinator.csproj"; Properties = @() }
     )
