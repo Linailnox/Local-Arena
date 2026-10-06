@@ -118,6 +118,14 @@ The preview identifies the existing environment before changing files
   <img src="./Panel/src/assets/guide/10-first-preview.jpg" alt="Review the installation plan" width="100%">
 </p>
 
+### Download the upstream component
+
+The Local Arena package itself is only a few megabytes; the roughly 73 MB upstream runtime is downloaded from the official upstream release on the Installation page when you install
+
+The first installation therefore needs an internet connection, or a local `CS2BotImprover.zip` that you select manually while offline
+
+Downloads resolved through the GitHub release API are verified against the published SHA-256 digest before installation, and the cached package is reused by later installs and component updates
+
 ### 4. Install and enter the Panel
 
 Installation uses a transaction journal, verifies every copied file, and rolls back completed steps if an operation fails
@@ -131,6 +139,8 @@ Do not launch CS2, close the Panel, or repeatedly click the install button while
 ## Updating an Existing Installation
 
 Prefer **Settings → Online Update** when it is available
+
+Component updates fetch the upstream package again before installing; a cached copy of the current upstream version is reused instead of re-downloading it
 
 For a manual package update, close CS2 and the old Panel, extract the new package into the existing portable Panel folder, and keep the hidden `.csbip` folder
 
@@ -258,6 +268,7 @@ The Panel and plugin payload are checked and installed separately
 - Manual checks bypass the cache
 - Plugin updates require the selected CS2 process to be closed
 - Downloads are verified by signature, size, and SHA-256 before installation
+- The upstream runtime package has its own cache on **Settings → Installation**, where you can re-download it, clear it, or import a local ZIP
 - Player presets use the preserve-config policy and are not overwritten by repair or update
 
 <p align="center">
