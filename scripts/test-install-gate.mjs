@@ -10,7 +10,7 @@ const source = readFileSync(new URL("../Panel/src/lib/installGate.ts", import.me
   .replace(/export function/g, "function");
 
 const context = vm.createContext({});
-vm.runInContext(`${source}\nthis.api = { processBlocksSelectedInstallation, installAttemptDisabled };`, context);
+vm.runInContext(`${source}\nthis.api = { processBlocksSelectedInstallation, installAttemptDisabled, installBlockedByUpstream };`, context);
 
 const staleRunningSnapshot = {
   running: true,
@@ -26,4 +26,13 @@ assert.equal(context.api.installAttemptDisabled("F:\\Steam\\game\\csgo", false),
 assert.equal(context.api.installAttemptDisabled(null, false), true);
 assert.equal(context.api.installAttemptDisabled("F:\\Steam\\game\\csgo", true), true);
 
-console.log("Install gate tests passed (4 assertions)");
+// Upstream-not-ready gate (plan §7.5): a missing upstream package must block
+// install/repair attempts, while an explicit ready state must not.
+assert.equal(context.api.installAttemptDisabled("F:\\Steam\\game\\csgo", false, false), true,
+  "a missing upstream package must disable an install attempt");
+assert.equal(context.api.installAttemptDisabled("F:\\Steam\\game\\csgo", false, true), false,
+  "a ready upstream package must not disable an install attempt");
+assert.equal(context.api.installBlockedByUpstream(false), true);
+assert.equal(context.api.installBlockedByUpstream(true), false);
+
+console.log("Install gate tests passed (8 assertions)");

@@ -452,6 +452,59 @@ export type UpdateBatchResult = {
   restart_required: boolean;
 };
 
+// ---- Upstream package (merge source for every install) ----
+
+/** Mirrors Rust `UpstreamRelease` (upstream_package.rs). */
+export type UpstreamRelease = {
+  tag: string;
+  asset_url: string;
+  /** "sha256:…" from the GitHub API; null on the redirect fallback and local imports. */
+  digest: string | null;
+  from_api: boolean;
+};
+
+/** Mirrors Rust `UpstreamReleaseInfo`: cached latest tag + local cache status. */
+export type UpstreamReleaseInfo = {
+  release: UpstreamRelease;
+  /** The resolved latest tag already exists in the local download cache. */
+  cached: boolean;
+  checked_at: number | null;
+};
+
+/** Mirrors Rust `UpstreamCacheInfo` ({tag, size, modified_at} entries + total). */
+export type UpstreamCacheEntry = {
+  tag: string;
+  size: number;
+  modified_at: number;
+};
+
+export type UpstreamCacheInfo = {
+  entries: UpstreamCacheEntry[];
+  total_bytes: number;
+};
+
+/** Mirrors the `state/upstream-install.json` record written after `installer::install`. */
+export type UpstreamInstalledState = {
+  schema_version: number;
+  upstream_tag: string;
+  upstream_source: "api" | "fallback" | "manual";
+  upstream_installed_at: number;
+  la_version: string;
+  la_installed_at: number;
+  target: string;
+  /** Absolute path of the relocated `Panel v*.exe`; null when absent (decision #8). */
+  upstream_panel_exe: string | null;
+};
+
+/** Payload of the `upstream://progress` event. */
+export type UpstreamProgress = {
+  tag: string;
+  downloaded_bytes: number;
+  total_bytes: number;
+  speed_bps: number;
+  stage: "downloading" | "verifying" | "done";
+};
+
 export type RuntimeSnapshot = {
   directory: DirectoryInfo;
   process: Cs2ProcessInfo;
@@ -757,6 +810,15 @@ export const api = {
   installAllUpdates: (csgo: string | null) =>
     invoke<UpdateBatchResult>("install_all_updates", { csgo }),
   cancelUpdate: () => invoke<void>("cancel_update"),
+  // Upstream package management (plan §6.7 / §7.3)
+  upstreamReleaseInfo: () => invoke<UpstreamReleaseInfo>("upstream_release_info"),
+  upstreamDownload: (tag: string) => invoke<void>("upstream_download", { tag }),
+  upstreamCancel: () => invoke<void>("upstream_cancel"),
+  upstreamCacheInfo: () => invoke<UpstreamCacheInfo>("upstream_cache_info"),
+  upstreamCacheClear: (tag?: string) => invoke<number>("upstream_cache_clear", { tag }),
+  upstreamImportLocal: (source: string) => invoke<UpstreamRelease>("upstream_import_local", { source }),
+  upstreamInstalledState: () => invoke<UpstreamInstalledState | null>("upstream_installed_state"),
+  launchUpstreamPanel: (path: string) => invoke<void>("launch_upstream_panel", { path }),
   // CS2SS telemetry
   getCs2ssOverview: (csgo: string) => invoke<Cs2ssOverviewResponse>("get_cs2ss_overview", { csgo }),
   listCs2ssMatches: (csgo: string) => invoke<Cs2ssMatchSummary[]>("list_cs2ss_matches", { csgo }),
