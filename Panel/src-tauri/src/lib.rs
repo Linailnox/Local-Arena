@@ -6,7 +6,7 @@ use std::process::Command;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use std::sync::OnceLock;
 use sysinfo::{ProcessesToUpdate, System};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 mod app_storage;
 mod app_version;
@@ -24,6 +24,7 @@ mod online_update;
 mod runtime_state;
 mod steam;
 mod update_core;
+mod upstream_package;
 use installer::{InstallPlan, InstallTransactionResult, InstallationInspection, RestoreResult};
 use install_checks::InstallCheckReport;
 use match_system::{MatchCatalog, MatchResult, MatchSession, MatchRequest, MatchState, PrepareMatchInput, MatchHistoryStats};
@@ -904,12 +905,72 @@ fn payload_root() -> Result<PathBuf> {
     if let Some(payload) = online_update::active_payload_root() {
         return Ok(payload);
     }
+    exe_payload_root()
+}
+
+fn exe_payload_root() -> Result<PathBuf> {
     let executable =
         std::env::current_exe().map_err(|error| AppError::payload(error.to_string()))?;
     executable
         .parent()
         .map(Path::to_path_buf)
         .ok_or_else(|| AppError::payload("Panel executable has no parent directory"))
+}
+
+fn la_payload_source() -> Result<PathBuf> {
+    if let Some(payload) = online_update::active_payload_root() {
+        // A merge must never consume its own output as the LA overlay source.
+        if let Some(merged_prefix) = upstream_package::merged_root_prefix() {
+            if payload.starts_with(&merged_prefix) {
+                return exe_payload_root();
+            }
+        }
+        return Ok(payload);
+    }
+    exe_payload_root()
+}
+
+/// The payload root every game-directory operation installs from: the cached
+/// upstream zip merged with the newest LA payload (§6.3). Reuses the merged
+/// staging tree while the LA manifest key and the upstream zip are unchanged,
+/// and re-merges otherwise. Errors with the Installation Management gate when
+/// no upstream zip is cached.
+fn merged_payload_root(app: &AppHandle, csgo: &Path) -> Result<PathBuf> {
+    let la_payload = la_payload_source()?;
+    let Some((tag, upstream_zip)) = upstream_package::select_cached_upstream()? else {
+        return Err(AppError::payload(
+            "Upstream package is not available; download it in Installation Management",
+        ));
+    };
+    let staging_root = upstream_package::merged_root(&tag)?;
+    if upstream_package::merged_is_current(&la_payload, &staging_root, &upstream_zip) {
+        return Ok(staging_root);
+    }
+    let merged = upstream_package::merge(&upstream_package::MergeInput {
+        upstream_zip,
+        la_payload,
+        staging_root,
+    })?;
+    let _ = app.emit(
+        upstream_package::MERGED_EVENT,
+        serde_json::json!({
+            "tag": tag,
+            "root": merged.to_string_lossy(),
+        }),
+    );
+    if let Ok(state) = local_state_root(app) {
+        logging::append(
+            &state,
+            "INFO",
+            "upstream.merged",
+            &format!(
+                "tag={tag}, target={}, root={}",
+                csgo.display(),
+                merged.display()
+            ),
+        );
+    }
+    Ok(merged)
 }
 
 fn local_state_root(_app: &AppHandle) -> Result<PathBuf> {
@@ -951,7 +1012,7 @@ fn validate_files_at(
     verify_hashes: bool,
 ) -> Result<FilesReport> {
     if let Some(app) = app {
-        if let (Ok(payload), Ok(state)) = (payload_root(), local_state_root(app)) {
+        if let (Ok(payload), Ok(state)) = (merged_payload_root(app, root), local_state_root(app)) {
             let inspection = if verify_hashes {
                 installer::inspect(&payload, &state, root)
             } else {
@@ -1245,7 +1306,7 @@ fn prepare_and_launch_match(app: AppHandle, csgo: String, input: PrepareMatchInp
     let root = csgo_path(&csgo)?;
     ensure_target_not_running(&root)?;
     let state = local_state_root(&app)?;
-    let payload = payload_root()?;
+    let payload = merged_payload_root(&app, &root)?;
     let difficulty = match input.difficulty.as_str() {
         "low" => "Low",
         "medium" => "Medium",
@@ -1720,7 +1781,7 @@ fn get_match_history_stats(csgo: String) -> Result<MatchHistoryStats> {
 #[tauri::command]
 fn run_install_checks(app: AppHandle, csgo: String, selected_map: Option<String>) -> Result<InstallCheckReport> {
     let root = csgo_path(&csgo)?;
-    collect_install_checks(&payload_root()?, &local_state_root(&app)?, &root, selected_map.as_deref())
+    collect_install_checks(&merged_payload_root(&app, &root)?, &local_state_root(&app)?, &root, selected_map.as_deref())
 }
 
 fn collect_install_checks(payload: &Path, state: &Path, root: &Path, selected_map: Option<&str>) -> Result<InstallCheckReport> {
@@ -2923,7 +2984,7 @@ fn get_runtime_snapshot_impl(app: AppHandle) -> Result<RuntimeSnapshot> {
     let root = csgo_path(&selected)?;
     let process = inspect_cs2_process(Some(&root));
     let running = process.running;
-    let payload = payload_root().ok();
+    let payload = merged_payload_root(&app, &root).ok();
     let state = local_state_root(&app).ok();
     if let Some(state) = &state {
         let _ = installer::recover_incomplete(state, &root);
@@ -2966,7 +3027,8 @@ async fn inspect_installation(app: AppHandle, csgo: String) -> Result<Installati
     run_installation_task("Installation inspection", move || {
         let root = csgo_path(&csgo)?;
         installer::recover_incomplete(&local_state_root(&app)?, &root)?;
-        installer::inspect(&payload_root()?, &local_state_root(&app)?, &root)
+        let root_value = root.clone();
+        installer::inspect(&merged_payload_root(&app, &root_value)?, &local_state_root(&app)?, &root)
     })
     .await
 }
@@ -2977,7 +3039,7 @@ async fn get_install_plan(app: AppHandle, csgo: String) -> Result<InstallPlan> {
         let _busy = online_update::OperationGuard::acquire()?;
         let root = csgo_path(&csgo)?;
         ensure_target_not_running(&root)?;
-        installer::plan(&payload_root()?, &local_state_root(&app)?, &root)
+        installer::plan(&merged_payload_root(&app, &root)?, &local_state_root(&app)?, &root)
     })
     .await
 }
@@ -2987,7 +3049,7 @@ async fn install_payload(app: AppHandle, csgo: String) -> Result<InstallTransact
     run_installation_task("Payload installation", move || {
         let _busy = online_update::OperationGuard::acquire()?;
         let root = csgo_path(&csgo)?;
-        let payload = payload_root()?;
+        let payload = merged_payload_root(&app, &root)?;
         let state = local_state_root(&app)?;
         let report = collect_install_checks(&payload, &state, &root, None)?;
         ensure_install_checks_pass(&report)?;
@@ -3002,12 +3064,15 @@ async fn install_payload(app: AppHandle, csgo: String) -> Result<InstallTransact
             Ok(result)
         });
         match &result {
-            Ok(value) => logging::append(
-                &state,
-                "INFO",
-                "install.completed",
-                &format!("{} files", value.installed_files),
-            ),
+            Ok(value) => {
+                record_upstream_install(&state, &root, &payload);
+                logging::append(
+                    &state,
+                    "INFO",
+                    "install.completed",
+                    &format!("{} files", value.installed_files),
+                )
+            }
             Err(error) => logging::append(&state, "ERROR", "install.failed", &error.detail),
         }
         result
@@ -3020,7 +3085,7 @@ async fn repair_payload(app: AppHandle, csgo: String) -> Result<InstallTransacti
     run_installation_task("Payload repair", move || {
         let _busy = online_update::OperationGuard::acquire()?;
         let root = csgo_path(&csgo)?;
-        let payload = payload_root()?;
+        let payload = merged_payload_root(&app, &root)?;
         let state = local_state_root(&app)?;
         let report = collect_install_checks(&payload, &state, &root, None)?;
         ensure_install_checks_pass(&report)?;
@@ -3035,12 +3100,15 @@ async fn repair_payload(app: AppHandle, csgo: String) -> Result<InstallTransacti
             Ok(result)
         });
         match &result {
-            Ok(value) => logging::append(
-                &state,
-                "INFO",
-                "repair.completed",
-                &format!("{} files", value.installed_files),
-            ),
+            Ok(value) => {
+                record_upstream_install(&state, &root, &payload);
+                logging::append(
+                    &state,
+                    "INFO",
+                    "repair.completed",
+                    &format!("{} files", value.installed_files),
+                )
+            }
             Err(error) => logging::append(&state, "ERROR", "repair.failed", &error.detail),
         }
         result
@@ -3091,9 +3159,9 @@ fn restore_payload_impl(app: &AppHandle, csgo: &str, pristine: bool) -> Result<R
         &root.to_string_lossy(),
     );
     let result = if pristine {
-        installer::restore_pristine(&payload_root()?, &state, &root)
+        installer::restore_pristine(&merged_payload_root(app, &root)?, &state, &root)
     } else {
-        installer::restore(&payload_root()?, &state, &root)
+        installer::restore(&merged_payload_root(app, &root)?, &state, &root)
     };
     match &result {
         Ok(value) => logging::append(
@@ -3115,10 +3183,21 @@ fn restore_payload_impl(app: &AppHandle, csgo: &str, pristine: bool) -> Result<R
     result
 }
 
+fn record_upstream_install(state: &Path, root: &Path, merged_root: &Path) {
+    if let Err(error) = upstream_package::write_installed_state(root, merged_root) {
+        logging::append(
+            state,
+            "WARN",
+            "upstream.install_state_failed",
+            &error.detail,
+        );
+    }
+}
+
 fn installed_plugin_version(app: &AppHandle) -> Option<String> {
     let config = read_config(app).ok()?;
     let root = csgo_path(config.csgo_path.as_deref()?).ok()?;
-    installer::inspect_quick(&payload_root().ok()?, &local_state_root(app).ok()?, &root)
+    installer::inspect_quick(&merged_payload_root(app, &root).ok()?, &local_state_root(app).ok()?, &root)
         .ok()?
         .package_version
 }
@@ -3154,13 +3233,13 @@ fn install_plugin_update_impl(app: &AppHandle, csgo: &str) -> Result<online_upda
     let restore_preview = config.mode.as_deref() == Some("preview");
     logging::append(&state, "INFO", "update.plugin_started", "host=github.com");
     let (version, payload) = online_update::prepare_plugin(app)?;
-    online_update::activate_payload(&version, &payload)?;
     match with_canonical_layout(&state, &root, restore_preview, || {
         let result = installer::install(&payload, &state, &root, false)?;
         write_bot_randomizer_options(&root, &config.bot_items)?;
         Ok(result)
     }) {
         Ok(value) => {
+            record_upstream_install(&state, &root, &payload);
             logging::append(
                 &state,
                 "INFO",
@@ -3274,6 +3353,59 @@ async fn install_all_updates(
 #[tauri::command]
 fn cancel_update() {
     online_update::cancel();
+}
+
+#[tauri::command]
+fn upstream_release_info() -> Result<upstream_package::UpstreamReleaseInfo> {
+    upstream_package::release_info(false)
+}
+
+#[tauri::command]
+async fn upstream_download(app: AppHandle, tag: String) -> Result<()> {
+    run_installation_task("Upstream download", move || {
+        let _busy = online_update::OperationGuard::acquire()?;
+        upstream_package::download_by_tag(&app, &tag)?;
+        Ok(())
+    })
+    .await
+}
+
+#[tauri::command]
+fn upstream_cancel() {
+    online_update::cancel();
+}
+
+#[tauri::command]
+fn upstream_cache_info() -> Result<upstream_package::UpstreamCacheInfo> {
+    upstream_package::cache_info()
+}
+
+#[tauri::command]
+fn upstream_cache_clear(tag: Option<String>) -> Result<usize> {
+    let _busy = online_update::OperationGuard::acquire()?;
+    upstream_package::cache_clear(tag)
+}
+
+#[tauri::command]
+async fn upstream_import_local(
+    app: AppHandle,
+    source: String,
+) -> Result<upstream_package::UpstreamRelease> {
+    run_installation_task("Upstream import", move || {
+        let _busy = online_update::OperationGuard::acquire()?;
+        upstream_package::import_local(&app, &source)
+    })
+    .await
+}
+
+#[tauri::command]
+fn upstream_installed_state() -> Result<Option<upstream_package::UpstreamInstalledState>> {
+    upstream_package::read_installed_state()
+}
+
+#[tauri::command]
+fn launch_upstream_panel(path: String) -> Result<()> {
+    upstream_package::launch_panel(&path)
 }
 
 fn with_canonical_layout<T>(
@@ -4356,6 +4488,9 @@ pub fn run() {
             appearance::export_appearance, appearance::import_appearance,
             record_panel_error, get_update_snapshot, check_online_updates,
             install_panel_update, install_plugin_update, install_all_updates, cancel_update,
+            upstream_release_info, upstream_download, upstream_cancel,
+            upstream_cache_info, upstream_cache_clear, upstream_import_local,
+            upstream_installed_state, launch_upstream_panel,
             get_match_catalog, prepare_and_launch_match, finish_active_match, get_active_match, list_match_history,
             get_match_result, delete_match, get_match_history_stats, run_install_checks, play_demo, open_demo_folder,
             cs2ss_bridge::get_cs2ss_overview, cs2ss_bridge::list_cs2ss_matches,
