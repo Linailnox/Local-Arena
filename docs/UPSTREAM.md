@@ -60,7 +60,13 @@ upstream's `BotRandomizer` `1.3.2` revision rather than the older Local Arena co
   profile values were invented; they fall back to the game's default profile. `verify-workspace.ps1` exempts exactly
   this list from the featured-player assertion through `$inheritedProfileGap`.
 
-### 2026-10 upstream `v1.4.5` merge notes (current)
+### 2026-10 upstream `v1.4.5` merge notes (historical)
+
+> Superseded on 2026-10-06 by the download-and-merge rework (see `PLAN-upstream-download-install.md` and the
+> sections below): eight of the nine submodules and the duplicated upstream trees were removed from this
+> repository (only `addons/BotHider` remains), `package.ps1` no longer packages any upstream archive, and
+> `verify-workspace.ps1` now asserts the LA-only package whitelist. The pin table below is retained as the
+> historical record of the merge-time pointers.
 
 Merge base was the previous sync commit (`abb2c0f`, post-`v1.4.4`); the merge adopts upstream `main` at `d991445`
 (tag `v1.4.5`, 2026-10-02). Upstream converted its enhanced-bot sources into git submodules and Local Arena adopts
@@ -127,22 +133,40 @@ Tooling adaptations:
 
 The machine-readable source of truth is `scripts/dependencies.json`.
 
-- `CS2BotImprover.zip` (`v1.4.5`) supplies the official Windows runtime layout.
-- MetaMod 2.0.0-git1406 supplies the engine 26 loader.
-- CounterStrikeSharp `v1.0.376` with its bundled .NET runtime replaces the stale v1.4.1 copy.
-- RayTrace v1.0.16 supplies both the native module and CounterStrikeSharp API/implementation.
-- `BotHider-Windows-0.4.0.zip` supplies the native BotHider module, the metamod `BotHider.vdf`, and the payload
-  `config.json` / `bot_info.json` / `gamedata.json` baseline (the committed submodule copies overlay the latter two).
-- `BotAI`, `BotAimImprover`, `BotBuy`, `BotRandomizer`, `NadeSystem`, `BotState`, `RoundDamageRecap`, and the
-  `BotController`/`BotHider` csharp trees are built from the pinned git submodules, so release DLLs are never copied
-  from an older archive. `BotState` and `BotVision` binaries still arrive from the pinned release archive.
-- `BotControllerImpl` builds from `addons/BotController/csharp/BotControllerImpl`; the API assemblies build from
-  their submodule `csharp` projects; payload destinations stay `plugins/<Name>/…` and `shared/<Name>/…`.
-- Plus-built `PlayerKnifeCustomizer`, `PlusMatchCoordinator`, `TeamLineupInjector`, `MatchCore`, and
-  `OfflineMatchTelemetry` assemblies overlay their upstream locations.
-- The Plus Panel replaces the upstream Panel executable while retaining the same standalone workflow.
+- The upstream runtime is no longer pinned into the package. The Panel resolves the latest
+  `ed0ard/CS2-Bot-Improver` release through the GitHub API at install time and verifies `CS2BotImprover.zip`
+  against the API-provided SHA-256 `digest` before merging it; the rate-limit fallback redirect and manually
+  imported local ZIPs are HTTPS-only without a digest (accepted residual risk, plan decision #5).
+- MetaMod, CounterStrikeSharp, RayTrace, and the BotHider Windows archive are no longer downloaded or
+  verified by the build pipeline; they all ship inside the upstream release zip that the Panel downloads.
+- The Local Arena package contains only Local Arena's own content: the four exclusive plugins,
+  `cfg/my_bot_ffa_config.cfg`, `cfg/my_bot_normal_config.cfg`, `overrides/scripts/`, the payload manifest,
+  the Panel executable, and the docs. `verify-workspace.ps1` enforces this whitelist and rejects upstream
+  files in the package.
+- `PlusMatchCoordinator`, `TeamLineupInjector`, `PlayerKnifeCustomizer`, `MatchCore`, and
+  `OfflineMatchTelemetry` still build from source and overlay the merged payload at install time; the
+  `addons/BotHider` submodule stays pinned at the commit recorded in `scripts/dependencies.json` and supplies
+  `BotHiderApi` for the two dependent plugins.
+- The Panel merges the downloaded upstream zip with its own payload into a staging directory and installs
+  from the generated merged manifest, so upstream files are installed, backed up, and restored like any
+  other payload files.
+- The upstream `Panel v*.exe` shipped inside the release zip is relocated next to `LocalArena.exe` and can be
+  launched optionally from the Installation management page.
+- Local Arena's own panel/plugin update artifacts remain signed and SHA-256 verified through `latest.json`;
+  only the upstream zip follows the digest/HTTPS policy above.
 
-Every downloaded archive and each critical runtime DLL is SHA-256 verified before packaging.
+## 2026-10 Download-and-Merge Architecture
+
+`PLAN-upstream-download-install.md` in the repository root records the full design; the essentials:
+
+- CI no longer downloads any pinned runtime asset; `package.ps1` stages Local Arena-owned files only, and the
+  release zip shrank from 73 MB to a few megabytes.
+- `Panel/src-tauri/src/upstream_package.rs` resolves, downloads (resumable, digest-verified when available),
+  caches, and merges the upstream release; `merged_payload_root` feeds install, inspect, repair, and restore.
+- Eight upstream submodules, `RoundDamageRecap`, `plugins/disabled`, `counterstrikesharp/data`, and the
+  duplicated `cfg` files were removed from the repository; RayTrace support was removed end to end.
+- Settings → Installation gained an upstream package management section (download, cache, offline ZIP import,
+  installed-state display, page-triggered install and repair).
 
 ## Synchronizing
 
