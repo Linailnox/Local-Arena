@@ -1776,7 +1776,6 @@ fn ensure_match_components_pass(report: &InstallCheckReport) -> Result<()> {
         "TARGET_METAMOD_X64",
         "TARGET_CSS_X64",
         "TARGET_CSS_DOTNET_X64",
-        "TARGET_RAYTRACE_X64",
         "TARGET_BOTHIDER_X64",
         "TARGET_MATCH_COORDINATOR_MANAGED",
         "TARGET_MATCH_CORE_MANAGED",

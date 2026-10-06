@@ -211,7 +211,6 @@ pub fn run(payload_root: &Path, state_root: &Path, target: &Path, cs2_running: b
         ("METAMOD_X64", "MetaMod", "addons/metamod/bin/win64/server.dll"),
         ("CSS_X64", "CounterStrikeSharp", "addons/counterstrikesharp/bin/win64/counterstrikesharp.dll"),
         ("CSS_DOTNET_X64", "CounterStrikeSharp .NET runtime", "addons/counterstrikesharp/dotnet/dotnet.exe"),
-        ("RAYTRACE_X64", "RayTrace", "addons/RayTrace/bin/win64/RayTrace.dll"),
         ("BOTHIDER_X64", "BotHider", "addons/BotHider/bin/win64/BotHider.dll"),
     ] {
         checks.push(component_check(
