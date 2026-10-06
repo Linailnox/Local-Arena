@@ -8,7 +8,6 @@ $ErrorActionPreference = "Stop"
 $repo = Split-Path -Parent $PSScriptRoot
 $manifestPath = Join-Path $PSScriptRoot "dependencies.json"
 $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
-. (Join-Path $PSScriptRoot "VpkTools.ps1")
 $failures = [Collections.Generic.List[string]]::new()
 
 function Add-Failure([string]$Message) {
@@ -75,15 +74,7 @@ else {
     # stay byte-identical to the pinned upstream commit so local edits cannot
     # slip into a release build.
     $submodulePaths = @(
-        "addons/BotController",
-        "addons/BotHider",
-        "addons/BotVision",
-        "addons/counterstrikesharp/plugins/BotAI",
-        "addons/counterstrikesharp/plugins/BotAimImprover",
-        "addons/counterstrikesharp/plugins/BotBuy",
-        "addons/counterstrikesharp/plugins/BotRandomizer",
-        "addons/counterstrikesharp/plugins/BotState",
-        "addons/counterstrikesharp/plugins/NadeSystem"
+        "addons/BotHider"
     )
     foreach ($path in $submodulePaths) {
         $expectedLine = & git -C $repo ls-tree $base -- $path
@@ -97,21 +88,6 @@ else {
             Add-Failure "Submodule pointer diverged from upstream $base`: $path ($actual != $expected)"
         }
     }
-    # Regular upstream trees must match the pinned commit exactly.
-    $upstreamTrees = @(
-        "addons/counterstrikesharp/plugins/RoundDamageRecap",
-        "addons/counterstrikesharp/plugins/disabled",
-        "addons/counterstrikesharp/data"
-    )
-    foreach ($path in $upstreamTrees) {
-        & git -C $repo diff --quiet --ignore-space-at-eol $base HEAD -- $path
-        if ($LASTEXITCODE -eq 1) {
-            Add-Failure "Upstream content was modified locally: $path"
-        }
-        elseif ($LASTEXITCODE -ne 0) {
-            Add-Failure "Unable to compare upstream content: $path"
-        }
-    }
     # Paths upstream removed in the submodule conversion must stay removed.
     $removedUpstreamPaths = @(
         "addons/metamod",
@@ -119,7 +95,17 @@ else {
         "addons/counterstrikesharp/shared/BotHiderApi",
         "addons/counterstrikesharp/plugins/BotControllerImpl",
         "addons/counterstrikesharp/plugins/BotHiderImpl",
-        "addons/counterstrikesharp/plugins/disabled/CS2_ExecAfter"
+        "addons/counterstrikesharp/plugins/disabled/CS2_ExecAfter",
+        "addons/BotController",
+        "addons/BotVision",
+        "addons/counterstrikesharp/plugins/BotState",
+        "addons/counterstrikesharp/plugins/BotAimImprover",
+        "addons/counterstrikesharp/plugins/BotAI",
+        "addons/counterstrikesharp/plugins/BotRandomizer",
+        "addons/counterstrikesharp/plugins/NadeSystem",
+        "addons/counterstrikesharp/plugins/BotBuy",
+        "addons/counterstrikesharp/data",
+        "addons/counterstrikesharp/plugins/disabled"
     )
     foreach ($path in $removedUpstreamPaths) {
         $entry = & git -C $repo ls-tree HEAD -- $path
@@ -145,42 +131,12 @@ else {
     }
 }
 
-$botAiProject = Get-Content -LiteralPath (Join-Path $repo "addons/counterstrikesharp/plugins/BotAI/BotAI.csproj") -Raw
-if ($botAiProject -match 'Tmp\\ArchiveV02\\Common') {
-    Add-Failure "BotAI still references the machine-specific Common.dll path."
-}
-
 $panelBackend = Get-Content -LiteralPath (Join-Path $repo "Panel/src-tauri/src/lib.rs") -Raw
 if ($panelBackend -match 'aim_supported: true' -or
     $panelBackend -notmatch 'aim_supported,' -or
     $panelBackend -notmatch '\.csbip/aim-runtime\.json' -or
     $panelBackend -notmatch 'aim_override_count') {
     Add-Failure "Panel backend must expose the managed bot aim modes on Windows."
-}
-
-# NadeSystem is a pinned upstream submodule; the disconnected-pawn guard is a
-# dropped local modification. Only the Less-mode markers are still asserted.
-$nadeSystem = Get-Content -LiteralPath (Join-Path $repo "addons/counterstrikesharp/plugins/NadeSystem/NadeSystemPlugin.Replay.cs") -Raw
-if ($nadeSystem -notmatch '_botNadesMode == "less"' -or
-    $nadeSystem -notmatch 'LessModeAllows\(' -or
-    $nadeSystem -notmatch 'IncrementBotCount\(') {
-    Add-Failure "NadeSystem no longer contains the upstream 1.4.3 Less mode limits."
-}
-$nadeDataRoot = Join-Path $repo "addons/counterstrikesharp/data/NadeSystem/grenades"
-$nadeDataFiles = @(Get-ChildItem -LiteralPath $nadeDataRoot -Filter "*.json" -File -ErrorAction SilentlyContinue)
-if ($nadeDataFiles.Count -ne 48) {
-    Add-Failure "NadeSystem must ship the frozen 48-file grenade catalog; found $($nadeDataFiles.Count)."
-}
-foreach ($nadeDataFile in $nadeDataFiles) {
-    try {
-        $nadeEntries = @(Get-Content -LiteralPath $nadeDataFile.FullName -Raw | ConvertFrom-Json)
-        if ($nadeEntries.Count -eq 0) {
-            Add-Failure "NadeSystem grenade catalog is empty: $($nadeDataFile.Name)"
-        }
-    }
-    catch {
-        Add-Failure "NadeSystem grenade catalog is invalid: $($nadeDataFile.Name): $($_.Exception.Message)"
-    }
 }
 
 $matchCoordinator = Get-Content -LiteralPath (Join-Path $repo "addons/counterstrikesharp/plugins/PlusMatchCoordinator/PlusMatchCoordinator.cs") -Raw
@@ -215,11 +171,6 @@ $requiredSources = @(
     "scripts/generate-sticker-catalog.mjs",
     "scripts/generate-player-cosmetic-placements.mjs",
     "scripts/test-sticker-editor.mjs",
-    "addons/counterstrikesharp/plugins/BotRandomizer/BotRandomizer.cs",
-    "addons/counterstrikesharp/plugins/BotRandomizer/Cosmetics/CosmeticModels.cs",
-    "addons/counterstrikesharp/plugins/BotRandomizer/charm_placements.json",
-    "addons/counterstrikesharp/plugins/BotRandomizer/cosmetic_catalog.json",
-    "addons/BotController/csharp/BotControllerImpl/BotControllerImplPlugin.cs",
     "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/PlayerKnifeCustomizer.cs",
     "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/sticker_weapon_ids.json",
     "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/player_cosmetic_catalog.json",
@@ -298,9 +249,7 @@ $jsonFiles = @(
     "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/player_gun_presets.json",
     "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/player_knife_presets.json",
     "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/skins_en.json",
-    "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/weapon_skins.json",
-    "addons/counterstrikesharp/plugins/BotRandomizer/charm_placements.json",
-    "addons/counterstrikesharp/plugins/BotRandomizer/cosmetic_catalog.json"
+    "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/weapon_skins.json"
 )
 $counts = @{}
 foreach ($relative in $jsonFiles) {
@@ -443,30 +392,12 @@ if ($trackedGenerated.Count -gt 0) {
 if ($PackageRoot) {
     $package = [IO.Path]::GetFullPath($PackageRoot)
     $requiredPackageFiles = @(
-        "addons/BotHider/bin/win64/BotHider.dll",
-        "addons/BotController/bin/win64/BotController.dll",
-        "addons/BotVision/bin/win64/BotVision.dll",
-        "addons/metamod/BotController.vdf",
-        "addons/metamod/BotVision.vdf",
-        "addons/metamod/bin/win64/server.dll",
-        "addons/counterstrikesharp/bin/win64/counterstrikesharp.dll",
-        "addons/RayTrace/bin/win64/RayTrace.dll",
-        "addons/counterstrikesharp/plugins/RayTraceImpl/RayTraceImpl.dll",
-        "addons/counterstrikesharp/plugins/BotAI/BotAI.dll",
-        "addons/counterstrikesharp/plugins/BotAimImprover/BotAimImprover.dll",
-        "addons/counterstrikesharp/plugins/BotBuy/BotBuy.dll",
-        "addons/counterstrikesharp/plugins/BotControllerImpl/BotControllerImpl.dll",
-        "addons/counterstrikesharp/plugins/BotHiderImpl/BotHiderImpl.dll",
-        "addons/counterstrikesharp/plugins/BotRandomizer/BotRandomizer.dll",
-        "addons/counterstrikesharp/plugins/BotRandomizer/charm_placements.json",
-        "addons/counterstrikesharp/plugins/BotRandomizer/cosmetic_catalog.json",
-        "addons/counterstrikesharp/plugins/BotState/BotState.dll",
-        "addons/counterstrikesharp/plugins/NadeSystem/NadeSystem.dll",
         "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/PlayerKnifeCustomizer.dll",
         "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/sticker_ids.json",
         "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/sticker_weapon_ids.json",
         "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/player_cosmetic_catalog.json",
-        "addons/counterstrikesharp/plugins/RoundDamageRecap/RoundDamageRecap.dll",
+        "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/player_gun_presets.json",
+        "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/player_knife_presets.json",
         "addons/counterstrikesharp/plugins/PlusMatchCoordinator/PlusMatchCoordinator.dll",
         "addons/counterstrikesharp/plugins/PlusMatchCoordinator/MatchCore.dll",
         "addons/counterstrikesharp/plugins/PlusMatchCoordinator/match_catalog.json",
@@ -483,9 +414,8 @@ if ($PackageRoot) {
         "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/SQLitePCLRaw.core.dll",
         "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/SQLitePCLRaw.provider.e_sqlite3.dll",
         "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/e_sqlite3.dll",
-        "addons/counterstrikesharp/shared/0Harmony/0Harmony.dll",
-        "addons/counterstrikesharp/shared/BotHiderApi/BotHiderApi.dll",
-        "addons/counterstrikesharp/shared/BotControllerApi/BotControllerApi.dll",
+        "cfg/my_bot_ffa_config.cfg",
+        "cfg/my_bot_normal_config.cfg",
         "plus-payload-manifest.json",
         "LocalArena.exe",
         "README.md",
@@ -494,6 +424,56 @@ if ($PackageRoot) {
     )
     foreach ($relative in $requiredPackageFiles) {
         Assert-File (Join-Path $package $relative) "package file $relative"
+    }
+    # LA-only package: any upstream content is a regression (plan §5.3 whitelist inversion).
+    $forbiddenInPackage = @(
+        "gameinfo.gi",
+        "backup/",
+        "addons/RayTrace",
+        "addons/metamod",
+        "addons/BotHider/bin",
+        "addons/BotController/bin",
+        "addons/BotVision/bin",
+        "addons/counterstrikesharp/bin",
+        "addons/counterstrikesharp/dotnet",
+        "addons/counterstrikesharp/plugins/BotAI",
+        "addons/counterstrikesharp/plugins/BotAimImprover",
+        "addons/counterstrikesharp/plugins/BotBuy",
+        "addons/counterstrikesharp/plugins/BotControllerImpl",
+        "addons/counterstrikesharp/plugins/BotHiderImpl",
+        "addons/counterstrikesharp/plugins/BotRandomizer",
+        "addons/counterstrikesharp/plugins/BotState",
+        "addons/counterstrikesharp/plugins/NadeSystem",
+        "addons/counterstrikesharp/plugins/RoundDamageRecap",
+        "addons/counterstrikesharp/plugins/RayTraceImpl",
+        "addons/counterstrikesharp/shared/0Harmony",
+        "addons/counterstrikesharp/shared/BotHiderApi",
+        "addons/counterstrikesharp/shared/BotControllerApi",
+        "overrides/botprofile.vpk",
+        "cfg/gamemode_",
+        "cfg/bot_buy.cfg",
+        "cfg/my_bot_rush_config.cfg"
+    )
+    $packageFiles = @(Get-ChildItem -LiteralPath $package -Recurse -File | ForEach-Object {
+        [IO.Path]::GetRelativePath($package, $_.FullName).Replace("\", "/")
+    })
+    foreach ($entry in $forbiddenInPackage) {
+        if (Test-Path -LiteralPath (Join-Path $package $entry)) {
+            Add-Failure "Package must not contain upstream content: $entry"
+            continue
+        }
+        foreach ($relative in $packageFiles) {
+            $hit = if ($entry.Contains("/")) {
+                $relative.StartsWith($entry, [StringComparison]::OrdinalIgnoreCase)
+            }
+            else {
+                (Split-Path $relative -Leaf).StartsWith($entry, [StringComparison]::OrdinalIgnoreCase)
+            }
+            if ($hit) {
+                Add-Failure "Package must not contain upstream content: $entry (matched $relative)"
+                break
+            }
+        }
     }
     $telemetryPackageRoot = Join-Path $package "addons/counterstrikesharp/plugins/OfflineMatchTelemetry"
     $expectedTelemetryFiles = @(
@@ -514,26 +494,6 @@ if ($PackageRoot) {
     if (@(Compare-Object $expectedTelemetryFiles $packagedTelemetryFiles).Count -gt 0) {
         Add-Failure "Packaged OfflineMatchTelemetry file set does not match the release allowlist."
     }
-    $packagedNadeDataRoot = Join-Path $package "addons/counterstrikesharp/plugins/NadeSystem/grenades"
-    $packagedNadeDataFiles = @(
-        Get-ChildItem -LiteralPath $packagedNadeDataRoot -Filter "*.json" -File -ErrorAction SilentlyContinue
-    )
-    $sourceNadeNames = @($nadeDataFiles.Name | Sort-Object)
-    $packagedNadeNames = @($packagedNadeDataFiles.Name | Sort-Object)
-    $nadeNameDifference = @(Compare-Object $sourceNadeNames $packagedNadeNames)
-    if ($nadeNameDifference.Count -gt 0) {
-        Add-Failure "Package grenade catalog does not match the frozen source file set."
-    }
-    foreach ($nadeDataFile in $packagedNadeDataFiles) {
-        try {
-            if (@(Get-Content -LiteralPath $nadeDataFile.FullName -Raw | ConvertFrom-Json).Count -eq 0) {
-                Add-Failure "Packaged grenade catalog is empty: $($nadeDataFile.Name)"
-            }
-        }
-        catch {
-            Add-Failure "Packaged grenade catalog is invalid: $($nadeDataFile.Name): $($_.Exception.Message)"
-        }
-    }
     $previewNotice = Join-Path $package "PREVIEW-NOTICE.txt"
     if ($ExpectedPackageVersion -match '-Preview\.\d+$') {
         Assert-File $previewNotice "package preview notice"
@@ -547,14 +507,6 @@ if ($PackageRoot) {
         ((Get-FileHash -LiteralPath $packagedPanel -Algorithm SHA256).Hash -ne
             (Get-FileHash -LiteralPath $builtPanel -Algorithm SHA256).Hash)) {
         Add-Failure "Packaged Panel is not the current production Release build."
-    }
-    $nestedShared = Join-Path $package "addons/counterstrikesharp/plugins/BotHiderImpl/shared"
-    if (Test-Path -LiteralPath $nestedShared) {
-        Add-Failure "Package contains an invalid nested BotHiderImpl/shared directory."
-    }
-    $linuxBotHiderVdf = Join-Path $package "addons/metamod/BotHider.linux.vdf"
-    if (Test-Path -LiteralPath $linuxBotHiderVdf) {
-        Add-Failure "Windows package contains the Linux BotHider loader."
     }
     $packagedGameInfo = @(Get-ChildItem -LiteralPath $package -Recurse -Filter "gameinfo.gi" -File)
     if ($packagedGameInfo.Count -gt 0) {
@@ -608,12 +560,25 @@ if ($PackageRoot) {
                     Add-Failure "Package payload file is not tracked by the manifest: $relative"
                 }
             }
+            foreach ($relative in $manifestPaths.Keys) {
+                foreach ($entry in $forbiddenInPackage) {
+                    $hit = if ($entry.Contains("/")) {
+                        $relative.StartsWith($entry, [StringComparison]::OrdinalIgnoreCase)
+                    }
+                    else {
+                        (Split-Path $relative -Leaf).StartsWith($entry, [StringComparison]::OrdinalIgnoreCase)
+                    }
+                    if ($hit) {
+                        Add-Failure "Package payload manifest contains forbidden upstream path: $relative"
+                        break
+                    }
+                }
+            }
             $expectedPreserveConfigs = @(
                 "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/player_knife_presets.json",
                 "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/player_gun_presets.json",
                 "cfg/my_bot_ffa_config.cfg",
-                "cfg/my_bot_normal_config.cfg",
-                "overrides/botprofile.vpk"
+                "cfg/my_bot_normal_config.cfg"
             )
             foreach ($relative in $expectedPreserveConfigs) {
                 if ($manifestPolicies[$relative] -ne "preserve-config") {
@@ -641,72 +606,23 @@ if ($PackageRoot) {
                     Add-Failure "OfflineMatchTelemetry payload is not Plus-owned: $relative"
                 }
             }
+            foreach ($relative in $manifestPaths.Keys | Where-Object {
+                $_ -like "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/*"
+            }) {
+                if ($manifestOwnership[$relative] -ne "plus") {
+                    Add-Failure "PlayerKnifeCustomizer payload is not Plus-owned: $relative"
+                }
+            }
         }
         catch {
             Add-Failure "Package payload manifest is invalid: $($_.Exception.Message)"
         }
     }
 
-    $botProfileVpks = @(
-        "overrides/botprofile.vpk",
-        "overrides/Low/botprofile.vpk",
-        "overrides/Medium/botprofile.vpk",
-        "overrides/High/botprofile.vpk"
-    )
-    foreach ($relative in $botProfileVpks) {
-        $vpk = Join-Path $package $relative
-        Assert-File $vpk "package file $relative"
-        if (Test-Path -LiteralPath $vpk) {
-            try {
-                $entries = @(Get-VpkEntryPaths $vpk)
-                if ($entries.Count -ne 1 -or $entries[0] -ne "botprofile.db") {
-                    Add-Failure "Package $relative must contain only botprofile.db; found: $($entries -join ', ')"
-                }
-                else {
-                    $embedded = Read-VpkEmbeddedEntry $vpk "botprofile.db"
-                    $profile = [Text.Encoding]::UTF8.GetString($embedded.Bytes)
-                    Assert-BotProfileContent $profile "Package $relative"
-                }
-            }
-            catch {
-                Add-Failure "Invalid package VPK $relative`: $($_.Exception.Message)"
-            }
-        }
-    }
-
-    $native = Join-Path $package "addons/BotHider/bin/win64/BotHider.dll"
-    if (Test-Path -LiteralPath $native) {
-        $nativeHash = (Get-FileHash -LiteralPath $native -Algorithm SHA256).Hash.ToLowerInvariant()
-        if ($nativeHash -ne $manifest.botHider.windowsDllSha256.ToLowerInvariant()) {
-            Add-Failure "Package BotHider.dll is not the verified v0.3.3 build: $nativeHash"
-        }
-    }
-
-    $pinnedRuntimeFiles = @(
-        @{ Relative = "addons/metamod/bin/win64/server.dll"; Hash = $manifest.metamod.windowsLoaderSha256; Label = "Metamod" },
-        @{ Relative = "addons/counterstrikesharp/bin/win64/counterstrikesharp.dll"; Hash = $manifest.counterStrikeSharp.windowsCoreSha256; Label = "CounterStrikeSharp" },
-        @{ Relative = "addons/RayTrace/bin/win64/RayTrace.dll"; Hash = $manifest.rayTrace.windowsDllSha256; Label = "RayTrace native" },
-        @{ Relative = "addons/counterstrikesharp/plugins/RayTraceImpl/RayTraceImpl.dll"; Hash = $manifest.rayTrace.cssImplSha256; Label = "RayTrace CSS" }
-    )
-    foreach ($runtime in $pinnedRuntimeFiles) {
-        $runtimePath = Join-Path $package $runtime.Relative
-        if (Test-Path -LiteralPath $runtimePath) {
-            $runtimeHash = (Get-FileHash -LiteralPath $runtimePath -Algorithm SHA256).Hash.ToLowerInvariant()
-            if ($runtimeHash -ne $runtime.Hash.ToLowerInvariant()) {
-                Add-Failure "$($runtime.Label) does not match the pinned engine-26 runtime: $runtimeHash"
-            }
-        }
-    }
-
     $builtPlugins = @(
-        @{ Name = "BotAI"; Framework = "net10.0" },
-        @{ Name = "BotAimImprover"; Framework = "net10.0" },
-        @{ Name = "BotBuy"; Framework = "net8.0" },
-        @{ Name = "BotControllerImpl"; BuildDir = "addons/BotController/csharp/BotControllerImpl"; Output = "bin/Release" },
-        @{ Name = "BotRandomizer"; Framework = "net10.0" },
-        @{ Name = "NadeSystem"; Framework = "net10.0" },
-        @{ Name = "RoundDamageRecap"; Framework = "net8.0" },
-        @{ Name = "PlusMatchCoordinator"; Framework = "net10.0" }
+        @{ Name = "PlayerKnifeCustomizer"; Framework = "net10.0" },
+        @{ Name = "PlusMatchCoordinator"; Framework = "net10.0" },
+        @{ Name = "TeamLineupInjector"; Framework = "net10.0" }
     )
     foreach ($plugin in $builtPlugins) {
         $packageDll = Join-Path $package "addons/counterstrikesharp/plugins/$($plugin.Name)/$($plugin.Name).dll"
