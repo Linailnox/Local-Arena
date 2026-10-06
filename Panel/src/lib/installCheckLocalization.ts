@@ -34,7 +34,6 @@ const COMPONENT_NAMES: Partial<Record<string, string>> = {
   METAMOD_X64: "MetaMod",
   CSS_X64: "CounterStrikeSharp",
   CSS_DOTNET_X64: "CounterStrikeSharp .NET runtime",
-  RAYTRACE_X64: "RayTrace",
   BOTHIDER_X64: "BotHider",
   MATCH_COORDINATOR_MANAGED: "PlusMatchCoordinator",
   MATCH_CORE_MANAGED: "MatchCore",

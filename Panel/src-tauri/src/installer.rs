@@ -33,7 +33,6 @@ const UPSTREAM_MARKERS: &[&str] = &[
     "addons/counterstrikesharp/plugins/BotState/BotState.dll",
     "addons/counterstrikesharp/plugins/NadeSystem/NadeSystem.dll",
     "addons/metamod/BotHider.vdf",
-    "addons/metamod/RayTrace.vdf",
 ];
 
 const SUITE_OWNED_ROOTS: &[&str] = &[
