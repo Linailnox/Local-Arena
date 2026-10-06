@@ -59,7 +59,7 @@ const CHAPTERS: Chapter[] = [
 const INSTALL_STEPS: GuideStep[] = [
   { id: "guide-install-1", image: firstLanguageImage, title: "guide.install1.title", body: "guide.install1.body", points: ["guide.install1.point1", "guide.install1.point2"] },
   { id: "guide-install-2", image: firstDirectoryImage, title: "guide.install2.title", body: "guide.install2.body", points: ["guide.install2.point1", "guide.install2.point2", "guide.install2.point3"] },
-  { id: "guide-install-3", image: firstPreviewImage, title: "guide.install3.title", body: "guide.install3.body", points: ["guide.install3.point1", "guide.install3.point2", "guide.install3.point3"] },
+  { id: "guide-install-3", image: firstPreviewImage, title: "guide.install3.title", body: "guide.install3.body", points: ["guide.install3.point1", "guide.install3.point2", "guide.install3.point3", "upstream.guidePoint1", "upstream.guidePoint2", "upstream.guidePoint3"] },
   { id: "guide-install-4", image: firstCompleteImage, title: "guide.install4.title", body: "guide.install4.body", points: ["guide.install4.point1", "guide.install4.point2"] },
 ];
 
