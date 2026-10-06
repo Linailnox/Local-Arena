@@ -112,13 +112,13 @@ fn unix_time() -> u64 {
         .as_secs()
 }
 
-fn update_root() -> Result<PathBuf> {
+pub(crate) fn update_root() -> Result<PathBuf> {
     let root = app_storage::root()?.join("updates");
     fs::create_dir_all(&root).map_err(AppError::transaction_io)?;
     Ok(root)
 }
 
-fn client(timeout: Duration) -> Result<reqwest::blocking::Client> {
+pub(crate) fn client(timeout: Duration) -> Result<reqwest::blocking::Client> {
     reqwest::blocking::Client::builder()
         .timeout(timeout)
         .user_agent(format!("LocalArena/{}", app_version::display()))
@@ -478,11 +478,17 @@ fn download_component(
     Ok((component, archive))
 }
 
-fn clear_directory(path: &Path) -> Result<()> {
+pub(crate) fn clear_directory(path: &Path) -> Result<()> {
     if path.exists() {
         fs::remove_dir_all(path).map_err(AppError::transaction_io)?;
     }
     fs::create_dir_all(path).map_err(AppError::transaction_io)
+}
+
+/// Shared cancellation flag for downloads driven by `cancel()`; the upstream
+/// package downloader polls the same flag so one cancel button covers both.
+pub(crate) fn cancelled() -> bool {
+    CANCELLED.load(Ordering::Acquire)
 }
 
 fn find_payload_root(extracted: &Path) -> Option<PathBuf> {
@@ -515,15 +521,30 @@ pub fn prepare_plugin(app: &AppHandle) -> Result<(String, PathBuf)> {
         let _ = fs::remove_dir_all(&directory);
         return Err(AppError::update(error));
     }
-    let root = find_payload_root(&directory)
+    let plugin_root = find_payload_root(&directory)
         .ok_or_else(|| AppError::payload("Plugin update ZIP has no payload manifest"))?;
-    let manifest = installer::verify_payload(&root)?;
+    let manifest = installer::verify_payload(&plugin_root)?;
     if manifest.package_version != component.version {
         return Err(AppError::payload(
             "Plugin payload version does not match the signed update manifest",
         ));
     }
-    Ok((component.version, root))
+    // Decision #7: a plugin update is installed from an upstream + LA merge.
+    // The overlay source is the freshly downloaded plugin payload, not the
+    // possibly older package beside the executable.
+    let upstream = crate::upstream_package::ensure_cached(app)?;
+    let staging_root = crate::upstream_package::merged_root(&upstream.release.tag)?;
+    let merged = crate::upstream_package::merge(&crate::upstream_package::MergeInput {
+        upstream_zip: upstream.zip,
+        la_payload: plugin_root.clone(),
+        staging_root,
+    })?;
+    installer::verify_payload(&merged)?;
+    // Keep the active-payload pointer on the pure LA payload root so
+    // `payload_root()` stays "the newest LA payload" and the merged root is
+    // never fed back into a merge as its own LA source.
+    activate_payload(&component.version, &plugin_root)?;
+    Ok((component.version, merged))
 }
 
 pub fn activate_payload(version: &str, path: &Path) -> Result<()> {
