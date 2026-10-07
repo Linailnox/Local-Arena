@@ -113,7 +113,8 @@ else {
             Add-Failure "Path removed by upstream must stay removed: $path"
         }
     }
-    # Local difficulty tuning is the only allowed overrides divergence.
+    # Local difficulty tuning is the only allowed overrides divergence; the
+    # upstream-identical archived/scripts trees may be deleted but never edited.
     $allowedOverrideChanges = @(
         "overrides/Low/botprofile.db",
         "overrides/Medium/botprofile.db",
@@ -124,7 +125,15 @@ else {
         Add-Failure "Unable to compare overrides against upstream $base"
     }
     else {
-        $unexpectedOverrides = @($overrideChanges | Where-Object { $_ -notin $allowedOverrideChanges })
+        $unexpectedOverrides = @()
+        foreach ($path in $overrideChanges) {
+            if ($path -in $allowedOverrideChanges) { continue }
+            $deletedFromHead = -not (& git -C $repo cat-file -e "HEAD:$path" 2>$null)
+            $deletable = $path -like "overrides/archived/*" -or $path -like "overrides/scripts/*"
+            if (-not ($deletedFromHead -and $deletable)) {
+                $unexpectedOverrides += $path
+            }
+        }
         if ($unexpectedOverrides.Count -gt 0) {
             Add-Failure "Overrides diverged from upstream: $($unexpectedOverrides -join ', ')"
         }
@@ -450,6 +459,7 @@ if ($PackageRoot) {
         "addons/counterstrikesharp/shared/BotHiderApi",
         "addons/counterstrikesharp/shared/BotControllerApi",
         "overrides/botprofile.vpk",
+        "overrides/scripts",
         "cfg/gamemode_",
         "cfg/bot_buy.cfg",
         "cfg/my_bot_rush_config.cfg"

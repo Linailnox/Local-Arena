@@ -72,8 +72,6 @@ New-Item -ItemType Directory -Path $releaseRoot,(Join-Path $payload "cfg") -Forc
 # Plus configuration overlays. Source files are deliberately not copied into the release payload.
 Copy-Item -LiteralPath (Join-Path $repo "cfg\my_bot_ffa_config.cfg") -Destination (Join-Path $payload "cfg\my_bot_ffa_config.cfg") -Force
 Copy-Item -LiteralPath (Join-Path $repo "cfg\my_bot_normal_config.cfg") -Destination (Join-Path $payload "cfg\my_bot_normal_config.cfg") -Force
-# Behavior-tree overrides are repository-owned and absent from the upstream release zip.
-Copy-Tree (Join-Path $repo "overrides\scripts") (Join-Path $payload "overrides\scripts")
 
 $pluginBuild = Join-Path $repo "addons\counterstrikesharp\plugins\PlayerKnifeCustomizer\bin\Release\net10.0"
 $upstreamPluginBuilds = @(
