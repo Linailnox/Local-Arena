@@ -140,7 +140,7 @@ The machine-readable source of truth is `scripts/dependencies.json`.
 - MetaMod, CounterStrikeSharp, RayTrace, and the BotHider Windows archive are no longer downloaded or
   verified by the build pipeline; they all ship inside the upstream release zip that the Panel downloads.
 - The Local Arena package contains only Local Arena's own content: the four exclusive plugins,
-  `cfg/my_bot_ffa_config.cfg`, `cfg/my_bot_normal_config.cfg`, `overrides/scripts/`, the payload manifest,
+  `cfg/my_bot_ffa_config.cfg`, `cfg/my_bot_normal_config.cfg`, the payload manifest,
   the Panel executable, and the docs. `verify-workspace.ps1` enforces this whitelist and rejects upstream
   files in the package.
 - `PlusMatchCoordinator`, `TeamLineupInjector`, `PlayerKnifeCustomizer`, `MatchCore`, and
