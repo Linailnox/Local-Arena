@@ -138,7 +138,7 @@ Local Arena 自身的包只有几 MB，约 73 MB 的上游运行时会在安装�
 
 ## Linux 安装（手动）
 
-Linux 包 `LocalArena-vX.Y.Z.W-linux.zip` 为自包含完整包，采用与上游一致的手动安装流程；面板本身仍仅支持 Windows
+Linux 包 `LocalArena-vX.Y.Z.W-linux.zip` 为自包含完整包，采用与上游一致的手动安装流程；面板亦可从源码在 Linux 原生构建运行（`Panel/src-tauri` 下 `cargo build`），预编译面板包仍为 Windows
 
 1. 下载并解压 Linux 包
 2. 打开 CS2 安装目录并进入 `game/csgo`
