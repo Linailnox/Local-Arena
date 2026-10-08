@@ -5,7 +5,7 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read};
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -299,16 +299,28 @@ fn sha256(path: &Path) -> Result<String> {
 }
 
 fn safe_relative(raw: &str) -> Result<PathBuf> {
-    let path = PathBuf::from(raw.replace('/', "\\"));
-    if path.as_os_str().is_empty()
-        || path.components().any(|component| {
-            matches!(
-                component,
-                Component::ParentDir | Component::RootDir | Component::Prefix(_)
-            )
-        })
-    {
+    // Validate per '/' segment so the manifest's Windows-style rules (absolute
+    // paths, parent traversal, drive prefixes, literal backslashes) hold on
+    // every platform, then build a real nested path for the host OS instead of
+    // treating the whole entry as one backslashed filename on Unix.
+    let trimmed = raw.trim_end_matches('/');
+    if trimmed.is_empty() {
         return Err(AppError::payload(format!("Unsafe payload path: {raw}")));
+    }
+    let mut path = PathBuf::new();
+    for segment in trimmed.split('/') {
+        let drive_prefix = segment.len() >= 2
+            && segment.as_bytes()[0].is_ascii_alphabetic()
+            && segment.as_bytes()[1] == b':';
+        if segment.is_empty()
+            || segment == "."
+            || segment == ".."
+            || drive_prefix
+            || segment.contains('\\')
+        {
+            return Err(AppError::payload(format!("Unsafe payload path: {raw}")));
+        }
+        path.push(segment);
     }
     Ok(path)
 }
