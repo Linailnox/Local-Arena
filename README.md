@@ -138,7 +138,7 @@ Do not launch CS2, close the Panel, or repeatedly click the install button while
 
 ## Linux Installation (manual)
 
-The Linux package `LocalArena-vX.Y.Z.W-linux.zip` is self-contained and follows the upstream manual-install flow; the Panel itself remains Windows-only
+The Linux package `LocalArena-vX.Y.Z.W-linux.zip` is self-contained and follows the upstream manual-install flow; the Panel can also be built and run natively on Linux from source (`cargo build` in `Panel/src-tauri`), while prebuilt Panel packages remain Windows-only
 
 1. Download and extract the Linux package
 2. Open your CS2 installation and navigate to `game/csgo`
