@@ -75,7 +75,7 @@ Beginning with the next version, Local Arena will adopt a new UI design language
 - Do not run the Panel from inside the ZIP
 - The correct game directory ends with `Counter-Strike Global Offensive\game\csgo`
 - Cosmetic preview and enhanced-bot mode use `-insecure` and cannot enter official matchmaking
-- For Linux builds and upstream-only installation, use the [upstream project](https://github.com/ed0ard/CS2-Bot-Improver)
+- For upstream-only installation without Local Arena, use the [upstream project](https://github.com/ed0ard/CS2-Bot-Improver); for Local Arena on Linux see [Linux Installation](#linux-installation-manual)
 
 ## Four-Step First Installation
 
@@ -135,6 +135,17 @@ Do not launch CS2, close the Panel, or repeatedly click the install button while
 <p align="center">
   <img src="./Panel/src/assets/guide/11-first-complete.jpg" alt="Installation completed" width="100%">
 </p>
+
+## Linux Installation (manual)
+
+The Linux package `LocalArena-vX.Y.Z.W-linux.zip` is self-contained and follows the upstream manual-install flow; the Panel itself remains Windows-only
+
+1. Download and extract the Linux package
+2. Open your CS2 installation and navigate to `game/csgo`
+3. Copy every file from the extracted package into `game/csgo` — the package ships a prepared `gameinfo.gi` plus the `backup/Online` and `backup/WithBots` mode variants, so no manual gameinfo editing is needed
+4. Add `-insecure` to the CS2 launch options in Steam
+
+The four Local Arena plugins (PlusMatchCoordinator, TeamLineupInjector, PlayerKnifeCustomizer, OfflineMatchTelemetry) and their configuration are included; updates and repair are performed by re-extracting a newer package over the existing install
 
 ## Updating an Existing Installation
 
