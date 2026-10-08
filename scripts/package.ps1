@@ -9,6 +9,7 @@ param(
     [string]$OutputDirectory,
     [string]$ReleaseVersion = "1.4.3.3",
     [string]$MinimumPanelVersion = "1.4.2.4",
+    [switch]$Linux,
     [switch]$SkipBuild,
     [switch]$SkipNpmInstall
 )
@@ -45,8 +46,34 @@ function Assert-ChildPath {
     }
 }
 
+function Get-PinnedAsset {
+    param($Asset)
+    New-Item -ItemType Directory -Path $cache -Force | Out-Null
+    $path = Join-Path $cache $Asset.name
+    $expected = $Asset.sha256.ToLowerInvariant()
+    if (Test-Path -LiteralPath $path) {
+        $cached = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($cached -eq $expected) { return $path }
+        Write-Host "Refreshing stale cached asset: $($Asset.name)"
+    }
+    $download = "$path.download"
+    try {
+        if (Test-Path -LiteralPath $download) { Remove-Item -LiteralPath $download -Force }
+        Invoke-WebRequest -Uri $Asset.url -OutFile $download
+        $actual = (Get-FileHash -LiteralPath $download -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($actual -ne $expected) {
+            throw "SHA-256 mismatch for $($Asset.name): $actual"
+        }
+        Move-Item -LiteralPath $download -Destination $path -Force
+    }
+    finally {
+        if (Test-Path -LiteralPath $download) { Remove-Item -LiteralPath $download -Force }
+    }
+    return $path
+}
+
 if (-not $SkipBuild) {
-    $buildArguments = @{ SkipNpmInstall = $SkipNpmInstall }
+    $buildArguments = @{ SkipNpmInstall = $SkipNpmInstall; Linux = $Linux }
     if ($DotNet) { $buildArguments.DotNet = $DotNet }
     if ($Cargo) { $buildArguments.Cargo = $Cargo }
     if ($Rustc) { $buildArguments.Rustc = $Rustc }
@@ -63,11 +90,41 @@ if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -F
 if (Test-Path -LiteralPath $extract) { Remove-Item -LiteralPath $extract -Recurse -Force }
 New-Item -ItemType Directory -Path $stage,$extract -Force | Out-Null
 
-$releaseRoot = Join-Path $stage "LocalArena-$releaseTag-windows"
+$osSuffix = if ($Linux) { "linux" } else { "windows" }
+$releaseRoot = Join-Path $stage "LocalArena-$releaseTag-$osSuffix"
 $payload = $releaseRoot
-# The package carries Local-Arena's own content only. Upstream runtime files are
-# downloaded by the Panel at install time (PLAN-upstream-download-install.md §0.2).
-New-Item -ItemType Directory -Path $releaseRoot,(Join-Path $payload "cfg") -Force | Out-Null
+if ($Linux) {
+    # Linux packages are self-contained for the upstream-style manual install, so
+    # the pinned for-Linux upstream zip is the base payload (user decision 2026-10-08).
+    $manifest = Get-Content -LiteralPath (Join-Path $PSScriptRoot "dependencies.json") -Raw | ConvertFrom-Json
+    $linuxBase = Get-PinnedAsset $manifest.upstream.linuxAsset
+    $linuxExtract = Join-Path $extract "upstream-linux"
+    Expand-Archive -LiteralPath $linuxBase -DestinationPath $linuxExtract -Force
+    # Upstream archives carry POSIX modes that hide content (execute-only entries);
+    # on Linux those bits deny reads, so restore owner read/write before copying.
+    if ($IsLinux -or $IsMacOS) {
+        $fixMode = [IO.UnixFileMode]::UserRead -bor [IO.UnixFileMode]::UserWrite -bor [IO.UnixFileMode]::UserExecute
+        Get-ChildItem -LiteralPath $linuxExtract -Recurse -Force |
+            ForEach-Object { $_.UnixFileMode = $_.UnixFileMode -bor $fixMode }
+    }
+    $payloadCandidates = @((Get-Item -LiteralPath $linuxExtract)) +
+        @(Get-ChildItem -LiteralPath $linuxExtract -Directory -Recurse)
+    $upstreamPayload = $payloadCandidates |
+        Where-Object { (Test-Path (Join-Path $_.FullName "addons")) -and (Test-Path (Join-Path $_.FullName "cfg")) } |
+        Select-Object -First 1
+    if (-not $upstreamPayload) { throw "Could not locate the upstream game/csgo payload." }
+    Copy-Tree $upstreamPayload.FullName $releaseRoot
+    $dotnetHost = Join-Path $payload "addons\counterstrikesharp\dotnet\dotnet"
+    if (Test-Path -LiteralPath $dotnetHost) {
+        $item = Get-Item -LiteralPath $dotnetHost
+        $item.UnixFileMode = $item.UnixFileMode -bor [IO.UnixFileMode]::UserRead -bor [IO.UnixFileMode]::UserWrite -bor [IO.UnixFileMode]::UserExecute
+    }
+}
+else {
+    # The package carries Local-Arena's own content only. Upstream runtime files are
+    # downloaded by the Panel at install time (PLAN-upstream-download-install.md §0.2).
+    New-Item -ItemType Directory -Path $releaseRoot,(Join-Path $payload "cfg") -Force | Out-Null
+}
 
 # Plus configuration overlays. Source files are deliberately not copied into the release payload.
 Copy-Item -LiteralPath (Join-Path $repo "cfg\my_bot_ffa_config.cfg") -Destination (Join-Path $payload "cfg\my_bot_ffa_config.cfg") -Force
@@ -90,25 +147,60 @@ foreach ($plugin in $upstreamPluginBuilds) {
     Copy-Tree $build (Join-Path $payload "addons\counterstrikesharp\plugins\$($plugin.Name)")
 }
 $telemetryStage = Join-Path $repo "addons\counterstrikesharp\plugins\OfflineMatchTelemetry\stage\game\csgo\addons\counterstrikesharp\plugins\OfflineMatchTelemetry"
-$telemetryExpectedFiles = @(
-    "OfflineMatchTelemetry.dll",
-    "OfflineMatchTelemetry.deps.json",
-    "OfflineMatchTelemetry.pdb",
-    "Microsoft.Data.Sqlite.dll",
-    "SQLitePCLRaw.batteries_v2.dll",
-    "SQLitePCLRaw.core.dll",
-    "SQLitePCLRaw.provider.e_sqlite3.dll",
-    "e_sqlite3.dll"
-)
-if (-not (Test-Path -LiteralPath $telemetryStage)) {
-    throw "OfflineMatchTelemetry staged deployment was not produced: $telemetryStage"
+if ($Linux) {
+    $telemetryExpectedFiles = @(
+        "OfflineMatchTelemetry.dll",
+        "OfflineMatchTelemetry.deps.json",
+        "OfflineMatchTelemetry.pdb",
+        "Microsoft.Data.Sqlite.dll",
+        "SQLitePCLRaw.batteries_v2.dll",
+        "SQLitePCLRaw.core.dll",
+        "SQLitePCLRaw.provider.e_sqlite3.dll"
+    )
+    if (-not (Test-Path -LiteralPath $telemetryStage)) {
+        throw "OfflineMatchTelemetry staged deployment was not produced: $telemetryStage"
+    }
+    $telemetryStageFiles = @(Get-ChildItem -LiteralPath $telemetryStage -File | Where-Object Name -ne "e_sqlite3.dll" | ForEach-Object Name | Sort-Object)
+    $telemetryDifference = @(Compare-Object ($telemetryExpectedFiles | Sort-Object) $telemetryStageFiles)
+    if ($telemetryDifference.Count -gt 0) {
+        throw "OfflineMatchTelemetry staged deployment does not match the release allowlist."
+    }
+    Copy-Tree $telemetryStage (Join-Path $payload "addons\counterstrikesharp\plugins\OfflineMatchTelemetry")
+    $omtPayloadDir = Join-Path $payload "addons\counterstrikesharp\plugins\OfflineMatchTelemetry"
+    Remove-Item -LiteralPath (Join-Path $omtPayloadDir "e_sqlite3.dll") -Force -ErrorAction SilentlyContinue
+    $linuxSqliteCandidates = @(
+        (Join-Path $repo "addons\counterstrikesharp\plugins\OfflineMatchTelemetry\bin\Release\net8.0\runtimes\linux-x64\native\libe_sqlite3.so")
+    ) + @(Get-ChildItem -Path (Join-Path $cache "nuget\packages") -Directory -Filter "sqlitepclraw.bundle_e_sqlite3*" -ErrorAction SilentlyContinue |
+        ForEach-Object { Join-Path $_.FullName "runtimes\linux-x64\native\libe_sqlite3.so" }) +
+    @(Get-ChildItem -Path (Join-Path $HOME ".nuget\packages") -Directory -Filter "sqlitepclraw.bundle_e_sqlite3*" -ErrorAction SilentlyContinue |
+        ForEach-Object { Join-Path $_.FullName "runtimes\linux-x64\native\libe_sqlite3.so" })
+    $linuxSqlite = $linuxSqliteCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+    if (-not $linuxSqlite) {
+        throw "linux-x64 libe_sqlite3.so was not found in any SQLitePCLRaw bundle package cache."
+    }
+    Copy-Item -LiteralPath $linuxSqlite -Destination (Join-Path $omtPayloadDir "libe_sqlite3.so") -Force
 }
-$telemetryStageFiles = @(Get-ChildItem -LiteralPath $telemetryStage -File | ForEach-Object Name | Sort-Object)
-$telemetryDifference = @(Compare-Object ($telemetryExpectedFiles | Sort-Object) $telemetryStageFiles)
-if ($telemetryDifference.Count -gt 0) {
-    throw "OfflineMatchTelemetry staged deployment does not match the release allowlist."
+else {
+    $telemetryExpectedFiles = @(
+        "OfflineMatchTelemetry.dll",
+        "OfflineMatchTelemetry.deps.json",
+        "OfflineMatchTelemetry.pdb",
+        "Microsoft.Data.Sqlite.dll",
+        "SQLitePCLRaw.batteries_v2.dll",
+        "SQLitePCLRaw.core.dll",
+        "SQLitePCLRaw.provider.e_sqlite3.dll",
+        "e_sqlite3.dll"
+    )
+    if (-not (Test-Path -LiteralPath $telemetryStage)) {
+        throw "OfflineMatchTelemetry staged deployment was not produced: $telemetryStage"
+    }
+    $telemetryStageFiles = @(Get-ChildItem -LiteralPath $telemetryStage -File | ForEach-Object Name | Sort-Object)
+    $telemetryDifference = @(Compare-Object ($telemetryExpectedFiles | Sort-Object) $telemetryStageFiles)
+    if ($telemetryDifference.Count -gt 0) {
+        throw "OfflineMatchTelemetry staged deployment does not match the release allowlist."
+    }
+    Copy-Tree $telemetryStage (Join-Path $payload "addons\counterstrikesharp\plugins\OfflineMatchTelemetry")
 }
-Copy-Tree $telemetryStage (Join-Path $payload "addons\counterstrikesharp\plugins\OfflineMatchTelemetry")
 Copy-Tree $pluginBuild (Join-Path $payload "addons\counterstrikesharp\plugins\PlayerKnifeCustomizer")
 $openRatingModelPath = Join-Path $repo "addons\counterstrikesharp\shared\MatchCore\open-rating-3.0-proxy-v1.json"
 $openRatingModel = Get-Content -LiteralPath $openRatingModelPath -Raw | ConvertFrom-Json
@@ -147,11 +239,13 @@ if (Test-Path -LiteralPath $legacyRatingModel) {
     Remove-Item -LiteralPath $legacyRatingModel -Force
 }
 
-$panelExe = Join-Path $repo "Panel\src-tauri\target\release\cs2-bot-improver-plus-panel.exe"
-Copy-Item -LiteralPath $panelExe -Destination (Join-Path $releaseRoot "LocalArena.exe") -Force
-$webViewLoader = Join-Path $repo "Panel\src-tauri\target\release\WebView2Loader.dll"
-if (Test-Path -LiteralPath $webViewLoader) {
-    Copy-Item -LiteralPath $webViewLoader -Destination (Join-Path $releaseRoot "WebView2Loader.dll") -Force
+if (-not $Linux) {
+    $panelExe = Join-Path $repo "Panel\src-tauri\target\release\cs2-bot-improver-plus-panel.exe"
+    Copy-Item -LiteralPath $panelExe -Destination (Join-Path $releaseRoot "LocalArena.exe") -Force
+    $webViewLoader = Join-Path $repo "Panel\src-tauri\target\release\WebView2Loader.dll"
+    if (Test-Path -LiteralPath $webViewLoader) {
+        Copy-Item -LiteralPath $webViewLoader -Destination (Join-Path $releaseRoot "WebView2Loader.dll") -Force
+    }
 }
 Copy-Item -LiteralPath (Join-Path $repo "README.md") -Destination (Join-Path $releaseRoot "README.md") -Force
 Copy-Item -LiteralPath (Join-Path $repo "README.zh-CN.md") -Destination (Join-Path $releaseRoot "README.zh-CN.md") -Force
@@ -217,7 +311,7 @@ $payloadManifest = [ordered]@{
 }
 $payloadManifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $payload "plus-payload-manifest.json") -Encoding utf8
 
-& (Join-Path $PSScriptRoot "verify-workspace.ps1") -PackageRoot $releaseRoot -ExpectedPackageVersion $displayVersion
+& (Join-Path $PSScriptRoot "verify-workspace.ps1") -PackageRoot $releaseRoot -ExpectedPackageVersion $displayVersion -Linux:$Linux
 if ($LASTEXITCODE -ne 0) { throw "Package verification failed." }
 
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
@@ -225,9 +319,10 @@ Get-ChildItem -LiteralPath $OutputDirectory -File -ErrorAction SilentlyContinue 
     Where-Object { $_.Name -match '^(?:CS2BotImproverPlus|LocalArena)-.*\.zip$|^latest\.json(\.sig)?$|^SHA256SUMS\.txt$' } |
     Remove-Item -Force
 
-$fullZip = Join-Path $OutputDirectory "LocalArena-$releaseTag-windows.zip"
+$fullZip = Join-Path $OutputDirectory "LocalArena-$releaseTag-$osSuffix.zip"
 Compress-Archive -Path $releaseRoot -DestinationPath $fullZip -CompressionLevel Optimal
 
+if (-not $Linux) {
 $panelStage = Join-Path $stage "panel-update"
 New-Item -ItemType Directory -Path $panelStage -Force | Out-Null
 Copy-Item -LiteralPath (Join-Path $releaseRoot "LocalArena.exe") -Destination $panelStage -Force
@@ -286,9 +381,13 @@ if ($env:CSBIP_UPDATE_SIGNING_KEY) {
         --public-key (Join-Path $PSScriptRoot "update-public-key.txt")
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $signaturePath)) { throw "Update signing failed." }
 }
+}
 
-$sumFiles = @($fullZip, $panelZip, $pluginZip, $latestPath)
-if (Test-Path -LiteralPath $signaturePath) { $sumFiles += $signaturePath }
+$sumFiles = @($fullZip)
+if (-not $Linux) {
+    $sumFiles += $panelZip, $pluginZip, $latestPath
+    if (Test-Path -LiteralPath $signaturePath) { $sumFiles += $signaturePath }
+}
 $sumLines = foreach ($file in $sumFiles) {
     "$((Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant())  $([IO.Path]::GetFileName($file))"
 }
@@ -296,5 +395,7 @@ $sums = Join-Path $OutputDirectory "SHA256SUMS.txt"
 Set-Content -LiteralPath $sums -Value $sumLines -Encoding ascii
 
 Write-Host "Package complete: $fullZip"
-Write-Host "Panel update: $panelZip"
-Write-Host "Plugin update: $pluginZip"
+if (-not $Linux) {
+    Write-Host "Panel update: $panelZip"
+    Write-Host "Plugin update: $pluginZip"
+}
