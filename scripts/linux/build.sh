@@ -6,10 +6,12 @@
 #   scripts/linux/build.sh              full suite
 #   scripts/linux/build.sh --only npm   run a single step (pwsh|npm|dotnet|cargo|verify)
 #
-# cargo test note: this suite runs on Linux, but a set of installer/runtime tests
-# assert Windows path semantics (safe_relative treats '\' as a separator) and can
-# only pass on Windows - CI runs them there. Those names are listed in
-# KNOWN_WINDOWS_ONLY below; any OTHER failure fails the gate.
+# cargo test note: this suite runs on Linux. Two classes of tests can only pass
+# on Windows: literal Windows-path fixtures (F:\... / \\?\ verbatim semantics)
+# and payload-fixture/model-verification cases that predate the 2026-10-08
+# cross-platform path fix. Baseline 2026-10-08: 7 failures (was 18 before the
+# safe_relative/upstream_root fixes; 11 flipped green, zero new failures).
+# Any OTHER failure fails the gate.
 set -uo pipefail
 cd "$(dirname "$0")/../.."
 
@@ -20,22 +22,11 @@ ONLY=""
 if [ "${1:-}" = "--only" ]; then ONLY="${2:-}"; fi
 
 KNOWN_WINDOWS_ONLY='
-installer::tests::distinguishes_clean_legacy_plus_upstream_mixed_and_managed_installs
-installer::tests::failed_restore_rolls_back_to_installed_state_and_record
-installer::tests::first_install_preserves_existing_manual_cosmetics
-installer::tests::install_repair_and_restore_preserve_originals_and_foreign_files
-installer::tests::interrupted_transaction_restores_files_and_previous_record_state
-installer::tests::legacy_plus_adoption_records_a_pre_migration_restore_baseline
 installer::tests::managed_upgrade_preserves_a_modified_legacy_rating_model
 installer::tests::managed_upgrade_replaces_the_unchanged_rating_plus_model_with_open_rating
 installer::tests::managed_upgrade_restores_a_pre_plus_file_at_the_superseded_model_path
-installer::tests::modified_preserve_config_is_healthy_and_repair_keeps_player_bytes
 installer::tests::open_rating_install_preserves_an_untracked_legacy_model
 installer::tests::pristine_restore_removes_suite_files_but_keeps_third_party_files
-installer::tests::rejects_parent_directory_payload_paths
-installer::tests::repair_restores_missing_preserve_config_from_current_mirror
-installer::tests::same_root_allows_modified_preserve_config_but_rejects_other_payload_changes
-online_update::tests::active_payload_switches_to_a_verified_payload
 runtime_state::tests::compares_process_to_selected_installation
 tests::demo_playback_removes_the_windows_verbatim_prefix_before_relativizing
 '

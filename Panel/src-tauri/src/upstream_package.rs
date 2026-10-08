@@ -163,7 +163,12 @@ fn merge_log(level: &str, event: &str, detail: &str) {
 }
 
 pub fn upstream_root() -> Result<PathBuf> {
-    Ok(online_update::update_root()?.join("upstream"))
+    // Create eagerly like update_root: on a machine that never downloaded, a
+    // bare read_dir below would surface ENOENT as a fake E1401 install error
+    // instead of the "download it first" gate.
+    let root = online_update::update_root()?.join("upstream");
+    fs::create_dir_all(&root).map_err(AppError::transaction_io)?;
+    Ok(root)
 }
 
 fn validate_tag(tag: &str) -> Result<()> {
@@ -1504,6 +1509,20 @@ mod tests {
             .iter()
             .find(|entry| entry.path == path)
             .unwrap_or_else(|| panic!("manifest has no entry for {path}"))
+    }
+
+    #[test]
+    fn fresh_upstream_cache_directory_is_empty_not_an_error() {
+        // A machine that never downloaded the upstream package must read an
+        // empty cache (E1301 gate) instead of failing with ENOENT (E1401).
+        let root = upstream_root().expect("upstream_root should create its directory");
+        assert!(root.is_dir());
+        assert!(cache_entries().expect("a missing cache dir must read as empty").is_empty());
+        assert!(
+            select_cached_upstream()
+                .expect("select must not error on a fresh cache")
+                .is_none()
+        );
     }
 
     #[test]
