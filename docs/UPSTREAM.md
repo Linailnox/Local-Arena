@@ -172,7 +172,10 @@ The machine-readable source of truth is `scripts/dependencies.json`.
   sha256 in `scripts/dependencies.json`) plus the four LA plugins, the two LA cfgs, and `libe_sqlite3.so`
   for OfflineMatchTelemetry. It ships the prepared `gameinfo.gi`/mode backups like the upstream Linux
   package, contains no Panel executable or `win64` payloads, and is asserted by
-  `verify-workspace.ps1 -Linux`. The Panel desktop app itself remains Windows-only.
+  `verify-workspace.ps1 -Linux`. The Panel desktop app builds and runs natively on
+  Linux from source (Steam root discovery, `steam` process launch, `xdg-open`, and
+  `cs2`/`cs2.exe` process detection are ported); prebuilt Panel packages remain
+  Windows/nsis-only.
 
 ## Synchronizing
 
