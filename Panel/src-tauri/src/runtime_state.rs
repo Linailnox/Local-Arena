@@ -26,12 +26,17 @@ fn path_matches(executable: &Path, csgo: &Path) -> bool {
         .starts_with(&root.to_string_lossy().to_ascii_lowercase())
 }
 
+// Native Linux CS2 runs as `cs2`; Proton/Wine keeps the Windows `cs2.exe` name.
+fn is_cs2_process_name(name: &std::ffi::OsStr) -> bool {
+    name.eq_ignore_ascii_case("cs2.exe") || name.eq_ignore_ascii_case("cs2")
+}
+
 pub fn inspect_cs2_process(selected: Option<&Path>) -> Cs2ProcessInfo {
     let mut system = System::new();
     system.refresh_processes(ProcessesToUpdate::All, true);
     let mut fallback: Option<(Pid, Option<&Path>)> = None;
     for (pid, process) in system.processes() {
-        if !process.name().eq_ignore_ascii_case("cs2.exe") {
+        if !is_cs2_process_name(process.name()) {
             continue;
         }
         let executable = process.exe();
@@ -66,6 +71,16 @@ pub fn blocks_target_write(process: &Cs2ProcessInfo) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn matches_cs2_process_names_cross_platform() {
+        use std::ffi::OsStr;
+        assert!(is_cs2_process_name(OsStr::new("cs2.exe")));
+        assert!(is_cs2_process_name(OsStr::new("CS2")));
+        assert!(is_cs2_process_name(OsStr::new("cs2")));
+        assert!(!is_cs2_process_name(OsStr::new("cs2.dmp")));
+        assert!(!is_cs2_process_name(OsStr::new("steam")));
+    }
 
     #[test]
     fn compares_process_to_selected_installation() {

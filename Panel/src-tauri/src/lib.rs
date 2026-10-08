@@ -690,7 +690,7 @@ fn ensure_target_not_running(root: &Path) -> Result<()> {
     if blocks_target_write(&process) {
         let detail = match (&process.executable, process.path_accessible) {
             (Some(path), _) => format!("Close CS2 before modifying this installation (PID {}, {path})", process.pid.unwrap_or_default()),
-            (_, false) => "A running cs2.exe could not be matched to an installation. Close CS2, then try again".to_string(),
+            (_, false) => "The running CS2 process could not be matched to an installation. Close CS2, then try again".to_string(),
             _ => "Close CS2 before modifying this installation".to_string(),
         };
         return Err(AppError::process(detail));
@@ -1212,28 +1212,47 @@ fn reconcile_launch_options() -> u32 {
 fn find_steam_executable() -> Result<PathBuf> {
     let mut system = System::new();
     system.refresh_processes(ProcessesToUpdate::All, true);
+    let wanted: &[&str] = if cfg!(windows) { &["steam.exe"] } else { &["steam"] };
     if let Some(path) = system
         .processes()
         .values()
-        .find(|process| process.name().eq_ignore_ascii_case("steam.exe"))
+        .find(|process| wanted.iter().any(|name| process.name().eq_ignore_ascii_case(name)))
         .and_then(|process| process.exe())
         .filter(|path| path.is_file())
     {
         return Ok(path.to_path_buf());
     }
 
-    let mut candidates = Vec::new();
-    for variable in ["ProgramFiles(x86)", "ProgramFiles"] {
-        if let Some(root) = std::env::var_os(variable) {
-            candidates.push(PathBuf::from(root).join("Steam/Steam.exe"));
+    #[cfg(windows)]
+    {
+        let mut candidates = Vec::new();
+        for variable in ["ProgramFiles(x86)", "ProgramFiles"] {
+            if let Some(root) = std::env::var_os(variable) {
+                candidates.push(PathBuf::from(root).join("Steam/Steam.exe"));
+            }
         }
-    }
-    candidates.push(PathBuf::from(r"C:\Program Files (x86)\Steam\Steam.exe"));
+        candidates.push(PathBuf::from(r"C:\Program Files (x86)\Steam\Steam.exe"));
 
-    candidates
-        .into_iter()
-        .find(|path| path.is_file())
-        .ok_or_else(|| AppError::launch("Steam.exe was not found. Start Steam, then try again"))
+        candidates
+            .into_iter()
+            .find(|path| path.is_file())
+            .ok_or_else(|| AppError::launch("Steam.exe was not found. Start Steam, then try again"))
+    }
+
+    #[cfg(not(windows))]
+    {
+        if let Some(paths) = std::env::var_os("PATH") {
+            for directory in std::env::split_paths(&paths) {
+                let candidate = directory.join("steam");
+                if candidate.is_file() {
+                    return Ok(candidate);
+                }
+            }
+        }
+        Err(AppError::launch(
+            "The Steam client was not found on PATH. Install Steam, then try again",
+        ))
+    }
 }
 
 fn launch_request(mode: LaunchMode) -> (Vec<&'static str>, String) {
@@ -1564,15 +1583,25 @@ fn demo_playback_argument(root: &Path, demo: &Path) -> String {
 fn open_demo_folder(app: AppHandle, csgo: String, demo_path: String) -> Result<()> {
     let root = csgo_path(&csgo)?;
     let (directory, demo) = managed_demo_location(&root, &demo_path)?;
-    let mut command = Command::new("explorer.exe");
-    if demo.is_file() {
-        command.arg(format!("/select,{}", demo.display()));
-    } else {
-        command.arg(&directory);
+    #[cfg(windows)]
+    {
+        let mut command = Command::new("explorer.exe");
+        if demo.is_file() {
+            command.arg(format!("/select,{}", demo.display()));
+        } else {
+            command.arg(&directory);
+        }
+        command
+            .spawn()
+            .map_err(|error| AppError::launch(format!("Cannot open the Demo directory: {error}")))?;
     }
-    command
-        .spawn()
-        .map_err(|error| AppError::launch(format!("Cannot open the Demo directory: {error}")))?;
+    #[cfg(not(windows))]
+    {
+        Command::new("xdg-open")
+            .arg(&directory)
+            .spawn()
+            .map_err(|error| AppError::launch(format!("Cannot open the Demo directory: {error}")))?;
+    }
     if let Ok(state) = local_state_root(&app) {
         logging::append(
             &state,
