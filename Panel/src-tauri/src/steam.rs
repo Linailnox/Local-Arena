@@ -240,8 +240,30 @@ pub(crate) fn client_log_files(names: &[&str]) -> Vec<PathBuf> {
     Vec::new()
 }
 
+// Non-Windows hosts have no registry; discover the standard Steam roots instead
+// ($STEAM_DIR override, native per-user installs, Flatpak sandbox data dir).
+// Unconditional so unit tests compile on every platform.
+#[cfg_attr(windows, allow(dead_code))]
+fn default_steam_roots(steam_dir: Option<PathBuf>, home: Option<PathBuf>) -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+    if let Some(dir) = steam_dir {
+        roots.push(dir);
+    }
+    if let Some(home) = home {
+        roots.push(home.join(".local/share/Steam"));
+        roots.push(home.join(".steam/steam"));
+        roots.push(home.join(".var/app/com.valvesoftware.Steam/data/Steam"));
+    }
+    roots
+}
+
 #[cfg(not(windows))]
-fn registry_steam_roots() -> Vec<PathBuf> { Vec::new() }
+fn registry_steam_roots() -> Vec<PathBuf> {
+    default_steam_roots(
+        std::env::var_os("STEAM_DIR").map(PathBuf::from),
+        std::env::var_os("HOME").map(PathBuf::from),
+    )
+}
 
 fn valid_csgo(path: &Path) -> bool {
     path.join("gameinfo.gi").is_file() && path.join("cfg").is_dir()
@@ -313,6 +335,23 @@ mod tests {
         collect_library_paths(&root, &mut paths);
         assert_eq!(paths.len(), 2);
         assert!(paths[1].to_string_lossy().contains("Steam 库"));
+    }
+
+    #[test]
+    fn default_steam_roots_honor_override_and_home() {
+        let roots = default_steam_roots(
+            Some(PathBuf::from("/custom/steam")),
+            Some(PathBuf::from("/home/user")),
+        );
+        assert_eq!(roots[0], PathBuf::from("/custom/steam"));
+        assert_eq!(roots.len(), 4);
+        assert!(roots.iter().any(|path| path.ends_with(".local/share/Steam")));
+        assert!(roots.iter().any(|path| path.ends_with(".steam/steam")));
+        assert!(roots
+            .iter()
+            .any(|path| path.ends_with(".var/app/com.valvesoftware.Steam/data/Steam")));
+        assert!(default_steam_roots(None, Some(PathBuf::from("/home/user"))).len() == 3);
+        assert!(default_steam_roots(None, None).is_empty());
     }
 
     #[test]

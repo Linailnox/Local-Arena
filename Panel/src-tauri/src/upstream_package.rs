@@ -12,6 +12,7 @@ use std::collections::{BTreeSet, VecDeque};
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+#[cfg(windows)]
 use std::process::Command;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -1289,6 +1290,14 @@ pub fn locate_relocated_panel_exe() -> Option<PathBuf> {
     names.into_iter().map(|name| exe_dir.join(name)).next()
 }
 
+#[cfg(not(windows))]
+pub fn launch_panel(_raw: &str) -> Result<()> {
+    Err(AppError::launch(
+        "The upstream Panel is a Windows executable and cannot be launched on Linux",
+    ))
+}
+
+#[cfg(windows)]
 pub fn launch_panel(raw: &str) -> Result<()> {
     let path = validate_upstream_panel_path(raw)?;
     let mut command = Command::new(&path);
