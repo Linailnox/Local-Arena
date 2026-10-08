@@ -167,6 +167,12 @@ The machine-readable source of truth is `scripts/dependencies.json`.
   duplicated `cfg` files were removed from the repository; RayTrace support was removed end to end.
 - Settings → Installation gained an upstream package management section (download, cache, offline ZIP import,
   installed-state display, page-triggered install and repair).
+- **Linux distribution (game side)**: `package.ps1 -Linux` assembles a self-contained manual-install zip
+  `LocalArena-<ver>-linux.zip` from the pinned `upstream.linuxAsset` (`CS2BotImprover_for_Linux.zip`,
+  sha256 in `scripts/dependencies.json`) plus the four LA plugins, the two LA cfgs, and `libe_sqlite3.so`
+  for OfflineMatchTelemetry. It ships the prepared `gameinfo.gi`/mode backups like the upstream Linux
+  package, contains no Panel executable or `win64` payloads, and is asserted by
+  `verify-workspace.ps1 -Linux`. The Panel desktop app itself remains Windows-only.
 
 ## Synchronizing
 
