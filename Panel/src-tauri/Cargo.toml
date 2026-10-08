@@ -35,3 +35,10 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 [target.'cfg(windows)'.dependencies]
 winreg = "0.55"
 windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem", "Win32_System_Threading"] }
+
+[features]
+# Without this feature tauri-macros treats any raw cargo build as dev mode and
+# loads build.devUrl (http://localhost:1420), which refuses connections unless
+# `npm run dev` happens to be running. Non-`tauri dev` runs must enable it:
+#   cargo build --features custom-protocol
+custom-protocol = ["tauri/custom-protocol"]
