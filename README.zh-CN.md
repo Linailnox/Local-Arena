@@ -75,7 +75,7 @@
 - 不要直接在压缩包里面运行面板
 - 正确的游戏目录末尾应为 `Counter-Strike Global Offensive\game\csgo`
 - 饰品预览和增强人机模式会使用 `-insecure`，不能进入官方匹配
-- Linux 版本和仅使用上游原版插件的安装方法请查看[上游项目](https://github.com/ed0ard/CS2-Bot-Improver)
+- Linux 版本与仅上游原版插件的安装请查看[上游项目](https://github.com/ed0ard/CS2-Bot-Improver)；使用 Local Arena 请参见[Linux 安装](#linux-安装手动)
 
 ## 四步完成首次安装
 
@@ -135,6 +135,17 @@ Local Arena 自身的包只有几 MB，约 73 MB 的上游运行时会在安装�
 <p align="center">
   <img src="./Panel/src/assets/guide/11-first-complete.jpg" alt="安装完成" width="100%">
 </p>
+
+## Linux 安装（手动）
+
+Linux 包 `LocalArena-vX.Y.Z.W-linux.zip` 为自包含完整包，采用与上游一致的手动安装流程；面板本身仍仅支持 Windows
+
+1. 下载并解压 Linux 包
+2. 打开 CS2 安装目录并进入 `game/csgo`
+3. 把解压出的全部文件拷入 `game/csgo`——包内已带预处理好的 `gameinfo.gi` 与 `backup/Online`、`backup/WithBots` 两份模式变体，无需手动修改 gameinfo
+4. 在 Steam 的 CS2 启动选项中添加 `-insecure`
+
+四个 Local Arena 独占插件（PlusMatchCoordinator、TeamLineupInjector、PlayerKnifeCustomizer、OfflineMatchTelemetry）及其配置均已包含；更新与修复通过解压新包覆盖旧安装完成
 
 ## 更新已有安装
 
