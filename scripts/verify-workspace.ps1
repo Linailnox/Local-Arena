@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [string]$PackageRoot,
-    [string]$ExpectedPackageVersion = "1.4.3.3"
+    [string]$ExpectedPackageVersion = "1.4.3.3",
+    [switch]$Linux
 )
 
 $ErrorActionPreference = "Stop"
@@ -431,6 +432,53 @@ if ($PackageRoot) {
         "README.zh-CN.md",
         "LICENSE"
     )
+    if ($Linux) {
+        $requiredPackageFiles = @(
+            "addons/metamod/bin/linuxsteamrt64/metamod.2.cs2.so",
+            "addons/metamod/bin/linuxsteamrt64/libserver.so",
+            "addons/metamod/counterstrikesharp.vdf",
+            "addons/counterstrikesharp/bin/linuxsteamrt64/counterstrikesharp.so",
+            "addons/counterstrikesharp/dotnet/dotnet",
+            "addons/BotHider/bin/linuxsteamrt64/BotHider.so",
+            "addons/BotController/bin/linuxsteamrt64/BotController.so",
+            "addons/BotVision/bin/linuxsteamrt64/BotVision.so",
+            "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/PlayerKnifeCustomizer.dll",
+            "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/sticker_ids.json",
+            "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/sticker_weapon_ids.json",
+            "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/player_cosmetic_catalog.json",
+            "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/player_gun_presets.json",
+            "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/player_knife_presets.json",
+            "addons/counterstrikesharp/plugins/PlusMatchCoordinator/PlusMatchCoordinator.dll",
+            "addons/counterstrikesharp/plugins/PlusMatchCoordinator/MatchCore.dll",
+            "addons/counterstrikesharp/plugins/PlusMatchCoordinator/match_catalog.json",
+            "addons/counterstrikesharp/plugins/PlusMatchCoordinator/open-rating-3.0-proxy-v1.json",
+            "addons/counterstrikesharp/plugins/PlusMatchCoordinator/profiles/Low/botprofile.db",
+            "addons/counterstrikesharp/plugins/PlusMatchCoordinator/profiles/Medium/botprofile.db",
+            "addons/counterstrikesharp/plugins/PlusMatchCoordinator/profiles/High/botprofile.db",
+            "addons/counterstrikesharp/plugins/TeamLineupInjector/TeamLineupInjector.dll",
+            "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/OfflineMatchTelemetry.dll",
+            "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/OfflineMatchTelemetry.deps.json",
+            "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/OfflineMatchTelemetry.pdb",
+            "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/Microsoft.Data.Sqlite.dll",
+            "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/SQLitePCLRaw.batteries_v2.dll",
+            "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/SQLitePCLRaw.core.dll",
+            "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/SQLitePCLRaw.provider.e_sqlite3.dll",
+            "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/libe_sqlite3.so",
+            "cfg/my_bot_ffa_config.cfg",
+            "cfg/my_bot_normal_config.cfg",
+            "gameinfo.gi",
+            "backup/Online/gameinfo.gi",
+            "backup/WithBots/gameinfo.gi",
+            "overrides/botprofile.vpk",
+            "overrides/Low/botprofile.vpk",
+            "overrides/Medium/botprofile.vpk",
+            "overrides/High/botprofile.vpk",
+            "plus-payload-manifest.json",
+            "README.md",
+            "README.zh-CN.md",
+            "LICENSE"
+        )
+    }
     foreach ($relative in $requiredPackageFiles) {
         Assert-File (Join-Path $package $relative) "package file $relative"
     }
@@ -464,6 +512,20 @@ if ($PackageRoot) {
         "cfg/bot_buy.cfg",
         "cfg/my_bot_rush_config.cfg"
     )
+    if ($Linux) {
+        $forbiddenInPackage = @(
+            "addons/metamod/bin/win64",
+            "addons/counterstrikesharp/bin/win64",
+            "addons/BotHider/bin/win64",
+            "addons/BotController/bin/win64",
+            "addons/BotVision/bin/win64",
+            "addons/RayTrace",
+            "addons/counterstrikesharp/plugins/RayTraceImpl",
+            "LocalArena.exe",
+            "dotnet.exe",
+            "e_sqlite3.dll"
+        )
+    }
     $packageFiles = @(Get-ChildItem -LiteralPath $package -Recurse -File | ForEach-Object {
         [IO.Path]::GetRelativePath($package, $_.FullName).Replace("\", "/")
     })
@@ -501,7 +563,14 @@ if ($PackageRoot) {
             ForEach-Object Name |
             Sort-Object
     )
-    if (@(Compare-Object $expectedTelemetryFiles $packagedTelemetryFiles).Count -gt 0) {
+    if ($Linux) {
+        $expectedLinuxTelemetry = @($expectedTelemetryFiles | Where-Object { $_ -ne "e_sqlite3.dll" }) + @("libe_sqlite3.so")
+        $packagedLinuxTelemetry = @($packagedTelemetryFiles | Where-Object { $_ -ne "e_sqlite3.dll" })
+        if (@(Compare-Object $expectedLinuxTelemetry $packagedLinuxTelemetry).Count -gt 0) {
+            Add-Failure "Packaged OfflineMatchTelemetry file set does not match the Linux allowlist."
+        }
+    }
+    elseif (@(Compare-Object $expectedTelemetryFiles $packagedTelemetryFiles).Count -gt 0) {
         Add-Failure "Packaged OfflineMatchTelemetry file set does not match the release allowlist."
     }
     $previewNotice = Join-Path $package "PREVIEW-NOTICE.txt"
@@ -519,7 +588,14 @@ if ($PackageRoot) {
         Add-Failure "Packaged Panel is not the current production Release build."
     }
     $packagedGameInfo = @(Get-ChildItem -LiteralPath $package -Recurse -Filter "gameinfo.gi" -File)
-    if ($packagedGameInfo.Count -gt 0) {
+    if ($Linux) {
+        foreach ($requiredGameInfo in @("gameinfo.gi", "backup/Online/gameinfo.gi", "backup/WithBots/gameinfo.gi")) {
+            if (-not (Test-Path -LiteralPath (Join-Path $package $requiredGameInfo) -PathType Leaf)) {
+                Add-Failure "Linux package must ship the prepared gameinfo: $requiredGameInfo"
+            }
+        }
+    }
+    elseif ($packagedGameInfo.Count -gt 0) {
         Add-Failure "Package must not contain stale gameinfo.gi files: $($packagedGameInfo.FullName -join ', ')"
     }
 

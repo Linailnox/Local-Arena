@@ -3,6 +3,11 @@
     "repository": "https://github.com/ed0ard/CS2-Bot-Improver",
     "baseCommit": "d9914454d8691b509bae4cd671a7a8bd9dcb174f",
     "sourceCommit": "d9914454d8691b509bae4cd671a7a8bd9dcb174f",
-    "release": "v1.4.5"
+    "release": "v1.4.5",
+    "linuxAsset": {
+      "name": "CS2BotImprover_for_Linux.zip",
+      "url": "https://github.com/ed0ard/CS2-Bot-Improver/releases/download/v1.4.5/CS2BotImprover_for_Linux.zip",
+      "sha256": "7aa916e328209b4ac65dc2647336c7aa301cb34d6ec07b53eacf1d350ef588e8"
+    }
   }
 }
