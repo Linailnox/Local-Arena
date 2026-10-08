@@ -10,7 +10,8 @@ param(
     [string]$RustupHome,
     [string]$NodeBin,
     [string]$Npm,
-    [switch]$SkipNpmInstall
+    [switch]$SkipNpmInstall,
+    [switch]$Linux
 )
 
 $ErrorActionPreference = "Stop"
@@ -79,8 +80,10 @@ if (-not $Rustc) { $Rustc = "rustc" }
 $onWindowsHost = [System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT
 $toolchainWasRequested = $PSBoundParameters.ContainsKey("RustToolchain")
 $DotNet = Resolve-ToolExecutable $DotNet "dotnet"
-$Cargo = Resolve-ToolExecutable $Cargo "cargo"
-$Rustc = Resolve-ToolExecutable $Rustc "rustc"
+if (-not $Linux) {
+    $Cargo = Resolve-ToolExecutable $Cargo "cargo"
+    $Rustc = Resolve-ToolExecutable $Rustc "rustc"
+}
 $manifest = Get-Content -LiteralPath (Join-Path $PSScriptRoot "dependencies.json") -Raw | ConvertFrom-Json
 
 function Invoke-Checked {
@@ -124,8 +127,10 @@ function Get-VerifiedAsset {
     return $path
 }
 
-$cargo = (Get-Command $Cargo -ErrorAction Stop).Source
-$rustc = (Get-Command $Rustc -ErrorAction Stop).Source
+if (-not $Linux) {
+    $cargo = (Get-Command $Cargo -ErrorAction Stop).Source
+    $rustc = (Get-Command $Rustc -ErrorAction Stop).Source
+}
 
 $npm = if ($Npm) { Resolve-ToolExecutable $Npm "npm" }
 else { Resolve-NpmTool }
@@ -160,25 +165,29 @@ try {
     $env:NUGET_HTTP_CACHE_PATH = Join-Path $cache "nuget\http"
     $env:NUGET_PACKAGES = Join-Path $cache "nuget\packages"
     $env:npm_config_cache = Join-Path $cache "npm"
-    $env:RUSTC = $rustc
-    if ($onWindowsHost -or $toolchainWasRequested) { $env:RUSTUP_TOOLCHAIN = $RustToolchain }
+    if (-not $Linux) {
+        $env:RUSTC = $rustc
+        if ($onWindowsHost -or $toolchainWasRequested) { $env:RUSTUP_TOOLCHAIN = $RustToolchain }
+    }
 
-    if (-not $LlvmBin) { $LlvmBin = Join-Path $cache "toolchains\llvm\bin" }
-    if (-not $XwinCache) { $XwinCache = Join-Path $cache "xwin" }
-    $clang = Resolve-PlatformTool $LlvmBin "clang-cl" "clang-cl"
-    $linker = Resolve-PlatformTool $LlvmBin "lld-link" "lld-link"
-    $resourceCompiler = Resolve-PlatformTool $LlvmBin "llvm-rc" "llvm-rc"
-    $cargoXwin = Resolve-PlatformTool (Join-Path $env:CARGO_HOME "bin") "cargo-xwin" "cargo-xwin"
+    if (-not $Linux) {
+        if (-not $LlvmBin) { $LlvmBin = Join-Path $cache "toolchains\llvm\bin" }
+        if (-not $XwinCache) { $XwinCache = Join-Path $cache "xwin" }
+        $clang = Resolve-PlatformTool $LlvmBin "clang-cl" "clang-cl"
+        $linker = Resolve-PlatformTool $LlvmBin "lld-link" "lld-link"
+        $resourceCompiler = Resolve-PlatformTool $LlvmBin "llvm-rc" "llvm-rc"
+        $cargoXwin = Resolve-PlatformTool (Join-Path $env:CARGO_HOME "bin") "cargo-xwin" "cargo-xwin"
 
-    $env:XWIN_CACHE_DIR = $XwinCache
-    $env:RC = $resourceCompiler
-    $rustTarget = "x86_64-pc-windows-msvc"
-    $targetDirectory = Join-Path $panel "src-tauri\target-msvc"
-    $env:CARGO_TARGET_DIR = $targetDirectory
-    $nodePath = if ($NodeBin) { (Resolve-Path -LiteralPath $NodeBin).Path } else { $null }
-    $toolPaths = @((Split-Path $cargo), (Split-Path $rustc), $LlvmBin, (Split-Path $clang), (Split-Path $cargoXwin), $nodePath) |
-        Where-Object { $_ } | Select-Object -Unique
-    $env:PATH = ($toolPaths -join [IO.Path]::PathSeparator) + [IO.Path]::PathSeparator + $env:PATH
+        $env:XWIN_CACHE_DIR = $XwinCache
+        $env:RC = $resourceCompiler
+        $rustTarget = "x86_64-pc-windows-msvc"
+        $targetDirectory = Join-Path $panel "src-tauri\target-msvc"
+        $env:CARGO_TARGET_DIR = $targetDirectory
+        $nodePath = if ($NodeBin) { (Resolve-Path -LiteralPath $NodeBin).Path } else { $null }
+        $toolPaths = @((Split-Path $cargo), (Split-Path $rustc), $LlvmBin, (Split-Path $clang), (Split-Path $cargoXwin), $nodePath) |
+            Where-Object { $_ } | Select-Object -Unique
+        $env:PATH = ($toolPaths -join [IO.Path]::PathSeparator) + [IO.Path]::PathSeparator + $env:PATH
+    }
 
     if (-not $SkipNpmInstall) {
         Invoke-Checked $npm @("ci") $panel
@@ -208,11 +217,9 @@ try {
         "-c", "Release"
     )
 
-    $tauriSource = Join-Path $panel "src-tauri"
-    Invoke-Checked $cargo @(
-        "xwin", "test", "--target", $rustTarget, "--locked", "--no-run",
-        "--target-dir", $targetDirectory
-    ) $tauriSource
+    if (-not $Linux) {
+        $tauriSource = Join-Path $panel "src-tauri"
+        Invoke-Checked $cargo @("xwin", "test", "--target", $rustTarget, "--locked", "--no-run", "--target-dir", $targetDirectory) $tauriSource
 
     $testRoot = Join-Path $targetDirectory "$rustTarget\debug\deps"
     # Cargo retains hash-named test executables from older source revisions.
@@ -260,6 +267,7 @@ try {
     $canonicalRelease = Join-Path $panel "src-tauri\target\release"
     New-Item -ItemType Directory -Path $canonicalRelease -Force | Out-Null
     Copy-Item -LiteralPath $builtExe -Destination (Join-Path $canonicalRelease "cs2-bot-improver-plus-panel.exe") -Force
+    }
 }
 finally {
     foreach ($name in $environmentNames) {
@@ -267,9 +275,14 @@ finally {
     }
 }
 
-$exe = Join-Path $panel "src-tauri\target\release\cs2-bot-improver-plus-panel.exe"
-if (-not (Test-Path -LiteralPath $exe)) {
-    throw "Expected Panel executable was not produced: $exe"
+if ($Linux) {
+    Write-Host "Build complete (Linux mode): npm + dotnet only, Panel executable skipped"
 }
+else {
+    $exe = Join-Path $panel "src-tauri\target\release\cs2-bot-improver-plus-panel.exe"
+    if (-not (Test-Path -LiteralPath $exe)) {
+        throw "Expected Panel executable was not produced: $exe"
+    }
 
-Write-Host "Build complete: $exe"
+    Write-Host "Build complete: $exe"
+}
