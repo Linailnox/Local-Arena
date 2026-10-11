@@ -5,6 +5,7 @@ import { useT, type I18nKey } from "../../i18n";
 import { useToast } from "../../components/Toast";
 import { api, toAppError, type InstallCheckReport, type InstallationSource, type MigrationKind, type UpstreamCacheInfo, type UpstreamInstalledState, type UpstreamProgress, type UpstreamReleaseInfo } from "../../lib/api";
 import { installAttemptDisabled, installBlockedByUpstream } from "../../lib/installGate";
+import Segmented from "../../components/Segmented";
 import { localizeInstallCheck } from "../../lib/installCheckLocalization";
 import Modal from "../../components/Modal";
 import { listenAppEvent, openDialog, openExternalPath, openExternalUrl, writeClipboard } from "../../lib/platform";
@@ -53,7 +54,7 @@ function upstreamSourceKey(source: "api" | "fallback" | "manual"): I18nKey {
 export default function InstallationPage() {
   const {
     csgoPath, installation, process, verifyInstallation, installPayload, repairPayload,
-    restorePayload, restorePristineCs2, exportDiagnostics, reportError,
+    restorePayload, restorePristineCs2, exportDiagnostics, reportError, config, updateConfig,
   } = useStore();
   const t = useT();
   const toast = useToast();
@@ -68,6 +69,7 @@ export default function InstallationPage() {
   const [progress, setProgress] = useState<UpstreamProgress | null>(null);
   const [upstreamWorking, setUpstreamWorking] = useState<string | null>(null);
   const [upstreamError, setUpstreamError] = useState<string | null>(null);
+  const [aria2Available, setAria2Available] = useState(false);
   const damaged = (installation?.missing.length ?? 0) + (installation?.corrupt.length ?? 0);
   const blocked = !!process?.running && (process.matches_selected || !process.path_accessible);
   const upstreamReady = !!releaseInfo?.cached;
@@ -105,6 +107,7 @@ export default function InstallationPage() {
 
   useEffect(() => {
     void refreshUpstream();
+    void api.upstreamAria2Available().then(setAria2Available).catch(() => setAria2Available(false));
     const unlisten = listenAppEvent<UpstreamProgress>("upstream://progress", (event) => {
       setProgress(event.payload);
       if (event.payload.stage === "done") {
@@ -294,6 +297,20 @@ export default function InstallationPage() {
               {cache.entries.map((entry) => t("upstream.cacheSize", { size: formatBytes(entry.size), tag: entry.tag })).join(" · ")}
             </p>
           )}
+          <div className="installation-actions">
+            <label className="upd-card__versions" style={{ alignItems: "center", gap: 8 }}>
+              <span>{t("upstream.downloader")}</span>
+              <Segmented<string>
+                value={config?.downloader === "aria2" ? "aria2" : "builtin"}
+                onChange={(value) => void updateConfig({ downloader: value })}
+                options={[
+                  { value: "builtin", label: t("upstream.downloaderBuiltin") },
+                  ...(aria2Available ? [{ value: "aria2", label: t("upstream.downloaderAria2") }] : []),
+                ]}
+              />
+            </label>
+          </div>
+          {!aria2Available && <p className="inst-diagnostics-scope">{t("upstream.downloaderAria2Missing")}</p>}
           <div className="installation-actions">
             <button disabled={!releaseInfo || !!upstreamWorking} onClick={checkUpstream}>
               <RefreshCw size={17} />{upstreamWorking === "check" ? t("upstream.checking") : t("upstream.check")}
