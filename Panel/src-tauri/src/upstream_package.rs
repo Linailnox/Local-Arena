@@ -584,19 +584,15 @@ pub fn aria2c_available() -> bool {
     find_aria2c().is_some()
 }
 
-/// Arguments for a multi-connection aria2c fetch into `<dir>/<part_name>`.
+/// Arguments for an aria2c fetch into `<dir>/<part_name>`. Performance knobs
+/// (connections, splits, retries, allocation) deliberately stay unset so the
+/// user's global aria2.conf ($XDG_CONFIG_HOME/aria2/aria2.conf) wins; only the
+/// flags the download pipeline itself depends on are pinned here.
 fn aria2c_arguments(url: &str, dir: &Path, part_name: &str) -> Vec<String> {
     vec![
-        "--file-allocation=none".into(),
-        "--console-log-level=warn".into(),
-        "--summary-interval=1".into(),
         "--auto-file-renaming=false".into(),
         "--allow-overwrite=true".into(),
-        "--max-connection-per-server=8".into(),
-        "--split=8".into(),
-        "--min-split-size=1M".into(),
-        "--max-tries=3".into(),
-        "--retry-wait=2".into(),
+        "--summary-interval=1".into(),
         format!("--dir={}", dir.display()),
         format!("--out={part_name}"),
         url.into(),
@@ -1673,18 +1669,37 @@ mod tests {
     }
 
     #[test]
-    fn aria2c_arguments_enable_multi_connection_fetch() {
+    fn aria2c_arguments_defer_to_global_config() {
         let args = aria2c_arguments(
             "https://example.invalid/x.zip",
             Path::new("/tmp/d"),
             "CS2BotImprover.zip.part",
         );
-        assert!(args.contains(&"--max-connection-per-server=8".to_string()));
-        assert!(args.contains(&"--split=8".to_string()));
-        assert!(args.contains(&"--min-split-size=1M".to_string()));
-        assert!(args.contains(&"--dir=/tmp/d".to_string()));
-        assert!(args.contains(&"--out=CS2BotImprover.zip.part".to_string()));
-        assert_eq!(args.last().unwrap(), "https://example.invalid/x.zip");
+        // Only pipeline-critical flags: the target must land at the exact .part
+        // path and progress must stream once per second for the event bridge.
+        assert_eq!(
+            args,
+            vec![
+                "--auto-file-renaming=false".to_string(),
+                "--allow-overwrite=true".to_string(),
+                "--summary-interval=1".to_string(),
+                "--dir=/tmp/d".to_string(),
+                "--out=CS2BotImprover.zip.part".to_string(),
+                "https://example.invalid/x.zip".to_string(),
+            ]
+        );
+        // Performance/retry preferences must stay unset so aria2.conf wins.
+        for absent in [
+            "--max-connection-per-server",
+            "--split",
+            "--min-split-size",
+            "--max-tries",
+            "--retry-wait",
+            "--file-allocation",
+            "--console-log-level",
+        ] {
+            assert!(!args.iter().any(|arg| arg.starts_with(absent)), "{absent} leaked");
+        }
     }
 
     #[test]
