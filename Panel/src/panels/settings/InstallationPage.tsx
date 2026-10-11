@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ArchiveRestore, CheckCircle2, CircleAlert, CircleX, ClipboardCheck, Copy, Download, FileCheck2, FolderOpen, PackageCheck, PlayCircle, RefreshCw, Stethoscope, Trash2, Wrench, X } from "lucide-react";
+import { ArchiveRestore, CheckCircle2, CircleAlert, CircleX, ClipboardCheck, Copy, Download, FileCheck2, FolderOpen, PlayCircle, RefreshCw, Stethoscope, Trash2, Wrench, X } from "lucide-react";
 import { useStore } from "../../state/store";
 import { useT, type I18nKey } from "../../i18n";
 import { useToast } from "../../components/Toast";
@@ -286,13 +286,26 @@ export default function InstallationPage() {
   return (
     <div className="installation-page">
       <section className={`inst-hero inst-hero--${tone}`}>
-        <div className="inst-hero__row">
         <span className="inst-hero__icon" aria-hidden="true"><FileCheck2 size={22} /></span>
         <div className="inst-hero__main">
           <small>{t("install.status")}</small>
           <strong>{installation?.installed ? t(SOURCE_KEYS[source]) : t("install.notInstalled")}</strong>
           <span className="inst-hero__path">{directory?.selected ?? t("set.noCsgo")}</span>
           {installation && <p>{t(SOURCE_DESC_KEYS[source])}</p>}
+          <div className="inst-hero__dir">
+            <StatusDot status={directory?.valid && directory.selected ? "green" : "off"} />
+            <button className="inst-hero__btn" onClick={browse} title={t("set.browse") as string}>
+              <FolderOpen size={13} />{t("set.browse")}
+            </button>
+            {alternatives.map((path) => (
+              <button className="inst-hero__btn inst-hero__btn--alt" key={path} onClick={() => chooseDirectory(path)} title={path}>
+                <code>{path}</code>
+              </button>
+            ))}
+          </div>
+          {!directory?.steam_found && (
+            <p className="inst-hero__note">{t("set.steamNotDetected")}</p>
+          )}
         </div>
         <div className="inst-hero__side">
           {installation?.installed && (
@@ -305,7 +318,26 @@ export default function InstallationPage() {
                 <small>{t("st.files")}</small>
                 <strong>{damaged ? t("install.damaged", { n: damaged }) : t("install.healthy", { n: installation.total })}</strong>
               </span>
+              {upstreamState && (
+                <div className="inst-hero__installed">
+                  <small>{upstreamState.upstream_tag} · {formatDate(upstreamState.upstream_installed_at)} · {t(upstreamSourceKey(upstreamState.upstream_source))}</small>
+                  <small>{t("upstream.laCol")} {upstreamState.la_version} · {formatDate(upstreamState.la_installed_at)}</small>
+                  {releaseInfo && (
+                    <small className="inst-hero__note">
+                      {upstreamUpToDate ? t("upstream.upToDate") : t("upstream.canUpdate", { tag: releaseInfo.release.tag })}
+                    </small>
+                  )}
+                  {upstreamState.upstream_panel_exe && (
+                    <button className="inst-hero__btn" disabled={!!working} onClick={launchUpstream} title={upstreamState.upstream_panel_exe}>
+                      <PlayCircle size={13} />{working === "launch" ? t("install.working") : t("upstream.launchPanel")}
+                    </button>
+                  )}
+                </div>
+              )}
             </>
+          )}
+          {!upstreamState && (
+            <p className="inst-hero__note">{t("upstream.notInstalled")}</p>
           )}
           {installation?.backup_path && (
             <button className="inst-hero__backup" onClick={() => open(installation.backup_path!)} title={installation.backup_path}>
@@ -313,62 +345,6 @@ export default function InstallationPage() {
               <span><small>{t("install.backup")}</small>{installation.backup_path}</span>
             </button>
           )}
-        </div>
-        </div>
-        <div className="inst-hero__extra">
-          <div className="inst-hero__extra-block">
-            <header><FolderOpen size={14} aria-hidden="true" /><strong>{t("set.directory")}</strong></header>
-            {!directory?.steam_found && (
-              <p className="inst-hero__note">{t("set.steamNotDetected")}</p>
-            )}
-            <div className="inst-hero__dir">
-              <StatusDot status={directory?.valid && directory.selected ? "green" : "off"} />
-              <code>{directory?.selected ?? t("set.noCsgo")}</code>
-              <button onClick={browse} title={t("set.browse") as string}>
-                <FolderOpen size={14} />{t("set.browse")}
-              </button>
-              {alternatives.map((path) => (
-                <button className="inst-hero__dir-alt" key={path} onClick={() => chooseDirectory(path)} title={path}>
-                  <code>{path}</code>
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="inst-hero__extra-block">
-            <header><PackageCheck size={14} aria-hidden="true" /><strong>{t("upstream.installed")}</strong></header>
-            {upstreamState ? (
-              <>
-                <div className="upd-card__versions">
-                  <span className="upd-ver">
-                    <small>{t("upstream.upstreamCol")}</small>
-                    <strong>{upstreamState.upstream_tag} · {formatDate(upstreamState.upstream_installed_at)}</strong>
-                  </span>
-                  <span className="upd-ver">
-                    <small>{t("upstream.source")}</small>
-                    <strong>{t(upstreamSourceKey(upstreamState.upstream_source))}</strong>
-                  </span>
-                  <span className="upd-ver upd-ver--size">
-                    <small>{t("upstream.laCol")}</small>
-                    <strong>{upstreamState.la_version} · {formatDate(upstreamState.la_installed_at)}</strong>
-                  </span>
-                </div>
-                <div className="inst-hero__installed">
-                  {releaseInfo && (
-                    <small className="inst-hero__note">
-                      {upstreamUpToDate ? t("upstream.upToDate") : t("upstream.canUpdate", { tag: releaseInfo.release.tag })}
-                    </small>
-                  )}
-                  {upstreamState.upstream_panel_exe && (
-                    <button disabled={!!working} onClick={launchUpstream} title={upstreamState.upstream_panel_exe}>
-                      <PlayCircle size={14} />{working === "launch" ? t("install.working") : t("upstream.launchPanel")}
-                    </button>
-                  )}
-                </div>
-              </>
-            ) : (
-              <p className="inst-hero__note">{t("upstream.notInstalled")}</p>
-            )}
-          </div>
         </div>
       </section>
 
