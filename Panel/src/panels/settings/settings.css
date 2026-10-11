@@ -194,7 +194,6 @@
 
 /* About */
 .about-page,
-.directory-page,
 .language-list {
   width: min(100%, 860px);
 }

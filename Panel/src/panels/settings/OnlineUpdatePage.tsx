@@ -16,7 +16,7 @@ function formatTime(value: number | null) {
   return value ? new Date(value * 1000).toLocaleString() : "--";
 }
 
-export default function OnlineUpdatePage() {
+export function OnlineUpdateSection() {
   const { csgoPath, process } = useStore();
   const t = useT();
   const [snapshot, setSnapshot] = useState<OnlineUpdateSnapshot | null>(null);
@@ -128,7 +128,12 @@ export default function OnlineUpdatePage() {
   };
 
   return (
-    <div className="online-update-page">
+    <section className="inst-group">
+      <header className="inst-group__head">
+        <Download size={17} aria-hidden="true" />
+        <span><strong>{t("set.updates")}</strong><small>{t("set.updatesDesc")}</small></span>
+      </header>
+      <div className="online-update-page">
       <div className="update-toolbar">
         <span><small>{t("update.lastChecked")}</small><strong>{formatTime(snapshot?.checked_at ?? null)}</strong></span>
         <div>
@@ -162,5 +167,6 @@ export default function OnlineUpdatePage() {
         {componentSection("plugin")}
       </div>
     </div>
+    </section>
   );
 }

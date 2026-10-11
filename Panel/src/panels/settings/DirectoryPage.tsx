@@ -4,7 +4,7 @@ import StatusDot from "../../components/StatusDot";
 import { openDialog } from "../../lib/platform";
 import { Check, FolderOpen } from "lucide-react";
 
-export default function DirectoryPage() {
+export function DirectorySection() {
   const { directory, chooseDirectory, reportError } = useStore();
   const t = useT();
   const candidates = directory?.candidates ?? [];
@@ -21,12 +21,12 @@ export default function DirectoryPage() {
   };
 
   return (
-    <div className="directory-page">
-      {!directory?.steam_found && (
-        <div className="dir-note">{t("set.steamNotDetected")}</div>
-      )}
-
-      <section className="directory-panel">
+    <section className="inst-group">
+      <header className="inst-group__head">
+        <FolderOpen size={17} aria-hidden="true" />
+        <span><strong>{t("set.directory")}</strong><small>{t("set.directoryDesc")}</small></span>
+      </header>
+      <div className="directory-panel">
         <div className="directory-current">
           <span className="directory-current__status" aria-hidden="true">
             <FolderOpen size={19} strokeWidth={1.9} />
@@ -55,7 +55,10 @@ export default function DirectoryPage() {
             ))}
           </div>
         )}
-      </section>
-    </div>
+      </div>
+      {!directory?.steam_found && (
+        <div className="dir-note">{t("set.steamNotDetected")}</div>
+      )}
+    </section>
   );
 }
