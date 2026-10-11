@@ -348,9 +348,22 @@ if ($Explode) {
         throw "-Explode needs the native Panel binary; build it first: cargo build --release --features custom-protocol --manifest-path Panel/src-tauri/Cargo.toml"
     }
     $bundleDir = Join-Path $OutputDirectory "LocalArena-$releaseTag-linux"
+    # The exploded folder doubles as the Panel's portable home: its .csbip holds
+    # runtime state (upstream cache, diagnostics, config). Rebuilding the bundle
+    # must refresh package content only, never wipe that state.
+    $stateBackup = "$bundleDir.csbip-preserve"
+    $hadState = Test-Path -LiteralPath (Join-Path $bundleDir ".csbip")
+    if ($hadState) {
+        if (Test-Path -LiteralPath $stateBackup) { Remove-Item -LiteralPath $stateBackup -Recurse -Force }
+        Move-Item -LiteralPath (Join-Path $bundleDir ".csbip") -Destination $stateBackup -Force
+    }
     if (Test-Path -LiteralPath $bundleDir) { Remove-Item -LiteralPath $bundleDir -Recurse -Force }
     Expand-Archive -LiteralPath $fullZip -DestinationPath $OutputDirectory -Force
     Copy-Item -LiteralPath $panelLinuxBinary -Destination (Join-Path $bundleDir "cs2-bot-improver-plus-panel") -Force
+    if ($hadState) {
+        Move-Item -LiteralPath $stateBackup -Destination (Join-Path $bundleDir ".csbip") -Force
+        Write-Host "Preserved .csbip runtime state across the rebuild."
+    }
     Write-Host "Ready-to-run bundle: $bundleDir"
 }
 
