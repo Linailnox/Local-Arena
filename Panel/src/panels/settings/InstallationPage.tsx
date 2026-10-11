@@ -3,10 +3,10 @@ import { ArchiveRestore, CheckCircle2, CircleAlert, CircleX, ClipboardCheck, Cop
 import { useStore } from "../../state/store";
 import { useT, type I18nKey } from "../../i18n";
 import { useToast } from "../../components/Toast";
+import StatusDot from "../../components/StatusDot";
 import { api, toAppError, type InstallCheckReport, type InstallationSource, type MigrationKind, type UpstreamCacheInfo, type UpstreamInstalledState, type UpstreamProgress, type UpstreamReleaseInfo } from "../../lib/api";
 import { installAttemptDisabled, installBlockedByUpstream } from "../../lib/installGate";
 import Segmented from "../../components/Segmented";
-import { DirectorySection } from "./DirectoryPage";
 import { OnlineUpdateSection } from "./OnlineUpdatePage";
 import { localizeInstallCheck } from "../../lib/installCheckLocalization";
 import Modal from "../../components/Modal";
@@ -55,8 +55,9 @@ function upstreamSourceKey(source: "api" | "fallback" | "manual"): I18nKey {
 
 export default function InstallationPage() {
   const {
-    csgoPath, installation, process, verifyInstallation, installPayload, repairPayload,
-    restorePayload, restorePristineCs2, exportDiagnostics, reportError, config, updateConfig,
+    csgoPath, installation, process, directory, chooseDirectory, verifyInstallation, installPayload,
+    repairPayload, restorePayload, restorePristineCs2, exportDiagnostics, reportError, config,
+    updateConfig,
   } = useStore();
   const t = useT();
   const toast = useToast();
@@ -80,6 +81,17 @@ export default function InstallationPage() {
     ? Math.min(100, Math.round((progress.downloaded_bytes / progress.total_bytes) * 100))
     : 0;
   const upstreamUpToDate = !!upstreamState && !!releaseInfo && upstreamState.upstream_tag === releaseInfo.release.tag;
+  const directoryCandidates = directory?.candidates ?? [];
+  const alternatives = directoryCandidates.filter((path) => path !== directory?.selected);
+
+  const browse = async () => {
+    try {
+      const picked = await openDialog({ directory: true, title: "Select game/csgo folder" });
+      if (typeof picked === "string") await chooseDirectory(picked);
+    } catch (e) {
+      reportError(e);
+    }
+  };
 
   const source = installation?.source ?? "clean";
   const tone: HeroTone = !installation?.installed
@@ -274,11 +286,12 @@ export default function InstallationPage() {
   return (
     <div className="installation-page">
       <section className={`inst-hero inst-hero--${tone}`}>
+        <div className="inst-hero__row">
         <span className="inst-hero__icon" aria-hidden="true"><FileCheck2 size={22} /></span>
         <div className="inst-hero__main">
           <small>{t("install.status")}</small>
           <strong>{installation?.installed ? t(SOURCE_KEYS[source]) : t("install.notInstalled")}</strong>
-          <span className="inst-hero__path">{csgoPath ?? t("set.noCsgo")}</span>
+          <span className="inst-hero__path">{directory?.selected ?? t("set.noCsgo")}</span>
           {installation && <p>{t(SOURCE_DESC_KEYS[source])}</p>}
         </div>
         <div className="inst-hero__side">
@@ -301,9 +314,63 @@ export default function InstallationPage() {
             </button>
           )}
         </div>
+        </div>
+        <div className="inst-hero__extra">
+          <div className="inst-hero__extra-block">
+            <header><FolderOpen size={14} aria-hidden="true" /><strong>{t("set.directory")}</strong></header>
+            {!directory?.steam_found && (
+              <p className="inst-hero__note">{t("set.steamNotDetected")}</p>
+            )}
+            <div className="inst-hero__dir">
+              <StatusDot status={directory?.valid && directory.selected ? "green" : "off"} />
+              <code>{directory?.selected ?? t("set.noCsgo")}</code>
+              <button onClick={browse} title={t("set.browse") as string}>
+                <FolderOpen size={14} />{t("set.browse")}
+              </button>
+              {alternatives.map((path) => (
+                <button className="inst-hero__dir-alt" key={path} onClick={() => chooseDirectory(path)} title={path}>
+                  <code>{path}</code>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="inst-hero__extra-block">
+            <header><PackageCheck size={14} aria-hidden="true" /><strong>{t("upstream.installed")}</strong></header>
+            {upstreamState ? (
+              <>
+                <div className="upd-card__versions">
+                  <span className="upd-ver">
+                    <small>{t("upstream.upstreamCol")}</small>
+                    <strong>{upstreamState.upstream_tag} · {formatDate(upstreamState.upstream_installed_at)}</strong>
+                  </span>
+                  <span className="upd-ver">
+                    <small>{t("upstream.source")}</small>
+                    <strong>{t(upstreamSourceKey(upstreamState.upstream_source))}</strong>
+                  </span>
+                  <span className="upd-ver upd-ver--size">
+                    <small>{t("upstream.laCol")}</small>
+                    <strong>{upstreamState.la_version} · {formatDate(upstreamState.la_installed_at)}</strong>
+                  </span>
+                </div>
+                <div className="inst-hero__installed">
+                  {releaseInfo && (
+                    <small className="inst-hero__note">
+                      {upstreamUpToDate ? t("upstream.upToDate") : t("upstream.canUpdate", { tag: releaseInfo.release.tag })}
+                    </small>
+                  )}
+                  {upstreamState.upstream_panel_exe && (
+                    <button disabled={!!working} onClick={launchUpstream} title={upstreamState.upstream_panel_exe}>
+                      <PlayCircle size={14} />{working === "launch" ? t("install.working") : t("upstream.launchPanel")}
+                    </button>
+                  )}
+                </div>
+              </>
+            ) : (
+              <p className="inst-hero__note">{t("upstream.notInstalled")}</p>
+            )}
+          </div>
+        </div>
       </section>
-
-      <DirectorySection />
 
       <div className="inst-groups inst-groups--pair">
       <OnlineUpdateSection />
@@ -379,45 +446,6 @@ export default function InstallationPage() {
           {upstreamError && <div className="update-error">{upstreamError}</div>}
         </section>
       </div>
-
-        <section className="inst-group">
-          <header className="inst-group__head">
-            <PackageCheck size={17} aria-hidden="true" />
-            <span><strong>{t("upstream.installed")}</strong><small>{t("upstream.installedDesc")}</small></span>
-          </header>
-          {upstreamState ? (
-            <>
-              <div className="upd-card__versions">
-                <span className="upd-ver">
-                  <small>{t("upstream.upstreamCol")}</small>
-                  <strong>{upstreamState.upstream_tag} · {formatDate(upstreamState.upstream_installed_at)}</strong>
-                </span>
-                <span className="upd-ver">
-                  <small>{t("upstream.source")}</small>
-                  <strong>{t(upstreamSourceKey(upstreamState.upstream_source))}</strong>
-                </span>
-                <span className="upd-ver upd-ver--size">
-                  <small>{t("upstream.laCol")}</small>
-                  <strong>{upstreamState.la_version} · {formatDate(upstreamState.la_installed_at)}</strong>
-                </span>
-              </div>
-              {releaseInfo && (
-                <p className="inst-diagnostics-scope">
-                  {upstreamUpToDate ? t("upstream.upToDate") : t("upstream.canUpdate", { tag: releaseInfo.release.tag })}
-                </p>
-              )}
-              {upstreamState.upstream_panel_exe && (
-                <div className="installation-actions">
-                  <button disabled={!!working} onClick={launchUpstream} title={upstreamState.upstream_panel_exe}>
-                    <PlayCircle size={17} />{working === "launch" ? t("install.working") : t("upstream.launchPanel")}
-                  </button>
-                </div>
-              )}
-            </>
-          ) : (
-            <p className="inst-group__empty">{t("upstream.notInstalled")}</p>
-          )}
-        </section>
 
       <div className="inst-groups">
         <section className="inst-group">
