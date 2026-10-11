@@ -10,6 +10,7 @@ param(
     [string]$ReleaseVersion = "1.4.3.3",
     [string]$MinimumPanelVersion = "1.4.2.4",
     [switch]$Linux,
+    [switch]$Explode,
     [switch]$SkipBuild,
     [switch]$SkipNpmInstall
 )
@@ -334,6 +335,23 @@ if ($Linux) {
     else {
         Write-Host "Panel Linux binary skipped (not built): cargo build --release --features custom-protocol --manifest-path Panel/src-tauri/Cargo.toml"
     }
+}
+
+if ($Explode) {
+    # Produce a ready-to-run folder: the package zip extracted with the native
+    # Panel binary placed beside addons/cfg/overrides, so the app can start
+    # against that folder directly (its .csbip is created on first run).
+    if (-not $Linux) {
+        throw "-Explode requires -Linux (the Windows package already embeds the Panel executable)."
+    }
+    if (-not $panelLinuxBinary) {
+        throw "-Explode needs the native Panel binary; build it first: cargo build --release --features custom-protocol --manifest-path Panel/src-tauri/Cargo.toml"
+    }
+    $bundleDir = Join-Path $OutputDirectory "LocalArena-$releaseTag-linux"
+    if (Test-Path -LiteralPath $bundleDir) { Remove-Item -LiteralPath $bundleDir -Recurse -Force }
+    Expand-Archive -LiteralPath $fullZip -DestinationPath $OutputDirectory -Force
+    Copy-Item -LiteralPath $panelLinuxBinary -Destination (Join-Path $bundleDir "cs2-bot-improver-plus-panel") -Force
+    Write-Host "Ready-to-run bundle: $bundleDir"
 }
 
 if (-not $Linux) {
