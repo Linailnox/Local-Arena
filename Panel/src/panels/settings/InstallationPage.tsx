@@ -273,8 +273,39 @@ export default function InstallationPage() {
 
   return (
     <div className="installation-page">
-      <div className="inst-groups">
+      <section className={`inst-hero inst-hero--${tone}`}>
+        <span className="inst-hero__icon" aria-hidden="true"><FileCheck2 size={22} /></span>
+        <div className="inst-hero__main">
+          <small>{t("install.status")}</small>
+          <strong>{installation?.installed ? t(SOURCE_KEYS[source]) : t("install.notInstalled")}</strong>
+          <span className="inst-hero__path">{csgoPath ?? t("set.noCsgo")}</span>
+          {installation && <p>{t(SOURCE_DESC_KEYS[source])}</p>}
+        </div>
+        <div className="inst-hero__side">
+          {installation?.installed && (
+            <>
+              <span className="inst-hero__fact">
+                <small>{t("install.version")}</small>
+                <strong>{installation.package_version}</strong>
+              </span>
+              <span className={`inst-hero__fact ${damaged ? "is-warning" : "is-healthy"}`}>
+                <small>{t("st.files")}</small>
+                <strong>{damaged ? t("install.damaged", { n: damaged }) : t("install.healthy", { n: installation.total })}</strong>
+              </span>
+            </>
+          )}
+          {installation?.backup_path && (
+            <button className="inst-hero__backup" onClick={() => open(installation.backup_path!)} title={installation.backup_path}>
+              <FolderOpen size={14} />
+              <span><small>{t("install.backup")}</small>{installation.backup_path}</span>
+            </button>
+          )}
+        </div>
+      </section>
+
       <DirectorySection />
+
+      <div className="inst-groups inst-groups--pair">
       <OnlineUpdateSection />
       <section className="inst-group">
           <header className="inst-group__head">
@@ -347,6 +378,7 @@ export default function InstallationPage() {
           {downloading && <p className="inst-diagnostics-scope">{t("upstream.resume")}</p>}
           {upstreamError && <div className="update-error">{upstreamError}</div>}
         </section>
+      </div>
 
         <section className="inst-group">
           <header className="inst-group__head">
@@ -386,37 +418,6 @@ export default function InstallationPage() {
             <p className="inst-group__empty">{t("upstream.notInstalled")}</p>
           )}
         </section>
-      </div>
-
-      <section className={`inst-hero inst-hero--${tone}`}>
-        <span className="inst-hero__icon" aria-hidden="true"><FileCheck2 size={22} /></span>
-        <div className="inst-hero__main">
-          <small>{t("install.status")}</small>
-          <strong>{installation?.installed ? t(SOURCE_KEYS[source]) : t("install.notInstalled")}</strong>
-          <span className="inst-hero__path">{csgoPath ?? t("set.noCsgo")}</span>
-          {installation && <p>{t(SOURCE_DESC_KEYS[source])}</p>}
-        </div>
-        <div className="inst-hero__side">
-          {installation?.installed && (
-            <>
-              <span className="inst-hero__fact">
-                <small>{t("install.version")}</small>
-                <strong>{installation.package_version}</strong>
-              </span>
-              <span className={`inst-hero__fact ${damaged ? "is-warning" : "is-healthy"}`}>
-                <small>{t("st.files")}</small>
-                <strong>{damaged ? t("install.damaged", { n: damaged }) : t("install.healthy", { n: installation.total })}</strong>
-              </span>
-            </>
-          )}
-          {installation?.backup_path && (
-            <button className="inst-hero__backup" onClick={() => open(installation.backup_path!)} title={installation.backup_path}>
-              <FolderOpen size={14} />
-              <span><small>{t("install.backup")}</small>{installation.backup_path}</span>
-            </button>
-          )}
-        </div>
-      </section>
 
       <div className="inst-groups">
         <section className="inst-group">
