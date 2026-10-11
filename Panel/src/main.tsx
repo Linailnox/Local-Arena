@@ -26,6 +26,8 @@ const SCREEN_FILL = 0.88;
 const TASKBAR_RESERVE = 48;
 const WORKSHOP_BROWSER_PREVIEW = import.meta.env.DEV
   && new URLSearchParams(window.location.search).get("workshop-preview") === "1";
+const SETTINGS_PREVIEW = import.meta.env.DEV
+  && new URLSearchParams(window.location.search).get("settings-preview") === "1";
 
 // The window is created hidden (visible:false). We size + centre it while still
 // hidden, then add the `app-ready` class (kicks off the liquid entrance) and
@@ -100,6 +102,13 @@ async function bootstrap() {
     const { default: WorkshopBrowserPreview } = await import("./dev/WorkshopBrowserPreview");
     ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
       <React.StrictMode><WorkshopBrowserPreview /></React.StrictMode>
+    );
+    return;
+  }
+  if (SETTINGS_PREVIEW) {
+    const { default: SettingsPreview } = await import("./dev/SettingsPreview");
+    ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+      <React.StrictMode><SettingsPreview /></React.StrictMode>
     );
     return;
   }
