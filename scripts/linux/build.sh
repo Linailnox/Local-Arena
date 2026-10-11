@@ -56,7 +56,7 @@ need() {
 
 find_pwsh() {
   if [ -n "${PWSH:-}" ] && [ -x "$PWSH" ]; then echo "$PWSH"; return 0; fi
-  for c in /tmp/opencode/pwsh/pwsh pwsh; do
+  for c in pwsh /tmp/opencode/pwsh/pwsh; do
     if command -v "$c" >/dev/null 2>&1 || [ -x "$c" ]; then echo "$c"; return 0; fi
   done
   return 1
@@ -95,7 +95,7 @@ EOF
 }
 
 run_pwsh_parse() {
-  local p; p=$(find_pwsh) || { echo "pwsh not found — rebuild: extract powershell-*-linux-x64.tar.gz to /tmp/opencode/pwsh"; return 1; }
+  local p; p=$(find_pwsh) || { echo "pwsh not found — install PowerShell 7 or set PWSH=path/to/pwsh"; return 1; }
   "$p" -NoProfile -Command 'foreach ($f in "scripts/package.ps1","scripts/build.ps1","scripts/verify-workspace.ps1") { $t = Get-Content $f -Raw; [scriptblock]::Create($t) | Out-Null; Write-Host "OK $f" }'
 }
 

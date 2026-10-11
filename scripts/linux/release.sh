@@ -29,7 +29,7 @@ miss() { echo "  MISS  $1${2:+ — $2}"; MISSING=1; }
 
 find_pwsh() {
   if [ -n "${PWSH:-}" ] && [ -x "$PWSH" ]; then echo "$PWSH"; return 0; fi
-  for c in /tmp/opencode/pwsh/pwsh pwsh; do
+  for c in pwsh /tmp/opencode/pwsh/pwsh; do
     if command -v "$c" >/dev/null 2>&1 || [ -x "$c" ]; then echo "$c"; return 0; fi
   done
   return 1
@@ -54,7 +54,7 @@ find_tool() {
 }
 
 echo "=== release toolchain check ==="
-PWSH_BIN=$(find_pwsh) && ok "pwsh: $PWSH_BIN" || miss "pwsh" "extract powershell-*-linux-x64.tar.gz to /tmp/opencode/pwsh"
+PWSH_BIN=$(find_pwsh) && ok "pwsh: $PWSH_BIN" || miss "pwsh" "install PowerShell 7 (system package) or set PWSH=path/to/pwsh"
 DOTNET_BIN=$(find_dotnet) && ok "dotnet: $DOTNET_BIN ($($DOTNET_BIN --list-sdks | tail -1))" || miss "dotnet" "install SDK 10 via dot.net/v1/dotnet-install.sh"
 command -v cargo  >/dev/null 2>&1 && ok "cargo: $(cargo --version)" || miss "cargo"
 command -v rustc  >/dev/null 2>&1 && ok "rustc: $(rustc --version)" || miss "rustc"
