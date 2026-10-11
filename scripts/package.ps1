@@ -322,6 +322,20 @@ Get-ChildItem -LiteralPath $OutputDirectory -File -ErrorAction SilentlyContinue 
 $fullZip = Join-Path $OutputDirectory "LocalArena-$releaseTag-$osSuffix.zip"
 Compress-Archive -Path $releaseRoot -DestinationPath $fullZip -CompressionLevel Optimal
 
+$panelLinuxBinary = $null
+if ($Linux) {
+    # Ship the natively built Linux Panel beside the package when it exists; -Linux
+    # itself never runs cargo, so a missing binary is a skip, not an error.
+    $candidate = Join-Path $repo "Panel\src-tauri\target\release\cs2-bot-improver-plus-panel"
+    if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+        $panelLinuxBinary = Join-Path $OutputDirectory "cs2-bot-improver-plus-panel"
+        Copy-Item -LiteralPath $candidate -Destination $panelLinuxBinary -Force
+    }
+    else {
+        Write-Host "Panel Linux binary skipped (not built): cargo build --release --features custom-protocol --manifest-path Panel/src-tauri/Cargo.toml"
+    }
+}
+
 if (-not $Linux) {
 $panelStage = Join-Path $stage "panel-update"
 New-Item -ItemType Directory -Path $panelStage -Force | Out-Null
@@ -388,6 +402,7 @@ if (-not $Linux) {
     $sumFiles += $panelZip, $pluginZip, $latestPath
     if (Test-Path -LiteralPath $signaturePath) { $sumFiles += $signaturePath }
 }
+if ($panelLinuxBinary) { $sumFiles += $panelLinuxBinary }
 $sumLines = foreach ($file in $sumFiles) {
     "$((Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant())  $([IO.Path]::GetFileName($file))"
 }
@@ -395,6 +410,9 @@ $sums = Join-Path $OutputDirectory "SHA256SUMS.txt"
 Set-Content -LiteralPath $sums -Value $sumLines -Encoding ascii
 
 Write-Host "Package complete: $fullZip"
+if ($panelLinuxBinary) {
+    Write-Host "Panel Linux binary: $panelLinuxBinary"
+}
 if (-not $Linux) {
     Write-Host "Panel update: $panelZip"
     Write-Host "Plugin update: $pluginZip"
