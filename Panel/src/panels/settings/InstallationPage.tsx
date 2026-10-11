@@ -6,6 +6,8 @@ import { useToast } from "../../components/Toast";
 import { api, toAppError, type InstallCheckReport, type InstallationSource, type MigrationKind, type UpstreamCacheInfo, type UpstreamInstalledState, type UpstreamProgress, type UpstreamReleaseInfo } from "../../lib/api";
 import { installAttemptDisabled, installBlockedByUpstream } from "../../lib/installGate";
 import Segmented from "../../components/Segmented";
+import { DirectorySection } from "./DirectoryPage";
+import { OnlineUpdateSection } from "./OnlineUpdatePage";
 import { localizeInstallCheck } from "../../lib/installCheckLocalization";
 import Modal from "../../components/Modal";
 import { listenAppEvent, openDialog, openExternalPath, openExternalUrl, writeClipboard } from "../../lib/platform";
@@ -272,7 +274,9 @@ export default function InstallationPage() {
   return (
     <div className="installation-page">
       <div className="inst-groups">
-        <section className="inst-group">
+      <DirectorySection />
+      <OnlineUpdateSection />
+      <section className="inst-group">
           <header className="inst-group__head">
             <Download size={17} aria-hidden="true" />
             <span><strong>{t("upstream.title")}</strong><small>{t("upstream.titleDesc")}</small></span>
