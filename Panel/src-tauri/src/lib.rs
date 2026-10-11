@@ -116,6 +116,8 @@ struct AppConfig {
     #[serde(default)]
     first_run_step: Option<String>,
     #[serde(default)]
+    downloader: Option<String>,
+    #[serde(default)]
     welcome_story_prompt_presented: bool,
     #[serde(default)]
     cosmetics_enabled_before_online: Option<bool>,
@@ -156,6 +158,7 @@ impl Default for AppConfig {
             csgo_path: None,
             first_run_done: false,
             first_run_step: Some("language".into()),
+            downloader: None,
             welcome_story_prompt_presented: false,
             cosmetics_enabled_before_online: None,
             cosmetics_enabled_before_preview: None,
@@ -3393,10 +3396,18 @@ fn upstream_release_info() -> Result<upstream_package::UpstreamReleaseInfo> {
 async fn upstream_download(app: AppHandle, tag: String) -> Result<()> {
     run_installation_task("Upstream download", move || {
         let _busy = online_update::OperationGuard::acquire()?;
-        upstream_package::download_by_tag(&app, &tag)?;
+        let downloader = upstream_package::effective_downloader(
+            read_config(&app)?.downloader.as_deref(),
+        );
+        upstream_package::download_by_tag(&app, &tag, downloader)?;
         Ok(())
     })
     .await
+}
+
+#[tauri::command]
+fn upstream_aria2_available() -> bool {
+    upstream_package::aria2c_available()
 }
 
 #[tauri::command]
@@ -4518,6 +4529,7 @@ pub fn run() {
             record_panel_error, get_update_snapshot, check_online_updates,
             install_panel_update, install_plugin_update, install_all_updates, cancel_update,
             upstream_release_info, upstream_download, upstream_cancel,
+            upstream_aria2_available,
             upstream_cache_info, upstream_cache_clear, upstream_import_local,
             upstream_installed_state, launch_upstream_panel,
             get_match_catalog, prepare_and_launch_match, finish_active_match, get_active_match, list_match_history,

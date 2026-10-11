@@ -12,8 +12,7 @@ use std::collections::{BTreeSet, VecDeque};
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-#[cfg(windows)]
-use std::process::Command;
+use std::process::{Child, Command, Stdio};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter};
@@ -556,7 +555,148 @@ fn release_digest_for(tag: &str) -> Option<String> {
 
 /// Downloads the latest release into the cache (§6.1.2). `tag` must be the
 /// latest tag (or `"latest"`); `url` is the asset or fallback URL.
-pub fn download_start(app: &AppHandle, tag: &str, url: &str) -> Result<()> {
+/// Config `downloader` values; anything else (or missing) falls back to builtin.
+pub const DOWNLOADER_BUILTIN: &str = "builtin";
+pub const DOWNLOADER_ARIA2: &str = "aria2";
+
+pub(crate) fn effective_downloader(configured: Option<&str>) -> &'static str {
+    if configured == Some(DOWNLOADER_ARIA2) {
+        DOWNLOADER_ARIA2
+    } else {
+        DOWNLOADER_BUILTIN
+    }
+}
+
+fn find_aria2c() -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    for directory in std::env::split_paths(&path) {
+        for name in ["aria2c", "aria2c.exe"] {
+            let candidate = directory.join(name);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+    None
+}
+
+pub fn aria2c_available() -> bool {
+    find_aria2c().is_some()
+}
+
+/// Arguments for a multi-connection aria2c fetch into `<dir>/<part_name>`.
+fn aria2c_arguments(url: &str, dir: &Path, part_name: &str) -> Vec<String> {
+    vec![
+        "--file-allocation=none".into(),
+        "--console-log-level=warn".into(),
+        "--summary-interval=1".into(),
+        "--auto-file-renaming=false".into(),
+        "--allow-overwrite=true".into(),
+        "--max-connection-per-server=8".into(),
+        "--split=8".into(),
+        "--min-split-size=1M".into(),
+        "--max-tries=3".into(),
+        "--retry-wait=2".into(),
+        format!("--dir={}", dir.display()),
+        format!("--out={part_name}"),
+        url.into(),
+    ]
+}
+
+fn parse_aria2_size(text: &str) -> Option<u64> {
+    let text = text.trim();
+    let (value, unit) = text.split_at(text.find(|c: char| c.is_ascii_alphabetic())?);
+    let value: f64 = value.parse().ok()?;
+    let multiplier = match unit {
+        "B" => 1.0,
+        "KiB" => 1024.0,
+        "MiB" => 1024.0 * 1024.0,
+        "GiB" => 1024.0 * 1024.0 * 1024.0,
+        "TiB" => 1024.0 * 1024.0 * 1024.0 * 1024.0,
+        _ => return None,
+    };
+    Some((value * multiplier) as u64)
+}
+
+/// Parse an aria2c summary line such as
+/// `[#8c1fa0 10MiB/73MiB(14%) CN:8 DL:2.3MiB ETA:27s]` into
+/// `(downloaded_bytes, total_bytes, speed_bps)`. Returns None for every other
+/// line shape (banner, completion notice, garbage).
+fn parse_aria2_summary(line: &str) -> Option<(u64, u64, u64)> {
+    let line = line.trim();
+    let body = line.strip_prefix('[')?.strip_suffix(']')?;
+    let mut downloaded = None;
+    let mut total = None;
+    let mut speed = 0_u64;
+    for token in body.split_whitespace() {
+        if let Some((done_text, rest)) = token.split_once('/') {
+            if let Some((total_text, _paren)) = rest.split_once('(') {
+                downloaded = parse_aria2_size(done_text);
+                total = parse_aria2_size(total_text);
+            }
+        } else if let Some(value) = token.strip_prefix("DL:") {
+            speed = parse_aria2_size(value).unwrap_or(0);
+        }
+    }
+    Some((downloaded?, total?, speed))
+}
+
+fn download_with_aria2(
+    app: &AppHandle,
+    tag: &str,
+    url: &str,
+    directory: &Path,
+    part: &Path,
+    destination: &Path,
+    digest: Option<&str>,
+) -> Result<()> {
+    let Some(binary) = find_aria2c() else {
+        return Err(AppError::update(
+            "aria2c was selected as the downloader but is not on PATH",
+        ));
+    };
+    // aria2c resume needs its .aria2 control file; without it a fresh
+    // multi-connection fetch is the correct behavior.
+    let _ = fs::remove_file(part);
+    let part_name = part
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| AppError::update("Invalid download file name"))?;
+    let mut child: Child = Command::new(&binary)
+        .args(aria2c_arguments(url, directory, part_name))
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|error| AppError::update(format!("Cannot start aria2c: {error}")))?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| AppError::update("aria2c stdout is unavailable"))?;
+    use std::io::{BufRead, BufReader};
+    for line in BufReader::new(stdout).lines() {
+        if online_update::cancelled() {
+            let _ = child.kill();
+            let _ = child.wait();
+            let _ = fs::remove_file(part);
+            return Err(AppError::update("Upstream download was cancelled"));
+        }
+        let Ok(line) = line else { break };
+        if let Some((downloaded, total, speed)) = parse_aria2_summary(&line) {
+            emit_progress(Some(app), tag, downloaded, total, speed, "downloading");
+        }
+    }
+    let status = child.wait().map_err(AppError::transaction_io)?;
+    if !status.success() {
+        let _ = fs::remove_file(part);
+        return Err(AppError::update(format!(
+            "aria2c exited with {}",
+            status.code().unwrap_or(-1)
+        )));
+    }
+    finalize_download(Some(app), part, destination, tag, digest)
+}
+
+pub fn download_start(app: &AppHandle, tag: &str, url: &str, downloader: &str) -> Result<()> {
     validate_tag(tag)?;
     update_core::validate_https_github_url(url).map_err(AppError::update)?;
     let directory = upstream_root()?.join(tag);
@@ -580,6 +720,18 @@ pub fn download_start(app: &AppHandle, tag: &str, url: &str) -> Result<()> {
             return Ok(());
         }
         fs::remove_file(&destination).map_err(AppError::transaction_io)?;
+    }
+
+    if downloader == DOWNLOADER_ARIA2 {
+        return download_with_aria2(
+            app,
+            tag,
+            url,
+            &directory,
+            &part,
+            &destination,
+            digest.as_deref(),
+        );
     }
 
     let mut offset = if part.is_file() {
@@ -684,7 +836,7 @@ pub fn download_start(app: &AppHandle, tag: &str, url: &str) -> Result<()> {
 
 /// Resolves the asset URL for `tag` and downloads it. Only the latest release
 /// is downloadable; the returned release records the effective cache tag.
-pub fn download_by_tag(app: &AppHandle, tag: &str) -> Result<UpstreamRelease> {
+pub fn download_by_tag(app: &AppHandle, tag: &str, downloader: &str) -> Result<UpstreamRelease> {
     validate_tag(tag)?;
     let info = release_info(false)?;
     let release = if tag == "latest" || tag == info.release.tag {
@@ -694,7 +846,7 @@ pub fn download_by_tag(app: &AppHandle, tag: &str) -> Result<UpstreamRelease> {
             "Only the latest upstream release can be downloaded",
         ));
     };
-    download_start(app, &release.tag, &release.asset_url)?;
+    download_start(app, &release.tag, &release.asset_url, downloader)?;
     write_source_record(
         &upstream_root()?.join(&release.tag),
         if release.from_api { "api" } else { "fallback" },
@@ -714,7 +866,7 @@ pub fn ensure_cached(app: &AppHandle) -> Result<CachedUpstream> {
                 zip,
             });
         }
-        let release = download_by_tag(app, &info.release.tag)?;
+        let release = download_by_tag(app, &info.release.tag, DOWNLOADER_BUILTIN)?;
         let zip = cache_zip_path(&release.tag)?;
         return Ok(CachedUpstream { release, zip });
     }
@@ -1509,6 +1661,45 @@ mod tests {
             .iter()
             .find(|entry| entry.path == path)
             .unwrap_or_else(|| panic!("manifest has no entry for {path}"))
+    }
+
+    #[test]
+    fn downloader_selection_falls_back_to_builtin() {
+        assert_eq!(effective_downloader(None), DOWNLOADER_BUILTIN);
+        assert_eq!(effective_downloader(Some("builtin")), DOWNLOADER_BUILTIN);
+        assert_eq!(effective_downloader(Some("aria2")), DOWNLOADER_ARIA2);
+        assert_eq!(effective_downloader(Some("nonsense")), DOWNLOADER_BUILTIN);
+        assert_eq!(effective_downloader(Some("")), DOWNLOADER_BUILTIN);
+    }
+
+    #[test]
+    fn aria2c_arguments_enable_multi_connection_fetch() {
+        let args = aria2c_arguments(
+            "https://example.invalid/x.zip",
+            Path::new("/tmp/d"),
+            "CS2BotImprover.zip.part",
+        );
+        assert!(args.contains(&"--max-connection-per-server=8".to_string()));
+        assert!(args.contains(&"--split=8".to_string()));
+        assert!(args.contains(&"--min-split-size=1M".to_string()));
+        assert!(args.contains(&"--dir=/tmp/d".to_string()));
+        assert!(args.contains(&"--out=CS2BotImprover.zip.part".to_string()));
+        assert_eq!(args.last().unwrap(), "https://example.invalid/x.zip");
+    }
+
+    #[test]
+    fn parses_aria2_summary_progress_lines() {
+        assert_eq!(
+            parse_aria2_summary("[#8c1fa0 10MiB/73MiB(14%) CN:8 DL:2.3MiB ETA:27s]"),
+            Some((10 * 1024 * 1024, 73 * 1024 * 1024, (2.3 * 1024.0 * 1024.0) as u64))
+        );
+        assert_eq!(
+            parse_aria2_summary("[#abc123 512KiB/1GiB(0%) CN:2 DL:0B]"),
+            Some((512 * 1024, 1024 * 1024 * 1024, 0))
+        );
+        assert_eq!(parse_aria2_summary("(OK): download completed."), None);
+        assert_eq!(parse_aria2_summary(""), None);
+        assert_eq!(parse_aria2_summary("garbage without brackets"), None);
     }
 
     #[test]
