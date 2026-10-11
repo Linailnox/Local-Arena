@@ -339,6 +339,7 @@ export type AppConfig = {
   csgo_path: string | null;
   first_run_done: boolean;
   first_run_step?: string | null;
+  downloader?: string | null;
   welcome_story_prompt_presented: boolean;
   cosmetics_enabled_before_online?: boolean | null;
   cosmetics_enabled_before_preview?: boolean | null;
@@ -812,6 +813,7 @@ export const api = {
   cancelUpdate: () => invoke<void>("cancel_update"),
   // Upstream package management (plan §6.7 / §7.3)
   upstreamReleaseInfo: () => invoke<UpstreamReleaseInfo>("upstream_release_info"),
+  upstreamAria2Available: () => invoke<boolean>("upstream_aria2_available"),
   upstreamDownload: (tag: string) => invoke<void>("upstream_download", { tag }),
   upstreamCancel: () => invoke<void>("upstream_cancel"),
   upstreamCacheInfo: () => invoke<UpstreamCacheInfo>("upstream_cache_info"),

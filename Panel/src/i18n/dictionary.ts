@@ -480,6 +480,7 @@ export const DICTS: Record<string, Partial18n> = {
     "upstream.notInstalled": "尚未安装 Local Arena", "upstream.upstreamCol": "上游", "upstream.laCol": "Local Arena",
     "upstream.upToDate": "已是最新上游版本", "upstream.canUpdate": "上游 {tag} 可用",
     "upstream.launchPanel": "启动上游 Panel", "upstream.needDownload": "请先下载上游组件再安装", "upstream.notReady": "上游组件未就绪",
+    "upstream.downloader": "下载器", "upstream.downloaderBuiltin": "内置", "upstream.downloaderAria2": "aria2（多线程）", "upstream.downloaderAria2Missing": "PATH 中未找到 aria2c；安装 aria2 后即可启用多线程下载",
     "upstream.guidePoint1": "安装前面板会从 GitHub 下载上游组件（约 73 MB），并与 Local Arena 负载合并",
     "upstream.guidePoint2": "Local Arena 安装包本身只有几 MB；无法联网时可在 设置 → 安装 中导入本地 ZIP",
     "upstream.guidePoint3": "缓存的上游包会被后续安装、修复和组件更新复用，直到上游发布新版本",
@@ -920,6 +921,7 @@ export const DICTS: Record<string, Partial18n> = {
     "upstream.notInstalled": "尚未安裝 Local Arena", "upstream.upstreamCol": "上游", "upstream.laCol": "Local Arena",
     "upstream.upToDate": "已是最新上游版本", "upstream.canUpdate": "上游 {tag} 可用",
     "upstream.launchPanel": "啟動上游 Panel", "upstream.needDownload": "請先下載上游元件再安裝", "upstream.notReady": "上游元件未就緒",
+    "upstream.downloader": "下載器", "upstream.downloaderBuiltin": "內建", "upstream.downloaderAria2": "aria2（多執行緒）", "upstream.downloaderAria2Missing": "PATH 中未找到 aria2c；安裝 aria2 後即可啟用多執行緒下載",
     "upstream.guidePoint1": "安裝前面板會從 GitHub 下載上游元件（約 73 MB），並與 Local Arena 負載合併",
     "upstream.guidePoint2": "Local Arena 安裝包本身只有幾 MB；無法連網時可在 設定 → 安裝 匯入本機 ZIP",
     "upstream.guidePoint3": "快取的上游套件會被後續安裝、修復與元件更新重複使用，直到上游發布新版本",
@@ -986,6 +988,7 @@ export const DICTS: Record<string, Partial18n> = {
     "st.wrongLocation": "ファイルが間違ったフォルダーにあります — game\\csgo に移動してください", "cmd.h.botManagement": "ボット管理", "cmd.hint.botName": "ボット名", "cmd.hint.number": "数値",
     "upstream.title": "上流コンポーネント", "upstream.download": "ダウンロード",
     "upstream.needDownload": "インストール前に上流コンポーネントをダウンロードしてください", "upstream.notReady": "上流パッケージは未準備です",
+    "upstream.downloader": "Downloader", "upstream.downloaderBuiltin": "Built-in", "upstream.downloaderAria2": "aria2 (multi-thread)", "upstream.downloaderAria2Missing": "aria2c was not found on PATH; install aria2 to enable multi-threaded downloads",
   },
 
   koreana: {
@@ -1022,6 +1025,7 @@ export const DICTS: Record<string, Partial18n> = {
     "st.wrongLocation": "파일이 잘못된 폴더에 있습니다 — game\\csgo 로 옮기세요", "cmd.h.botManagement": "봇 관리", "cmd.hint.botName": "봇 이름", "cmd.hint.number": "숫자",
     "upstream.title": "업스트림 구성 요소", "upstream.download": "다운로드",
     "upstream.needDownload": "설치하기 전에 업스트림 구성 요소를 다운로드하세요", "upstream.notReady": "업스트림 패키지가 준비되지 않았습니다",
+    "upstream.downloader": "Downloader", "upstream.downloaderBuiltin": "Built-in", "upstream.downloaderAria2": "aria2 (multi-thread)", "upstream.downloaderAria2Missing": "aria2c was not found on PATH; install aria2 to enable multi-threaded downloads",
   },
 
   french: {
@@ -1421,6 +1425,7 @@ export const DICTS: Record<string, Partial18n> = {
     "weapons.shared": "Armes communes CT/T", "weapons.sameSkinBoth": "Utiliser le même skin pour CT et T",
     "upstream.title": "Composant en amont", "upstream.download": "Télécharger",
     "upstream.needDownload": "Téléchargez le composant en amont avant l'installation", "upstream.notReady": "Package en amont indisponible",
+    "upstream.downloader": "Downloader", "upstream.downloaderBuiltin": "Built-in", "upstream.downloaderAria2": "aria2 (multi-thread)", "upstream.downloaderAria2Missing": "aria2c was not found on PATH; install aria2 to enable multi-threaded downloads",
   },
 
   german: {
@@ -1457,6 +1462,7 @@ export const DICTS: Record<string, Partial18n> = {
     "st.wrongLocation": "Dateien im falschen Ordner — verschiebe sie nach game\\csgo", "cmd.h.botManagement": "BOT-VERWALTUNG", "cmd.hint.botName": "Botname", "cmd.hint.number": "Zahl",
     "upstream.title": "Upstream-Komponente", "upstream.download": "Herunterladen",
     "upstream.needDownload": "Lade die Upstream-Komponente vor der Installation herunter", "upstream.notReady": "Upstream-Paket nicht bereit",
+    "upstream.downloader": "Downloader", "upstream.downloaderBuiltin": "Built-in", "upstream.downloaderAria2": "aria2 (multi-thread)", "upstream.downloaderAria2Missing": "aria2c was not found on PATH; install aria2 to enable multi-threaded downloads",
   },
 
   spanish: {
@@ -1493,6 +1499,7 @@ export const DICTS: Record<string, Partial18n> = {
     "st.wrongLocation": "Archivos en la carpeta incorrecta — muévelos a game\\csgo", "cmd.h.botManagement": "GESTIÓN DE BOTS", "cmd.hint.botName": "nombre del bot", "cmd.hint.number": "número",
     "upstream.title": "Componente upstream", "upstream.download": "Descargar",
     "upstream.needDownload": "Descarga el componente upstream antes de instalar", "upstream.notReady": "Paquete upstream no disponible",
+    "upstream.downloader": "Downloader", "upstream.downloaderBuiltin": "Built-in", "upstream.downloaderAria2": "aria2 (multi-thread)", "upstream.downloaderAria2Missing": "aria2c was not found on PATH; install aria2 to enable multi-threaded downloads",
   },
 
   italian: {
@@ -1529,6 +1536,7 @@ export const DICTS: Record<string, Partial18n> = {
     "st.wrongLocation": "File nella cartella sbagliata — spostali in game\\csgo", "cmd.h.botManagement": "GESTIONE BOT", "cmd.hint.botName": "nome bot", "cmd.hint.number": "numero",
     "upstream.title": "Componente upstream", "upstream.download": "Scarica",
     "upstream.needDownload": "Scarica il componente upstream prima dell'installazione", "upstream.notReady": "Pacchetto upstream non pronto",
+    "upstream.downloader": "Downloader", "upstream.downloaderBuiltin": "Built-in", "upstream.downloaderAria2": "aria2 (multi-thread)", "upstream.downloaderAria2Missing": "aria2c was not found on PATH; install aria2 to enable multi-threaded downloads",
   },
 
   russian: {
@@ -1565,6 +1573,7 @@ export const DICTS: Record<string, Partial18n> = {
     "st.wrongLocation": "Файлы в неправильной папке — переместите их в game\\csgo", "cmd.h.botManagement": "УПРАВЛЕНИЕ БОТАМИ", "cmd.hint.botName": "имя бота", "cmd.hint.number": "число",
     "upstream.title": "Компонент upstream", "upstream.download": "Скачать",
     "upstream.needDownload": "Скачайте компонент upstream перед установкой", "upstream.notReady": "Пакет upstream не готов",
+    "upstream.downloader": "Downloader", "upstream.downloaderBuiltin": "Built-in", "upstream.downloaderAria2": "aria2 (multi-thread)", "upstream.downloaderAria2Missing": "aria2c was not found on PATH; install aria2 to enable multi-threaded downloads",
   },
 
   ukrainian: {
@@ -1601,6 +1610,7 @@ export const DICTS: Record<string, Partial18n> = {
     "st.wrongLocation": "Файли в неправильній папці — перемістіть їх до game\\csgo", "cmd.h.botManagement": "КЕРУВАННЯ БОТАМИ", "cmd.hint.botName": "ім'я бота", "cmd.hint.number": "число",
     "upstream.title": "Компонент upstream", "upstream.download": "Завантажити",
     "upstream.needDownload": "Завантажте компонент upstream перед встановленням", "upstream.notReady": "Пакет upstream не готовий",
+    "upstream.downloader": "Downloader", "upstream.downloaderBuiltin": "Built-in", "upstream.downloaderAria2": "aria2 (multi-thread)", "upstream.downloaderAria2Missing": "aria2c was not found on PATH; install aria2 to enable multi-threaded downloads",
   },
 
   polish: {
@@ -1637,6 +1647,7 @@ export const DICTS: Record<string, Partial18n> = {
     "st.wrongLocation": "Pliki w złym folderze — przenieś je do game\\csgo", "cmd.h.botManagement": "ZARZĄDZANIE BOTAMI", "cmd.hint.botName": "nazwa bota", "cmd.hint.number": "liczba",
     "upstream.title": "Komponent upstream", "upstream.download": "Pobierz",
     "upstream.needDownload": "Pobierz komponent upstream przed instalacją", "upstream.notReady": "Pakiet upstream niegotowy",
+    "upstream.downloader": "Downloader", "upstream.downloaderBuiltin": "Built-in", "upstream.downloaderAria2": "aria2 (multi-thread)", "upstream.downloaderAria2Missing": "aria2c was not found on PATH; install aria2 to enable multi-threaded downloads",
   },
 
   dutch: {
@@ -1673,6 +1684,7 @@ export const DICTS: Record<string, Partial18n> = {
     "st.wrongLocation": "Bestanden in de verkeerde map — verplaats ze naar game\\csgo", "cmd.h.botManagement": "BOTBEHEER", "cmd.hint.botName": "botnaam", "cmd.hint.number": "getal",
     "upstream.title": "Upstream-onderdeel", "upstream.download": "Downloaden",
     "upstream.needDownload": "Download het upstream-onderdeel vóór installatie", "upstream.notReady": "Upstreampakket niet gereed",
+    "upstream.downloader": "Downloader", "upstream.downloaderBuiltin": "Built-in", "upstream.downloaderAria2": "aria2 (multi-thread)", "upstream.downloaderAria2Missing": "aria2c was not found on PATH; install aria2 to enable multi-threaded downloads",
   },
 
   turkish: {
@@ -1709,6 +1721,7 @@ export const DICTS: Record<string, Partial18n> = {
     "st.wrongLocation": "Dosyalar yanlış klasörde — game\\csgo içine taşıyın", "cmd.h.botManagement": "BOT YÖNETİMİ", "cmd.hint.botName": "bot adı", "cmd.hint.number": "sayı",
     "upstream.title": "Upstream bileşeni", "upstream.download": "İndir",
     "upstream.needDownload": "Kurulumdan önce upstream bileşenini indirin", "upstream.notReady": "Upstream paketi hazır değil",
+    "upstream.downloader": "Downloader", "upstream.downloaderBuiltin": "Built-in", "upstream.downloaderAria2": "aria2 (multi-thread)", "upstream.downloaderAria2Missing": "aria2c was not found on PATH; install aria2 to enable multi-threaded downloads",
   },
 
   vietnamese: {
@@ -1745,6 +1758,7 @@ export const DICTS: Record<string, Partial18n> = {
     "st.wrongLocation": "Tệp nằm sai thư mục — hãy chuyển vào game\\csgo", "cmd.h.botManagement": "QUẢN LÝ BOT", "cmd.hint.botName": "tên bot", "cmd.hint.number": "số",
     "upstream.title": "Thành phần upstream", "upstream.download": "Tải xuống",
     "upstream.needDownload": "Tải xuống thành phần upstream trước khi cài đặt", "upstream.notReady": "Gói upstream chưa sẵn sàng",
+    "upstream.downloader": "Downloader", "upstream.downloaderBuiltin": "Built-in", "upstream.downloaderAria2": "aria2 (multi-thread)", "upstream.downloaderAria2Missing": "aria2c was not found on PATH; install aria2 to enable multi-threaded downloads",
   },
 
   thai: {
@@ -1781,6 +1795,7 @@ export const DICTS: Record<string, Partial18n> = {
     "st.wrongLocation": "ไฟล์อยู่ผิดโฟลเดอร์ — ย้ายไปไว้ใน game\\csgo", "cmd.h.botManagement": "การจัดการบอท", "cmd.hint.botName": "ชื่อบอท", "cmd.hint.number": "จำนวน",
     "upstream.title": "คอมโพเนนต์ต้นน้ำ", "upstream.download": "ดาวน์โหลด",
     "upstream.needDownload": "ดาวน์โหลดคอมโพเนนต์ต้นน้ำก่อนติดตั้ง", "upstream.notReady": "แพ็กเกจต้นน้ำยังไม่พร้อม",
+    "upstream.downloader": "Downloader", "upstream.downloaderBuiltin": "Built-in", "upstream.downloaderAria2": "aria2 (multi-thread)", "upstream.downloaderAria2Missing": "aria2c was not found on PATH; install aria2 to enable multi-threaded downloads",
   },
 
   indonesian: {
@@ -1817,6 +1832,7 @@ export const DICTS: Record<string, Partial18n> = {
     "st.wrongLocation": "Berkas di folder yang salah — pindahkan ke game\\csgo", "cmd.h.botManagement": "MANAJEMEN BOT", "cmd.hint.botName": "nama bot", "cmd.hint.number": "angka",
     "upstream.title": "Komponen upstream", "upstream.download": "Unduh",
     "upstream.needDownload": "Unduh komponen upstream sebelum memasang", "upstream.notReady": "Paket upstream belum siap",
+    "upstream.downloader": "Downloader", "upstream.downloaderBuiltin": "Built-in", "upstream.downloaderAria2": "aria2 (multi-thread)", "upstream.downloaderAria2Missing": "aria2c was not found on PATH; install aria2 to enable multi-threaded downloads",
   },
 
   czech: {
@@ -1853,6 +1869,7 @@ export const DICTS: Record<string, Partial18n> = {
     "st.wrongLocation": "Soubory ve špatné složce — přesuňte je do game\\csgo", "cmd.h.botManagement": "SPRÁVA BOTŮ", "cmd.hint.botName": "jméno bota", "cmd.hint.number": "číslo",
     "upstream.title": "Komponenta upstream", "upstream.download": "Stáhnout",
     "upstream.needDownload": "Před instalací stáhněte komponentu upstream", "upstream.notReady": "Balíček upstream není připraven",
+    "upstream.downloader": "Downloader", "upstream.downloaderBuiltin": "Built-in", "upstream.downloaderAria2": "aria2 (multi-thread)", "upstream.downloaderAria2Missing": "aria2c was not found on PATH; install aria2 to enable multi-threaded downloads",
   },
 
   swedish: {
@@ -1889,6 +1906,7 @@ export const DICTS: Record<string, Partial18n> = {
     "st.wrongLocation": "Filer i fel mapp — flytta dem till game\\csgo", "cmd.h.botManagement": "BOTHANTERING", "cmd.hint.botName": "botnamn", "cmd.hint.number": "antal",
     "upstream.title": "Upstream-komponent", "upstream.download": "Hämta",
     "upstream.needDownload": "Hämta upstream-komponenten före installation", "upstream.notReady": "Upstream-paketet är inte klart",
+    "upstream.downloader": "Downloader", "upstream.downloaderBuiltin": "Built-in", "upstream.downloaderAria2": "aria2 (multi-thread)", "upstream.downloaderAria2Missing": "aria2c was not found on PATH; install aria2 to enable multi-threaded downloads",
   },
 
   danish: {
@@ -1925,6 +1943,7 @@ export const DICTS: Record<string, Partial18n> = {
     "st.wrongLocation": "Filer i den forkerte mappe — flyt dem til game\\csgo", "cmd.h.botManagement": "BOTHÅNDTERING", "cmd.hint.botName": "botnavn", "cmd.hint.number": "tal",
     "upstream.title": "Upstream-komponent", "upstream.download": "Download",
     "upstream.needDownload": "Download upstream-komponenten før installation", "upstream.notReady": "Upstream-pakken er ikke klar",
+    "upstream.downloader": "Downloader", "upstream.downloaderBuiltin": "Built-in", "upstream.downloaderAria2": "aria2 (multi-thread)", "upstream.downloaderAria2Missing": "aria2c was not found on PATH; install aria2 to enable multi-threaded downloads",
   },
 
   norwegian: {
@@ -1961,6 +1980,7 @@ export const DICTS: Record<string, Partial18n> = {
     "st.wrongLocation": "Filer i feil mappe — flytt dem til game\\csgo", "cmd.h.botManagement": "BOTHÅNDTERING", "cmd.hint.botName": "botnavn", "cmd.hint.number": "tall",
     "upstream.title": "Oppstrømskomponent", "upstream.download": "Last ned",
     "upstream.needDownload": "Last ned oppstrømskomponenten før installasjon", "upstream.notReady": "Oppstrømspakkelen er ikke klar",
+    "upstream.downloader": "Downloader", "upstream.downloaderBuiltin": "Built-in", "upstream.downloaderAria2": "aria2 (multi-thread)", "upstream.downloaderAria2Missing": "aria2c was not found on PATH; install aria2 to enable multi-threaded downloads",
   },
 
   finnish: {
@@ -1997,6 +2017,7 @@ export const DICTS: Record<string, Partial18n> = {
     "st.wrongLocation": "Tiedostot väärässä kansiossa — siirrä ne kansioon game\\csgo", "cmd.h.botManagement": "BOTTIEN HALLINTA", "cmd.hint.botName": "botin nimi", "cmd.hint.number": "numero",
     "upstream.title": "Upstream-komponentti", "upstream.download": "Lataa",
     "upstream.needDownload": "Lataa upstream-komponentti ennen asennusta", "upstream.notReady": "Upstream-paketti ei ole valmis",
+    "upstream.downloader": "Downloader", "upstream.downloaderBuiltin": "Built-in", "upstream.downloaderAria2": "aria2 (multi-thread)", "upstream.downloaderAria2Missing": "aria2c was not found on PATH; install aria2 to enable multi-threaded downloads",
   },
 
   hungarian: {
@@ -2033,6 +2054,7 @@ export const DICTS: Record<string, Partial18n> = {
     "st.wrongLocation": "A fájlok rossz mappában vannak — helyezd át a game\\csgo mappába", "cmd.h.botManagement": "BOTOK KEZELÉSE", "cmd.hint.botName": "bot neve", "cmd.hint.number": "szám",
     "upstream.title": "Upstream összetevő", "upstream.download": "Letöltés",
     "upstream.needDownload": "Töltsd le az upstream összetevőt a telepítés előtt", "upstream.notReady": "Az upstream csomag nem áll készen",
+    "upstream.downloader": "Downloader", "upstream.downloaderBuiltin": "Built-in", "upstream.downloaderAria2": "aria2 (multi-thread)", "upstream.downloaderAria2Missing": "aria2c was not found on PATH; install aria2 to enable multi-threaded downloads",
   },
 
   romanian: {
@@ -2069,6 +2091,7 @@ export const DICTS: Record<string, Partial18n> = {
     "st.wrongLocation": "Fișiere în folderul greșit — mută-le în game\\csgo", "cmd.h.botManagement": "GESTIONARE BOȚI", "cmd.hint.botName": "nume bot", "cmd.hint.number": "număr",
     "upstream.title": "Componentă upstream", "upstream.download": "Descarcă",
     "upstream.needDownload": "Descarcă componenta upstream înainte de instalare", "upstream.notReady": "Pachetul upstream nu este pregătit",
+    "upstream.downloader": "Downloader", "upstream.downloaderBuiltin": "Built-in", "upstream.downloaderAria2": "aria2 (multi-thread)", "upstream.downloaderAria2Missing": "aria2c was not found on PATH; install aria2 to enable multi-threaded downloads",
   },
 
   greek: {
@@ -2105,6 +2128,7 @@ export const DICTS: Record<string, Partial18n> = {
     "st.wrongLocation": "Τα αρχεία είναι σε λάθος φάκελο — μετακινήστε τα στο game\\csgo", "cmd.h.botManagement": "ΔΙΑΧΕΙΡΙΣΗ BOT", "cmd.hint.botName": "όνομα bot", "cmd.hint.number": "αριθμός",
     "upstream.title": "Συστατικό upstream", "upstream.download": "Λήψη",
     "upstream.needDownload": "Κατεβάστε το συστατικό upstream πριν την εγκατάσταση", "upstream.notReady": "Το πακέτο upstream δεν είναι έτοιμο",
+    "upstream.downloader": "Downloader", "upstream.downloaderBuiltin": "Built-in", "upstream.downloaderAria2": "aria2 (multi-thread)", "upstream.downloaderAria2Missing": "aria2c was not found on PATH; install aria2 to enable multi-threaded downloads",
   },
 
   bulgarian: {
@@ -2141,6 +2165,7 @@ export const DICTS: Record<string, Partial18n> = {
     "st.wrongLocation": "Файловете са в грешната папка — преместете ги в game\\csgo", "cmd.h.botManagement": "УПРАВЛЕНИЕ НА БОТОВЕ", "cmd.hint.botName": "име на бот", "cmd.hint.number": "число",
     "upstream.title": "Компонент upstream", "upstream.download": "Изтегли",
     "upstream.needDownload": "Изтеглете компонента upstream преди инсталацията", "upstream.notReady": "Пакетът upstream не е готов",
+    "upstream.downloader": "Downloader", "upstream.downloaderBuiltin": "Built-in", "upstream.downloaderAria2": "aria2 (multi-thread)", "upstream.downloaderAria2Missing": "aria2c was not found on PATH; install aria2 to enable multi-threaded downloads",
   },
 
   // Portuguese (pt-PT) and Brazilian Portuguese
@@ -2178,6 +2203,7 @@ export const DICTS: Record<string, Partial18n> = {
     "st.wrongLocation": "Ficheiros na pasta errada — mova-os para game\\csgo", "cmd.h.botManagement": "GESTÃO DE BOTS", "cmd.hint.botName": "nome do bot", "cmd.hint.number": "número",
     "upstream.title": "Componente upstream", "upstream.download": "Transferir",
     "upstream.needDownload": "Transfira o componente upstream antes de instalar", "upstream.notReady": "Pacote upstream não disponível",
+    "upstream.downloader": "Downloader", "upstream.downloaderBuiltin": "Built-in", "upstream.downloaderAria2": "aria2 (multi-thread)", "upstream.downloaderAria2Missing": "aria2c was not found on PATH; install aria2 to enable multi-threaded downloads",
   },
 
   brazilian: {
@@ -2214,6 +2240,7 @@ export const DICTS: Record<string, Partial18n> = {
     "st.wrongLocation": "Arquivos na pasta errada — mova-os para game\\csgo", "cmd.h.botManagement": "GERENCIAMENTO DE BOTS", "cmd.hint.botName": "nome do bot", "cmd.hint.number": "número",
     "upstream.title": "Componente upstream", "upstream.download": "Baixar",
     "upstream.needDownload": "Baixe o componente upstream antes de instalar", "upstream.notReady": "Pacote upstream não está pronto",
+    "upstream.downloader": "Downloader", "upstream.downloaderBuiltin": "Built-in", "upstream.downloaderAria2": "aria2 (multi-thread)", "upstream.downloaderAria2Missing": "aria2c was not found on PATH; install aria2 to enable multi-threaded downloads",
   },
 
   // Latin-American Spanish — reuse Spanish with minor wording
@@ -2251,5 +2278,6 @@ export const DICTS: Record<string, Partial18n> = {
     "st.wrongLocation": "Archivos en la carpeta incorrecta — muévelos a game\\csgo", "cmd.h.botManagement": "GESTIÓN DE BOTS", "cmd.hint.botName": "nombre del bot", "cmd.hint.number": "número",
     "upstream.title": "Componente upstream", "upstream.download": "Descargar",
     "upstream.needDownload": "Descargá el componente upstream antes de instalar", "upstream.notReady": "El paquete upstream no está listo",
+    "upstream.downloader": "Downloader", "upstream.downloaderBuiltin": "Built-in", "upstream.downloaderAria2": "aria2 (multi-thread)", "upstream.downloaderAria2Missing": "aria2c was not found on PATH; install aria2 to enable multi-threaded downloads",
   },
 };
