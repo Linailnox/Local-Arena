@@ -1332,6 +1332,29 @@
 .inst-hero__btn:hover { border-color: var(--c-accent-line); color: var(--c-accent-hover); }
 .inst-hero__btn:disabled { opacity: 0.45; cursor: default; }
 .inst-hero__btn code { color: var(--text-tertiary); font-size: 10px; }
+.upd-sub {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 14px 16px;
+  border-radius: var(--r-md);
+  background: var(--paper-sunken);
+}
+.upd-sub__head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--c-blue);
+}
+.upd-sub__head strong { color: var(--text-primary); font-size: 13px; font-weight: 650; }
+.upd-sub__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.upd-sub__row > small:first-child { color: var(--text-tertiary); font-size: 11px; }
 .inst-hero__installed {
   display: grid;
   gap: 3px;
