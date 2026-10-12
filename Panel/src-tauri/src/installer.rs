@@ -750,7 +750,18 @@ fn inspect_impl(
         backup_path: record
             .as_ref()
             .map(|_| directory.to_string_lossy().into_owned()),
-        backup_display: None,
+        backup_display: record.as_ref().map(|_| {
+            std::env::current_exe()
+                .ok()
+                .and_then(|exe| exe.parent().map(|base| base.to_path_buf()))
+                .and_then(|base| {
+                    directory
+                        .strip_prefix(&base)
+                        .ok()
+                        .map(|relative| relative.to_string_lossy().into_owned())
+                })
+                .unwrap_or_else(|| directory.to_string_lossy().into_owned())
+        }),
         interrupted_transaction: directory.join("journal.json").is_file(),
         source: detection.source,
         source_version: detection.version,
