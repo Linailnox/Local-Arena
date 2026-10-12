@@ -337,12 +337,27 @@ export default function InstallationPage() {
       </section>
 
       <OnlineUpdateSection>
-        <div className="upd-sub">
-          <header className="upd-sub__head">
-            <PackageCheck size={15} aria-hidden="true" />
-            <strong>{t("upstream.title")}</strong>
-            <span className="update-status">{upstreamReady ? t("upstream.ready") : t("upstream.notReady")}</span>
-          </header>
+        <section className="upd-card">
+          <div className="upd-card__head">
+            <span className="upd-card__icon upd-card__icon--upstream">
+              <PackageCheck size={20} />
+            </span>
+            <div>
+              <strong>{t("upstream.title")}</strong>
+              <small>{t("upstream.titleDesc")}</small>
+            </div>
+            <div className="upd-card__actions">
+              <span className={`update-status ${upstreamReady ? "update-status--current" : ""}`}>
+                {upstreamReady ? t("upstream.ready") : t("upstream.notReady")}
+              </span>
+              <button className="upd-mini-btn" disabled={!releaseInfo || !!upstreamWorking} onClick={checkUpstream}>
+                <RefreshCw size={13} />{upstreamWorking === "check" ? t("upstream.checking") : t("upstream.check")}
+              </button>
+              <button className="upd-mini-btn" disabled={!releaseInfo || !!upstreamWorking} onClick={downloadUpstream}>
+                <Download size={13} />{downloading ? t("upstream.downloading", { n: progressPct }) : releaseInfo?.cached ? t("upstream.redownload") : t("upstream.download")}
+              </button>
+            </div>
+          </div>
           <div className="upd-card__versions">
             <span className="upd-ver">
               <small>{t("upstream.latest")}</small>
@@ -375,12 +390,6 @@ export default function InstallationPage() {
             {!aria2Available && <small className="inst-hero__note">{t("upstream.downloaderAria2Missing")}</small>}
           </div>
           <div className="installation-actions">
-            <button disabled={!releaseInfo || !!upstreamWorking} onClick={checkUpstream}>
-              <RefreshCw size={17} />{upstreamWorking === "check" ? t("upstream.checking") : t("upstream.check")}
-            </button>
-            <button className="is-primary" disabled={!releaseInfo || !!upstreamWorking} onClick={downloadUpstream}>
-              <Download size={17} />{downloading ? t("upstream.downloading", { n: progressPct }) : releaseInfo?.cached ? t("upstream.redownload") : t("upstream.download")}
-            </button>
             {downloading && (
               <button onClick={cancelUpstream}><X size={17} />{t("upstream.cancel")}</button>
             )}
@@ -405,7 +414,7 @@ export default function InstallationPage() {
           )}
           {downloading && <p className="inst-diagnostics-scope">{t("upstream.resume")}</p>}
           {upstreamError && <div className="update-error">{upstreamError}</div>}
-        </div>
+        </section>
       </OnlineUpdateSection>
 
       <div className="inst-groups">

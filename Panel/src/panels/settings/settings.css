@@ -1769,6 +1769,10 @@
   color: var(--st-green);
   background: var(--st-green-soft);
 }
+.upd-card__icon--upstream {
+  color: var(--st-warn);
+  background: var(--st-warn-soft);
+}
 .upd-card__head > div {
   min-width: 0;
   display: grid;
