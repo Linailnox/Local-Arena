@@ -1408,6 +1408,14 @@
   min-width: 0;
   display: grid;
   gap: 9px;
+  grid-template-rows: 1fr auto;
+  align-content: start;
+}
+.inst-hero__side > .inst-hero__btn--launch {
+  width: 100%;
+  justify-self: end;
+  min-height: 32px;
+  justify-content: center;
 }
 .inst-hero__fact {
   min-width: 0;
