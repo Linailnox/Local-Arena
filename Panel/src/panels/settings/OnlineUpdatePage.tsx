@@ -72,6 +72,21 @@ export function OnlineUpdateSection({ children }: { children?: ReactNode }) {
     : pluginAvailable && blocked ? t("update.closeCs2")
       : pluginIncompatible || panelIncompatible ? t("update.incompatible")
         : null;
+  const installOne = async (component: "panel" | "plugin") => {
+    setWorking(component);
+    setLocalError(null);
+    try {
+      if (component === "panel") await api.installPanelUpdate();
+      else await api.installPluginUpdate(csgoPath!);
+      await refreshSnapshot();
+    } catch (error) {
+      setLocalError(toAppError(error).detail);
+      await refreshSnapshot();
+    } finally {
+      setWorking(null);
+    }
+  };
+
   const componentSection = (component: "panel" | "plugin") => {
     const state = snapshot?.[component];
     const progress = state?.total_bytes
@@ -88,9 +103,22 @@ export function OnlineUpdateSection({ children }: { children?: ReactNode }) {
             <strong>{component === "panel" ? t("update.panel") : t("update.plugin")}</strong>
             <small>{component === "panel" ? t("update.panelDesc") : t("update.pluginDesc")}</small>
           </div>
-          <span className={`update-status update-status--${state?.status ?? "idle"}`}>
-            {available ? t("update.available") : t("update.current")}
-          </span>
+          <div className="upd-card__actions">
+            <span className={`update-status update-status--${state?.status ?? "idle"}`}>
+              {available ? t("update.available") : t("update.current")}
+            </span>
+            <button className="upd-mini-btn" disabled={!!working || !!snapshot?.busy} onClick={check} title={t("update.check") as string}>
+              <RefreshCw size={13} />{working === "check" ? t("update.checking") : t("update.check")}
+            </button>
+            <button
+              className="upd-mini-btn"
+              disabled={!available || !!working || !!snapshot?.busy
+                || (component === "plugin" && (!csgoPath || blocked))}
+              onClick={() => installOne(component)}
+            >
+              <Download size={13} />{installing ? t("update.updatingAll") : t(component === "panel" ? "update.installPanel" : "update.installPlugin")}
+            </button>
+          </div>
         </div>
 
         <div className="upd-card__versions">
@@ -159,6 +187,7 @@ export function OnlineUpdateSection({ children }: { children?: ReactNode }) {
             {working === "all" ? t("update.updatingAll") : hasUpdates ? t("update.installAll") : t("update.current")}
           </button>
           {working === "all" && <button onClick={cancel}><X size={16} />{t("update.cancel")}</button>}
+          {(working === "panel" || working === "plugin") && <button onClick={cancel}><X size={16} />{t("update.cancel")}</button>}
         </div>
       </section>
       {blockingNote && <p className="upd-note update-primary-note"><AlertTriangle size={14} aria-hidden="true" />{blockingNote}</p>}
