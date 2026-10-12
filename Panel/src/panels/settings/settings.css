@@ -1322,7 +1322,13 @@
 }
 .inst-hero__actions-row .inst-hero__dir > .inst-hero__btn {
   flex: 1 1 0;
+  min-width: 0;
   min-height: 40px;
+}
+.inst-hero__dir > .inst-hero__btn > code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .inst-hero__actions-row .inst-hero__backup {
   flex: 1 1 0;
