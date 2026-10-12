@@ -1299,7 +1299,7 @@
 }
 .inst-hero {
   display: grid;
-  grid-template-columns: 52px minmax(0, 1fr) minmax(220px, 0.55fr);
+  grid-template-columns: 52px minmax(0, 1fr) minmax(300px, 0.7fr);
   gap: 16px;
   align-items: start;
   padding: 18px;
@@ -1450,6 +1450,10 @@
 .inst-hero__backup:hover { background: rgba(217, 119, 87, 0.14); }
 .inst-hero__backup span {
   min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   overflow: hidden;
   display: grid;
   gap: 1px;

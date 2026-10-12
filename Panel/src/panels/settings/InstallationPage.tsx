@@ -75,6 +75,13 @@ export default function InstallationPage() {
   const directoryCandidates = directory?.candidates ?? [];
   const alternatives = directoryCandidates.filter((path) => path !== directory?.selected);
   const upstreamOutdated = !!upstreamState && !!releaseInfo && upstreamState.upstream_tag !== releaseInfo.release.tag;
+  const backupInfo = (() => {
+    const full = installation?.backup_path;
+    if (!full) return null;
+    const base = directory?.selected ?? csgoPath;
+    const display = base && full.startsWith(base) ? full.slice(base.length).replace(/^\/+/, "") : full;
+    return { full, display };
+  })();
 
   const browse = async () => {
     try {
@@ -298,10 +305,10 @@ export default function InstallationPage() {
           {!directory?.steam_found && (
             <p className="inst-hero__note">{t("set.steamNotDetected")}</p>
           )}
-          {installation?.backup_path && (
-            <button className="inst-hero__backup" onClick={() => open(installation.backup_path!)} title={installation.backup_path}>
+          {backupInfo && (
+            <button className="inst-hero__backup" onClick={() => open(backupInfo.full)} title={backupInfo.full}>
               <FolderOpen size={14} />
-              <span><small>{t("install.backup")}</small>{installation.backup_path}</span>
+              <span><small>{t("install.backup")}</small>{backupInfo.display}</span>
             </button>
           )}
         </div>
