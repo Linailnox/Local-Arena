@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ArchiveRestore, CheckCircle2, CircleAlert, CircleX, ClipboardCheck, Copy, Download, FileCheck2, FolderOpen, PackageCheck, PlayCircle, RefreshCw, Stethoscope, Trash2, Wrench, X } from "lucide-react";
+import { ArchiveRestore, ArrowRight, CheckCircle2, CircleAlert, CircleX, ClipboardCheck, Copy, Download, FileCheck2, FolderOpen, PackageCheck, PlayCircle, RefreshCw, Stethoscope, Trash2, Wrench, X } from "lucide-react";
 import { useStore } from "../../state/store";
 import { useT, type I18nKey } from "../../i18n";
 import { useToast } from "../../components/Toast";
@@ -45,10 +45,6 @@ function formatBytes(value: number) {
   return `${(value / 1024 ** index).toFixed(index ? 1 : 0)} ${units[index]}`;
 }
 
-function upstreamSourceKey(source: "api" | "fallback" | "manual"): I18nKey {
-  return source === "api" ? "upstream.source.api" : source === "fallback" ? "upstream.source.fallback" : "upstream.source.manual";
-}
-
 export default function InstallationPage() {
   const {
     csgoPath, installation, process, directory, chooseDirectory, verifyInstallation, installPayload,
@@ -78,6 +74,7 @@ export default function InstallationPage() {
     : 0;
   const directoryCandidates = directory?.candidates ?? [];
   const alternatives = directoryCandidates.filter((path) => path !== directory?.selected);
+  const upstreamOutdated = !!upstreamState && !!releaseInfo && upstreamState.upstream_tag !== releaseInfo.release.tag;
 
   const browse = async () => {
     try {
@@ -338,8 +335,8 @@ export default function InstallationPage() {
 
       <OnlineUpdateSection
         toolbarExtra={
-          <div className="upd-sub__row" style={{ justifyContent: "flex-end" }}>
-            <small>{t("upstream.downloader")}</small>
+          <label className="upd-downloader">
+            <span>{t("upstream.downloader")}</span>
             <Segmented<string>
               value={config?.downloader === "aria2" ? "aria2" : "builtin"}
               onChange={(value) => void updateConfig({ downloader: value })}
@@ -348,8 +345,7 @@ export default function InstallationPage() {
                 ...(aria2Available ? [{ value: "aria2", label: t("upstream.downloaderAria2") }] : []),
               ]}
             />
-            {!aria2Available && <small className="inst-hero__note">{t("upstream.downloaderAria2Missing")}</small>}
-          </div>
+          </label>
         }
       >
         <section className="upd-card">
@@ -375,12 +371,13 @@ export default function InstallationPage() {
           </div>
           <div className="upd-card__versions">
             <span className="upd-ver">
-              <small>{t("upstream.latest")}</small>
-              <strong>{releaseInfo ? releaseInfo.release.tag : "--"}</strong>
+              <small>{t("update.currentVersion")}</small>
+              <strong>{upstreamState ? upstreamState.upstream_tag : "--"}</strong>
             </span>
+            <ArrowRight size={18} className={`upd-arrow ${upstreamOutdated ? "is-hot" : ""}`} aria-hidden="true" />
             <span className="upd-ver">
-              <small>{t("upstream.source")}</small>
-              <strong>{releaseInfo ? t(upstreamSourceKey(releaseInfo.release.from_api ? "api" : "fallback")) : "--"}</strong>
+              <small>{t("update.latestVersion")}</small>
+              <strong className={upstreamOutdated ? "is-new" : ""}>{releaseInfo ? releaseInfo.release.tag : "--"}</strong>
             </span>
             <span className="upd-ver upd-ver--size">
               <small>{t("upstream.cache")}</small>

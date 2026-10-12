@@ -1628,6 +1628,15 @@
   gap: 8px;
   justify-items: end;
 }
+.upd-downloader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.upd-downloader > span {
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
 .update-toolbar > span {
   min-width: 0;
   display: grid;
