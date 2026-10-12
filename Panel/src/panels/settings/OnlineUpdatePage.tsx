@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { AlertTriangle, ArrowRight, Download, ExternalLink, PackageCheck, RefreshCw, X } from "lucide-react";
 import { api, toAppError, type OnlineUpdateSnapshot, type UpdateProgress } from "../../lib/api";
 import { useStore } from "../../state/store";
@@ -16,7 +16,7 @@ function formatTime(value: number | null) {
   return value ? new Date(value * 1000).toLocaleString() : "--";
 }
 
-export function OnlineUpdateSection() {
+export function OnlineUpdateSection({ children }: { children?: ReactNode }) {
   const { csgoPath, process } = useStore();
   const t = useT();
   const [snapshot, setSnapshot] = useState<OnlineUpdateSnapshot | null>(null);
@@ -166,6 +166,7 @@ export function OnlineUpdateSection() {
         {componentSection("panel")}
         {componentSection("plugin")}
       </div>
+      {children}
     </div>
     </section>
   );
