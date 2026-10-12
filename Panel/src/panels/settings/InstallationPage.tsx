@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ArchiveRestore, CheckCircle2, CircleAlert, CircleX, ClipboardCheck, Copy, Download, FileCheck2, FolderOpen, PlayCircle, RefreshCw, Stethoscope, Trash2, Wrench, X } from "lucide-react";
+import { ArchiveRestore, CheckCircle2, CircleAlert, CircleX, ClipboardCheck, Copy, Download, FileCheck2, FolderOpen, PackageCheck, PlayCircle, RefreshCw, Stethoscope, Trash2, Wrench, X } from "lucide-react";
 import { useStore } from "../../state/store";
 import { useT, type I18nKey } from "../../i18n";
 import { useToast } from "../../components/Toast";
@@ -45,10 +45,6 @@ function formatBytes(value: number) {
   return `${(value / 1024 ** index).toFixed(index ? 1 : 0)} ${units[index]}`;
 }
 
-function formatDate(unixSeconds: number) {
-  return new Date(unixSeconds * 1000).toLocaleDateString();
-}
-
 function upstreamSourceKey(source: "api" | "fallback" | "manual"): I18nKey {
   return source === "api" ? "upstream.source.api" : source === "fallback" ? "upstream.source.fallback" : "upstream.source.manual";
 }
@@ -80,7 +76,6 @@ export default function InstallationPage() {
   const progressPct = progress && progress.total_bytes
     ? Math.min(100, Math.round((progress.downloaded_bytes / progress.total_bytes) * 100))
     : 0;
-  const upstreamUpToDate = !!upstreamState && !!releaseInfo && upstreamState.upstream_tag === releaseInfo.release.tag;
   const directoryCandidates = directory?.candidates ?? [];
   const alternatives = directoryCandidates.filter((path) => path !== directory?.selected);
 
@@ -314,25 +309,18 @@ export default function InstallationPage() {
                 <small>{t("install.version")}</small>
                 <strong>{installation.package_version}</strong>
               </span>
+              <span className="inst-hero__fact">
+                <small>{t("upstream.upstreamCol")}</small>
+                <strong>{upstreamState ? upstreamState.upstream_tag : "--"}</strong>
+              </span>
               <span className={`inst-hero__fact ${damaged ? "is-warning" : "is-healthy"}`}>
                 <small>{t("st.files")}</small>
                 <strong>{damaged ? t("install.damaged", { n: damaged }) : t("install.healthy", { n: installation.total })}</strong>
               </span>
-              {upstreamState && (
-                <div className="inst-hero__installed">
-                  <small>{upstreamState.upstream_tag} · {formatDate(upstreamState.upstream_installed_at)} · {t(upstreamSourceKey(upstreamState.upstream_source))}</small>
-                  <small>{t("upstream.laCol")} {upstreamState.la_version} · {formatDate(upstreamState.la_installed_at)}</small>
-                  {releaseInfo && (
-                    <small className="inst-hero__note">
-                      {upstreamUpToDate ? t("upstream.upToDate") : t("upstream.canUpdate", { tag: releaseInfo.release.tag })}
-                    </small>
-                  )}
-                  {upstreamState.upstream_panel_exe && (
-                    <button className="inst-hero__btn" disabled={!!working} onClick={launchUpstream} title={upstreamState.upstream_panel_exe}>
-                      <PlayCircle size={13} />{working === "launch" ? t("install.working") : t("upstream.launchPanel")}
-                    </button>
-                  )}
-                </div>
+              {upstreamState?.upstream_panel_exe && (
+                <button className="inst-hero__btn" disabled={!!working} onClick={launchUpstream} title={upstreamState.upstream_panel_exe}>
+                  <PlayCircle size={13} />{working === "launch" ? t("install.working") : t("upstream.launchPanel")}
+                </button>
               )}
             </>
           )}
@@ -348,12 +336,11 @@ export default function InstallationPage() {
         </div>
       </section>
 
-      <div className="inst-groups inst-groups--pair">
-      <OnlineUpdateSection />
-      <section className="inst-group">
-          <header className="inst-group__head">
-            <Download size={17} aria-hidden="true" />
-            <span><strong>{t("upstream.title")}</strong><small>{t("upstream.titleDesc")}</small></span>
+      <OnlineUpdateSection>
+        <div className="upd-sub">
+          <header className="upd-sub__head">
+            <PackageCheck size={15} aria-hidden="true" />
+            <strong>{t("upstream.title")}</strong>
             <span className="update-status">{upstreamReady ? t("upstream.ready") : t("upstream.notReady")}</span>
           </header>
           <div className="upd-card__versions">
@@ -375,20 +362,18 @@ export default function InstallationPage() {
               {cache.entries.map((entry) => t("upstream.cacheSize", { size: formatBytes(entry.size), tag: entry.tag })).join(" · ")}
             </p>
           )}
-          <div className="installation-actions">
-            <label className="upd-card__versions" style={{ alignItems: "center", gap: 8 }}>
-              <span>{t("upstream.downloader")}</span>
-              <Segmented<string>
-                value={config?.downloader === "aria2" ? "aria2" : "builtin"}
-                onChange={(value) => void updateConfig({ downloader: value })}
-                options={[
-                  { value: "builtin", label: t("upstream.downloaderBuiltin") },
-                  ...(aria2Available ? [{ value: "aria2", label: t("upstream.downloaderAria2") }] : []),
-                ]}
-              />
-            </label>
+          <div className="upd-sub__row">
+            <small>{t("upstream.downloader")}</small>
+            <Segmented<string>
+              value={config?.downloader === "aria2" ? "aria2" : "builtin"}
+              onChange={(value) => void updateConfig({ downloader: value })}
+              options={[
+                { value: "builtin", label: t("upstream.downloaderBuiltin") },
+                ...(aria2Available ? [{ value: "aria2", label: t("upstream.downloaderAria2") }] : []),
+              ]}
+            />
+            {!aria2Available && <small className="inst-hero__note">{t("upstream.downloaderAria2Missing")}</small>}
           </div>
-          {!aria2Available && <p className="inst-diagnostics-scope">{t("upstream.downloaderAria2Missing")}</p>}
           <div className="installation-actions">
             <button disabled={!releaseInfo || !!upstreamWorking} onClick={checkUpstream}>
               <RefreshCw size={17} />{upstreamWorking === "check" ? t("upstream.checking") : t("upstream.check")}
@@ -420,8 +405,8 @@ export default function InstallationPage() {
           )}
           {downloading && <p className="inst-diagnostics-scope">{t("upstream.resume")}</p>}
           {upstreamError && <div className="update-error">{upstreamError}</div>}
-        </section>
-      </div>
+        </div>
+      </OnlineUpdateSection>
 
       <div className="inst-groups">
         <section className="inst-group">
