@@ -1309,12 +1309,19 @@
   box-shadow: var(--sh-card);
 }
 .inst-hero__note { color: var(--text-tertiary); font-size: 11px; line-height: 1.5; }
+.inst-hero__actions-row {
+  flex-basis: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
 .inst-hero__dir {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  flex-basis: 100%;
   min-width: 0;
 }
 .inst-hero__btn {
