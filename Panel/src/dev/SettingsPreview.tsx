@@ -1,6 +1,11 @@
 import type { AppConfig } from "../lib/api";
+import { api } from "../lib/api";
 import InstallationPage from "../panels/settings/InstallationPage";
 import { AppStatePreviewProvider } from "../state/store";
+
+// Browser preview has no Tauri: fake the aria2c probe so the downloader
+// segmented control renders both options and the slider is judgeable.
+api.upstreamAria2Available = async () => true;
 
 // Dev-only layout preview: `npm run dev` + ?settings-preview=1 (no Tauri; api failures render the empty states on purpose).
 
