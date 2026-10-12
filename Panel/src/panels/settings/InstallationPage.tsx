@@ -301,23 +301,25 @@ export default function InstallationPage() {
               <strong>{damaged ? t("install.damaged", { n: damaged }) : t("install.healthy", { n: installation.total })}</strong>
             </span>
           )}
-          <div className="inst-hero__dir">
-            <StatusDot status={directory?.valid && directory.selected ? "green" : "off"} />
-            <button className="inst-hero__btn" onClick={browse} title={t("set.browse") as string}>
-              <FolderOpen size={13} />{t("set.browse")}
-            </button>
-            {alternatives.map((path) => (
-              <button className="inst-hero__btn inst-hero__btn--alt" key={path} onClick={() => chooseDirectory(path)} title={path}>
-                <code>{path}</code>
+          <div className="inst-hero__actions-row">
+            <div className="inst-hero__dir">
+              <StatusDot status={directory?.valid && directory.selected ? "green" : "off"} />
+              <button className="inst-hero__btn" onClick={browse} title={t("set.browse") as string}>
+                <FolderOpen size={13} />{t("set.browse")}
               </button>
-            ))}
+              {alternatives.map((path) => (
+                <button className="inst-hero__btn inst-hero__btn--alt" key={path} onClick={() => chooseDirectory(path)} title={path}>
+                  <code>{path}</code>
+                </button>
+              ))}
+            </div>
+            {backupInfo && (
+              <button className="inst-hero__backup" onClick={() => open(backupInfo.full)} title={backupInfo.full}>
+                <FolderOpen size={14} />
+                <span><small>{t("install.backup")}</small>{backupInfo.display}</span>
+              </button>
+            )}
           </div>
-          {backupInfo && (
-            <button className="inst-hero__backup" onClick={() => open(backupInfo.full)} title={backupInfo.full}>
-              <FolderOpen size={14} />
-              <span><small>{t("install.backup")}</small>{backupInfo.display}</span>
-            </button>
-          )}
           {upstreamState?.upstream_panel_exe && (
             <button className="inst-hero__btn inst-hero__btn--launch" disabled={!!working} onClick={launchUpstream} title={upstreamState.upstream_panel_exe}>
               <PlayCircle size={13} />{working === "launch" ? t("install.working") : t("upstream.launchPanel")}
