@@ -1659,9 +1659,9 @@
   flex-wrap: wrap;
   gap: 8px;
 }
-.update-toolbar button,
-.update-actions button,
-.update-primary-action button {
+.update-toolbar button:not(.seg__item),
+.update-actions button:not(.seg__item),
+.update-primary-action button:not(.seg__item) {
   min-height: 36px;
   display: inline-flex;
   align-items: center;
@@ -1675,9 +1675,9 @@
   font-size: 11px;
   font-weight: 650;
 }
-.update-toolbar button:disabled,
-.update-actions button:disabled,
-.update-primary-action button:disabled {
+.update-toolbar button:disabled:not(.seg__item),
+.update-actions button:disabled:not(.seg__item),
+.update-primary-action button:disabled:not(.seg__item) {
   opacity: 0.45;
   cursor: default;
 }
