@@ -128,6 +128,7 @@ export type InstallationInspection = {
   corrupt: string[];
   restore_available: boolean;
   backup_path: string | null;
+  backup_display?: string | null;
   interrupted_transaction: boolean;
   source: InstallationSource;
   source_version: string | null;

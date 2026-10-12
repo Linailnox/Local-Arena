@@ -3060,7 +3060,17 @@ async fn inspect_installation(app: AppHandle, csgo: String) -> Result<Installati
         let root = csgo_path(&csgo)?;
         installer::recover_incomplete(&local_state_root(&app)?, &root)?;
         let root_value = root.clone();
-        installer::inspect(&merged_payload_root(&app, &root_value)?, &local_state_root(&app)?, &root)
+        let mut inspection = installer::inspect(&merged_payload_root(&app, &root_value)?, &local_state_root(&app)?, &root)?;
+        if let Some(full) = inspection.backup_path.clone() {
+            let base = payload_root()?;
+            inspection.backup_display = Some(
+                Path::new(&full)
+                    .strip_prefix(&base)
+                    .map(|relative| relative.to_string_lossy().into_owned())
+                    .unwrap_or(full),
+            );
+        }
+        Ok(inspection)
     })
     .await
 }
