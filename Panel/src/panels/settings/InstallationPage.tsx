@@ -78,8 +78,7 @@ export default function InstallationPage() {
   const backupInfo = (() => {
     const full = installation?.backup_path;
     if (!full) return null;
-    const base = directory?.selected ?? csgoPath;
-    const display = base && full.startsWith(base) ? full.slice(base.length).replace(/^\/+/, "") : full;
+    const display = installation?.backup_display ?? full;
     return { full, display };
   })();
 

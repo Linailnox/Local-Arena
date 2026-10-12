@@ -36,7 +36,8 @@ const store = {
     missing: [],
     corrupt: [],
     package_version: "1.4.3.3",
-    backup_path: "/mnt/game/SteamLibrary/steamapps/common/Counter-Strike Global Offensive/game/csgo/backup",
+    backup_path: "/home/linailnox/Project/Local-Arena/artifacts/LocalArena-v1.4.3.3-linux/.csbip/installation/backup",
+    backup_display: ".csbip/installation/backup",
     source: "managed_plus",
   },
   directory: {
