@@ -969,7 +969,7 @@ export const EN = {
   "upstream.checking": "Checking…",
   "upstream.downloader": "Downloader",
   "upstream.downloaderBuiltin": "Built-in",
-  "upstream.downloaderAria2": "aria2 (multi-thread)",
+  "upstream.downloaderAria2": "aria2",
   "upstream.downloaderAria2Missing": "aria2c was not found on PATH; install aria2 to enable multi-threaded downloads",
   "upstream.download": "Download",
   "upstream.downloading": "Downloading {n}%",
