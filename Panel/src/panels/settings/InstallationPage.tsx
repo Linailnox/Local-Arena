@@ -290,6 +290,17 @@ export default function InstallationPage() {
           <strong>{installation?.installed ? t(SOURCE_KEYS[source]) : t("install.notInstalled")}</strong>
           <span className="inst-hero__path">{directory?.selected ?? t("set.noCsgo")}</span>
           {installation && <p>{t(SOURCE_DESC_KEYS[source])}</p>}
+          {!directory?.steam_found && (
+            <p className="inst-hero__note">{t("set.steamNotDetected")}</p>
+          )}
+        </div>
+        <div className="inst-hero__side">
+          {installation?.installed && (
+            <span className={`inst-hero__fact ${damaged ? "is-warning" : "is-healthy"}`}>
+              <small>{t("st.files")}</small>
+              <strong>{damaged ? t("install.damaged", { n: damaged }) : t("install.healthy", { n: installation.total })}</strong>
+            </span>
+          )}
           <div className="inst-hero__dir">
             <StatusDot status={directory?.valid && directory.selected ? "green" : "off"} />
             <button className="inst-hero__btn" onClick={browse} title={t("set.browse") as string}>
@@ -301,37 +312,16 @@ export default function InstallationPage() {
               </button>
             ))}
           </div>
-          {!directory?.steam_found && (
-            <p className="inst-hero__note">{t("set.steamNotDetected")}</p>
-          )}
           {backupInfo && (
             <button className="inst-hero__backup" onClick={() => open(backupInfo.full)} title={backupInfo.full}>
               <FolderOpen size={14} />
               <span><small>{t("install.backup")}</small>{backupInfo.display}</span>
             </button>
           )}
-        </div>
-        <div className="inst-hero__side">
-          {installation?.installed && (
-            <>
-              <span className="inst-hero__fact">
-                <small>{t("install.version")}</small>
-                <strong>{installation.package_version}</strong>
-              </span>
-              <span className="inst-hero__fact">
-                <small>{t("upstream.upstreamCol")}</small>
-                <strong>{upstreamState ? upstreamState.upstream_tag : "--"}</strong>
-              </span>
-              <span className={`inst-hero__fact ${damaged ? "is-warning" : "is-healthy"}`}>
-                <small>{t("st.files")}</small>
-                <strong>{damaged ? t("install.damaged", { n: damaged }) : t("install.healthy", { n: installation.total })}</strong>
-              </span>
-              {upstreamState?.upstream_panel_exe && (
-                <button className="inst-hero__btn inst-hero__btn--launch" disabled={!!working} onClick={launchUpstream} title={upstreamState.upstream_panel_exe}>
-                  <PlayCircle size={13} />{working === "launch" ? t("install.working") : t("upstream.launchPanel")}
-                </button>
-              )}
-            </>
+          {upstreamState?.upstream_panel_exe && (
+            <button className="inst-hero__btn inst-hero__btn--launch" disabled={!!working} onClick={launchUpstream} title={upstreamState.upstream_panel_exe}>
+              <PlayCircle size={13} />{working === "launch" ? t("install.working") : t("upstream.launchPanel")}
+            </button>
           )}
           {!upstreamState && (
             <p className="inst-hero__note">{t("upstream.notInstalled")}</p>

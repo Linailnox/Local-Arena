@@ -1314,7 +1314,8 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  margin-top: 2px;
+  flex-basis: 100%;
+  min-width: 0;
 }
 .inst-hero__btn {
   min-height: 26px;
@@ -1418,7 +1419,7 @@
   align-content: start;
 }
 .inst-hero__fact {
-  flex: 1 1 0;
+  flex: 1 1 100%;
   min-width: 0;
   display: grid;
   gap: 2px;
