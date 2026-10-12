@@ -1873,6 +1873,7 @@
   .upd-card__head { grid-template-columns: 40px minmax(0, 1fr); }
   .upd-card__icon { width: 40px; height: 40px; }
   .update-status { grid-column: 2; justify-self: start; }
+  .upd-card__actions { grid-column: 1 / -1; flex-wrap: wrap; }
 }
 
 @media (max-width: 900px) {
