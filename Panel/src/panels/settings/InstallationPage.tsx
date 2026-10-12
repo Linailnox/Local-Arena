@@ -298,6 +298,12 @@ export default function InstallationPage() {
           {!directory?.steam_found && (
             <p className="inst-hero__note">{t("set.steamNotDetected")}</p>
           )}
+          {installation?.backup_path && (
+            <button className="inst-hero__backup" onClick={() => open(installation.backup_path!)} title={installation.backup_path}>
+              <FolderOpen size={14} />
+              <span><small>{t("install.backup")}</small>{installation.backup_path}</span>
+            </button>
+          )}
         </div>
         <div className="inst-hero__side">
           {installation?.installed && (
@@ -315,7 +321,7 @@ export default function InstallationPage() {
                 <strong>{damaged ? t("install.damaged", { n: damaged }) : t("install.healthy", { n: installation.total })}</strong>
               </span>
               {upstreamState?.upstream_panel_exe && (
-                <button className="inst-hero__btn" disabled={!!working} onClick={launchUpstream} title={upstreamState.upstream_panel_exe}>
+                <button className="inst-hero__btn inst-hero__btn--launch" disabled={!!working} onClick={launchUpstream} title={upstreamState.upstream_panel_exe}>
                   <PlayCircle size={13} />{working === "launch" ? t("install.working") : t("upstream.launchPanel")}
                 </button>
               )}
@@ -323,12 +329,6 @@ export default function InstallationPage() {
           )}
           {!upstreamState && (
             <p className="inst-hero__note">{t("upstream.notInstalled")}</p>
-          )}
-          {installation?.backup_path && (
-            <button className="inst-hero__backup" onClick={() => open(installation.backup_path!)} title={installation.backup_path}>
-              <FolderOpen size={14} />
-              <span><small>{t("install.backup")}</small>{installation.backup_path}</span>
-            </button>
           )}
         </div>
       </section>
