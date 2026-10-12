@@ -3,7 +3,6 @@ import { ArchiveRestore, ArrowRight, CheckCircle2, CircleAlert, CircleX, Clipboa
 import { useStore } from "../../state/store";
 import { useT, type I18nKey } from "../../i18n";
 import { useToast } from "../../components/Toast";
-import StatusDot from "../../components/StatusDot";
 import { api, toAppError, type InstallCheckReport, type InstallationSource, type MigrationKind, type UpstreamCacheInfo, type UpstreamInstalledState, type UpstreamProgress, type UpstreamReleaseInfo } from "../../lib/api";
 import { installAttemptDisabled, installBlockedByUpstream } from "../../lib/installGate";
 import Segmented from "../../components/Segmented";
@@ -303,7 +302,6 @@ export default function InstallationPage() {
           )}
           <div className="inst-hero__actions-row">
             <div className="inst-hero__dir">
-              <StatusDot status={directory?.valid && directory.selected ? "green" : "off"} />
               <button className="inst-hero__btn" onClick={browse} title={t("set.browse") as string}>
                 <FolderOpen size={13} />{t("set.browse")}
               </button>
