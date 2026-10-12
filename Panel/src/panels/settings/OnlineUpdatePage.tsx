@@ -194,8 +194,8 @@ export function OnlineUpdateSection({ children }: { children?: ReactNode }) {
       <div className="upd-grid">
         {componentSection("panel")}
         {componentSection("plugin")}
+        {children}
       </div>
-      {children}
     </div>
     </section>
   );
