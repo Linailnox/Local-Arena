@@ -216,6 +216,7 @@ pub struct InstallationInspection {
     pub corrupt: Vec<String>,
     pub restore_available: bool,
     pub backup_path: Option<String>,
+    pub backup_display: Option<String>,
     pub interrupted_transaction: bool,
     pub source: InstallationSource,
     pub source_version: Option<String>,
@@ -749,6 +750,7 @@ fn inspect_impl(
         backup_path: record
             .as_ref()
             .map(|_| directory.to_string_lossy().into_owned()),
+        backup_display: None,
         interrupted_transaction: directory.join("journal.json").is_file(),
         source: detection.source,
         source_version: detection.version,
