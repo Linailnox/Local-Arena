@@ -1734,7 +1734,7 @@
   align-items: center;
   gap: 12px;
 }
-.upd-card__actions {
+.upd-card__head > .upd-card__actions {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1871,10 +1871,9 @@
   .update-toolbar { align-items: flex-start; }
   .update-primary-action { align-items: flex-start; flex-direction: column; }
   .upd-card { padding: 15px; }
-  .upd-card__head { grid-template-columns: 40px minmax(0, 1fr); }
+  .upd-card__head { grid-template-columns: 40px minmax(0, 1fr) auto; }
   .upd-card__icon { width: 40px; height: 40px; }
-  .update-status { grid-column: 2; justify-self: start; }
-  .upd-card__actions { grid-column: 1 / -1; flex-direction: column; align-items: flex-start; }
+  .upd-card__head > .upd-card__actions { justify-self: end; }
 }
 
 @media (max-width: 900px) {
