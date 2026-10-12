@@ -739,7 +739,7 @@ export const EN = {
   "set.role.upstreamAuthor": "Upstream author",
   "set.role.contributor": "Contributor",
   "set.contributionCount": "{n} commits",
-  "set.browse": "Browse…",
+  "set.browse": "Select folder…",
   "set.currentDirectory": "Current game directory",
   "set.detectedDirectories": "Other detected directories",
   "set.steamNotDetected": "Steam was not detected, use Browse to locate game/csgo",

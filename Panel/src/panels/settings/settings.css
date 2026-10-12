@@ -1313,9 +1313,15 @@
   flex-basis: 100%;
   min-width: 0;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  align-items: stretch;
   gap: 8px;
+}
+.inst-hero__actions-row .inst-hero__dir {
+  flex: 1 1 0;
+}
+.inst-hero__actions-row .inst-hero__backup {
+  flex: 1 1 0;
+  justify-self: auto;
 }
 .inst-hero__dir {
   display: flex;
