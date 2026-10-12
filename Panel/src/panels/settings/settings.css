@@ -1623,6 +1623,11 @@
   padding: 0 0 14px;
   border-bottom: 1px solid var(--line-subtle);
 }
+.update-toolbar__side {
+  display: grid;
+  gap: 8px;
+  justify-items: end;
+}
 .update-toolbar > span {
   min-width: 0;
   display: grid;

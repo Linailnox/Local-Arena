@@ -336,7 +336,22 @@ export default function InstallationPage() {
         </div>
       </section>
 
-      <OnlineUpdateSection>
+      <OnlineUpdateSection
+        toolbarExtra={
+          <div className="upd-sub__row" style={{ justifyContent: "flex-end" }}>
+            <small>{t("upstream.downloader")}</small>
+            <Segmented<string>
+              value={config?.downloader === "aria2" ? "aria2" : "builtin"}
+              onChange={(value) => void updateConfig({ downloader: value })}
+              options={[
+                { value: "builtin", label: t("upstream.downloaderBuiltin") },
+                ...(aria2Available ? [{ value: "aria2", label: t("upstream.downloaderAria2") }] : []),
+              ]}
+            />
+            {!aria2Available && <small className="inst-hero__note">{t("upstream.downloaderAria2Missing")}</small>}
+          </div>
+        }
+      >
         <section className="upd-card">
           <div className="upd-card__head">
             <span className="upd-card__icon upd-card__icon--upstream">
@@ -377,18 +392,6 @@ export default function InstallationPage() {
               {cache.entries.map((entry) => t("upstream.cacheSize", { size: formatBytes(entry.size), tag: entry.tag })).join(" · ")}
             </p>
           )}
-          <div className="upd-sub__row">
-            <small>{t("upstream.downloader")}</small>
-            <Segmented<string>
-              value={config?.downloader === "aria2" ? "aria2" : "builtin"}
-              onChange={(value) => void updateConfig({ downloader: value })}
-              options={[
-                { value: "builtin", label: t("upstream.downloaderBuiltin") },
-                ...(aria2Available ? [{ value: "aria2", label: t("upstream.downloaderAria2") }] : []),
-              ]}
-            />
-            {!aria2Available && <small className="inst-hero__note">{t("upstream.downloaderAria2Missing")}</small>}
-          </div>
           <div className="installation-actions">
             {downloading && (
               <button onClick={cancelUpstream}><X size={17} />{t("upstream.cancel")}</button>

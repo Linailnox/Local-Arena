@@ -16,7 +16,7 @@ function formatTime(value: number | null) {
   return value ? new Date(value * 1000).toLocaleString() : "--";
 }
 
-export function OnlineUpdateSection({ children }: { children?: ReactNode }) {
+export function OnlineUpdateSection({ children, toolbarExtra }: { children?: ReactNode; toolbarExtra?: ReactNode }) {
   const { csgoPath, process } = useStore();
   const t = useT();
   const [snapshot, setSnapshot] = useState<OnlineUpdateSnapshot | null>(null);
@@ -164,7 +164,9 @@ export function OnlineUpdateSection({ children }: { children?: ReactNode }) {
       <div className="online-update-page">
       <div className="update-toolbar">
         <span><small>{t("update.lastChecked")}</small><strong>{formatTime(snapshot?.checked_at ?? null)}</strong></span>
-        <div>
+        <div className="update-toolbar__side">
+          {toolbarExtra}
+          <div className="update-toolbar__buttons">
           {snapshot?.release_notes_url && (
             <button title={t("update.releaseNotes")} onClick={() => openExternalUrl(snapshot.release_notes_url!)}>
               <ExternalLink size={16} />{t("update.releaseNotes")}
@@ -173,6 +175,7 @@ export function OnlineUpdateSection({ children }: { children?: ReactNode }) {
           <button disabled={working === "check" || snapshot?.busy} onClick={check}>
             <RefreshCw size={16} />{working === "check" ? t("update.checking") : t("update.check")}
           </button>
+          </div>
         </div>
       </div>
       {(localError || snapshot?.error) && <div className="update-error">{localError ?? snapshot?.error}</div>}
