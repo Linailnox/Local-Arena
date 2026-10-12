@@ -1316,30 +1316,17 @@
   align-items: stretch;
   gap: 8px;
 }
-.inst-hero__actions-row .inst-hero__dir {
-  flex: 1 1 0;
-  align-items: stretch;
-}
-.inst-hero__actions-row .inst-hero__dir > .inst-hero__btn {
+.inst-hero__actions-row > .inst-hero__btn,
+.inst-hero__actions-row > .inst-hero__backup {
   flex: 1 1 0;
   min-width: 0;
   min-height: 40px;
+  justify-content: center;
 }
-.inst-hero__dir > .inst-hero__btn > code {
+.inst-hero__btn > code {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.inst-hero__actions-row .inst-hero__backup {
-  flex: 1 1 0;
-  justify-self: auto;
-}
-.inst-hero__dir {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
 }
 .inst-hero__btn {
   min-height: 26px;
