@@ -27,7 +27,7 @@ mod update_core;
 mod upstream_package;
 use installer::{InstallPlan, InstallTransactionResult, InstallationInspection, RestoreResult};
 use install_checks::InstallCheckReport;
-use match_system::{MatchCatalog, MatchResult, MatchSession, MatchRequest, MatchState, PrepareMatchInput, MatchHistoryStats};
+use match_system::{MatchCatalog, MatchSession, MatchRequest, MatchState, PrepareMatchInput};
 use mode_files::{LaunchMode, apply_launch_mode, contains_metamod_search_path};
 use runtime_state::{Cs2ProcessInfo, blocks_target_write, inspect_cs2_process};
 
@@ -1790,24 +1790,11 @@ fn get_active_match(csgo: String) -> Result<Option<MatchSession>> {
 }
 
 #[tauri::command]
-fn list_match_history(csgo: String) -> Result<Vec<MatchSession>> {
-    match_system::history(&csgo_path(&csgo)?)
-}
-
-#[tauri::command]
-fn get_match_result(csgo: String, session_id: String) -> Result<MatchResult> {
-    match_system::get_result(&csgo_path(&csgo)?, &session_id)
-}
-
-#[tauri::command]
-fn delete_match(csgo: String, session_id: String, confirmed: bool) -> Result<()> {
-    if !confirmed { return Err(AppError::invalid("Deleting a match requires explicit confirmation")); }
-    match_system::delete(&csgo_path(&csgo)?, &session_id)
-}
-
-#[tauri::command]
-fn get_match_history_stats(csgo: String) -> Result<MatchHistoryStats> {
-    match_system::aggregated_stats(&csgo_path(&csgo)?)
+fn match_session_demo(csgo: String, map_id: String, started_at_unix: u64) -> Result<Option<MatchSession>> {
+    // 15 minutes: a cs2ss match row is created when the game starts, so the Panel
+    // session that launched it sits within seconds; the window only has to absorb
+    // clock skew and long loading screens.
+    match_system::session_demo_for(&csgo_path(&csgo)?, &map_id, started_at_unix, 900)
 }
 
 #[tauri::command]
@@ -4532,8 +4519,8 @@ pub fn run() {
             upstream_aria2_available,
             upstream_cache_info, upstream_cache_clear, upstream_import_local,
             upstream_installed_state, launch_upstream_panel,
-            get_match_catalog, prepare_and_launch_match, finish_active_match, get_active_match, list_match_history,
-            get_match_result, delete_match, get_match_history_stats, run_install_checks, play_demo, open_demo_folder,
+            get_match_catalog, prepare_and_launch_match, finish_active_match, get_active_match, match_session_demo,
+            run_install_checks, play_demo, open_demo_folder,
             cs2ss_bridge::get_cs2ss_overview, cs2ss_bridge::list_cs2ss_matches,
             cs2ss_bridge::get_cs2ss_match_detail, cs2ss_bridge::get_cs2ss_player_detail,
             cs2ss_bridge::list_cs2ss_matches_with_stats,
