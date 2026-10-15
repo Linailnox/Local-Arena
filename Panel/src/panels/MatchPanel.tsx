@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, History, Play, RotateCcw, Shield, Square, Swords, Users } from "lucide-react";
+import { AlertTriangle, Play, RotateCcw, Shield, Square, Swords, Users, X } from "lucide-react";
 import { api, type MatchCatalog, type MatchResult, type MatchSession, type PrepareMatchInput } from "../lib/api";
 import { useT } from "../i18n";
 import { useStore } from "../state/store";
@@ -7,20 +7,39 @@ import { listenAppEvent } from "../lib/platform";
 import Toggle from "../components/Toggle";
 import Dropdown from "../components/Dropdown";
 import Modal from "../components/Modal";
-import MatchResultView from "./MatchResultView";
+import StatsMatchDetail from "./StatsMatchDetail";
 import { MAP_IMAGES, MAP_LABELS } from "../data/maps";
 import { teamLogoPath } from "../data/matchVisuals";
 import "./MatchPanel.css";
 
-type Props = { onOpenInstallation?: () => void; onOpenHistory?: () => void; onOpenLineup?: () => void };
+type Props = { onOpenInstallation?: () => void; onOpenLineup?: () => void };
 
-export default function MatchPanel({ onOpenInstallation, onOpenHistory, onOpenLineup }: Props) {
+type FinishedMatch = { matchId: number; demoSession: MatchSession | null };
+
+// A finished Panel session is shown through the cs2ss stats view, so the session has to be
+// translated into the telemetry match it produced. `match_session_demo` matches on map +
+// start time; when nothing is close enough we still open the newest match on that map so the
+// player is never dropped on a dead end.
+async function resolveFinished(csgo: string, mapId: string, startedAtUnix: number): Promise<FinishedMatch | null> {
+  const demoSession = await api.matchSessionDemo(csgo, mapId, startedAtUnix).catch(() => null);
+  const matches = await api.listCs2ssMatchesWithStats(csgo).catch(() => []);
+  const onMap = matches.filter((entry) => entry.map === mapId);
+  if (onMap.length === 0) return null;
+  const nearest = onMap.reduce((best, entry) => {
+    const distance = Math.abs(new Date(entry.startedAt).getTime() / 1000 - startedAtUnix);
+    const bestDistance = Math.abs(new Date(best.startedAt).getTime() / 1000 - startedAtUnix);
+    return distance < bestDistance ? entry : best;
+  });
+  return { matchId: nearest.matchId, demoSession: demoSession ?? null };
+}
+
+export default function MatchPanel({ onOpenInstallation, onOpenLineup }: Props) {
   const t = useT();
   const { directory, process, reportError, teamLineup } = useStore();
   const csgo = directory?.valid ? directory.selected : null;
   const [catalog, setCatalog] = useState<MatchCatalog | null>(null);
-  const [result, setResult] = useState<MatchResult | null>(null);
   const [activeMatch, setActiveMatch] = useState<MatchSession | null>(null);
+  const [finishedMatch, setFinishedMatch] = useState<FinishedMatch | null>(null);
   const [selectedMap, setSelectedMap] = useState("de_mirage");
   const [opponentKind, setOpponentKind] = useState<PrepareMatchInput["opponent_kind"]>("featured_team");
   const [teamId, setTeamId] = useState<string | null>(null);
@@ -38,7 +57,7 @@ export default function MatchPanel({ onOpenInstallation, onOpenHistory, onOpenLi
     }).catch(reportError);
     void api.getActiveMatch(csgo).then((active) => {
       if (active && (active.state === "finished" || active.state === "interrupted")) {
-        void api.getMatchResult(csgo, active.session_id).then(setResult).catch(() => {});
+        void resolveFinished(csgo, active.map_id, active.created_at_unix).then(setFinishedMatch).catch(() => {});
       } else {
         setActiveMatch(active);
       }
@@ -48,8 +67,8 @@ export default function MatchPanel({ onOpenInstallation, onOpenHistory, onOpenLi
   useEffect(() => {
     const promise = listenAppEvent<MatchResult>("match-finished", (event) => {
       setActiveMatch(null);
-      setResult(event.payload);
       setBusy(false);
+      if (csgo) void resolveFinished(csgo, event.payload.map_id, event.payload.started_at_unix).then(setFinishedMatch).catch(() => {});
     });
     return () => { void promise.then((dispose) => dispose()); };
   }, [csgo]);
@@ -90,8 +109,6 @@ export default function MatchPanel({ onOpenInstallation, onOpenHistory, onOpenLi
         map_id: request.map_id,
         opponent_name: request.opponent_name,
         created_at_unix: request.created_at_unix,
-        player_score: 0,
-        opponent_score: 0,
         demo: { state: request.record_demo ? "pending" : "disabled", path: request.record_demo ? request.demo_path : null, size_bytes: 0, error_code: null, detail: null },
         result_path: request.result_path,
       });
@@ -111,7 +128,18 @@ export default function MatchPanel({ onOpenInstallation, onOpenHistory, onOpenLi
     }
   };
 
-  if (result) return <MatchResultView result={result} onClose={() => setResult(null)} t={t} csgo={csgo} />;
+  if (finishedMatch) return (
+    <div className="match-page">
+      <header className="workspace__head match-page__head">
+        <div className="match-page__title">
+          <span className="workspace__eyebrow">{t("match.resultsEyebrow")}</span>
+          <h1>{t("match.results")}</h1>
+        </div>
+        <button className="match-history-button" onClick={() => setFinishedMatch(null)}><X size={16} />{t("match.backToLobby")}</button>
+      </header>
+      <StatsMatchDetail csgo={csgo!} matchId={finishedMatch.matchId} onBack={() => setFinishedMatch(null)} demoSession={finishedMatch.demoSession} />
+    </div>
+  );
 
   if (activeMatch) return (
     <div className="match-page match-active-page">
@@ -121,7 +149,6 @@ export default function MatchPanel({ onOpenInstallation, onOpenHistory, onOpenLi
           <h1>{t("match.active")}</h1>
           <p>{t("match.activeAgainst", { team: activeMatch.opponent_name })}</p>
         </div>
-        {onOpenHistory && <button className="match-history-button" onClick={onOpenHistory}><History size={16} />{t("match.history")}</button>}
       </header>
       <section className="match-active glass">
         <div className="match-active__map">
@@ -163,7 +190,7 @@ export default function MatchPanel({ onOpenInstallation, onOpenHistory, onOpenLi
           <h1>{t("match.title")}</h1>
           <p>{t("match.subtitle")}</p>
         </div>
-        {onOpenHistory && <button className="match-history-button" onClick={onOpenHistory}><History size={16} />{t("match.history")}</button>}
+        {onOpenLineup && lineupEnabled && <button className="match-history-button" onClick={onOpenLineup}><Users size={16} />{t("pre.title")}</button>}
       </header>
 
       <section className="match-vs glass" aria-label={t("match.title")}>

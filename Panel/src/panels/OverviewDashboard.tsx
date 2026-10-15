@@ -6,7 +6,6 @@ import {
   Command,
   Crosshair,
   Download,
-  History,
   Play,
   Settings2,
   SlidersHorizontal,
@@ -16,19 +15,20 @@ import {
 import StatusBar from "../components/StatusBar";
 import ModeCard from "./ModeCard";
 import DifficultyCard from "./DifficultyCard";
-import { api, type MatchSession, type OnlineUpdateSnapshot } from "../lib/api";
+import { api, type OnlineUpdateSnapshot } from "../lib/api";
+import type { Cs2ssMatchWithStats } from "../data/cs2ssTypes";
+import { cs2ssMapLabel } from "../data/cs2ssMaps";
 import { useStore } from "../state/store";
-import { MAP_IMAGES, MAP_LABELS } from "../data/maps";
+import { MAP_IMAGES } from "../data/maps";
 import { useT, type I18nKey } from "../i18n";
 
 export type DashboardTarget =
-  | "match" | "matchHistory" | "stats" | "settings" | "presets" | "commands" | "weaponPresets" | "guide";
+  | "match" | "stats" | "settings" | "presets" | "commands" | "weaponPresets" | "guide";
 
 type Tile = { view: DashboardTarget; key: I18nKey; icon: LucideIcon };
 
 const TILES: Tile[] = [
   { view: "match", key: "match.title", icon: Swords },
-  { view: "matchHistory", key: "match.history", icon: History },
   { view: "weaponPresets", key: "weapons.title", icon: Crosshair },
   { view: "presets", key: "pre.title", icon: SlidersHorizontal },
   { view: "stats", key: "stats.globalHistory", icon: BarChart3 },
@@ -42,7 +42,7 @@ export default function OverviewDashboard({ onNavigate }: { onNavigate: (view: D
   const { directory } = useStore();
   const csgo = directory?.valid ? directory.selected : null;
   const [updates, setUpdates] = useState<OnlineUpdateSnapshot | null>(null);
-  const [history, setHistory] = useState<MatchSession[] | null>(null);
+  const [matches, setMatches] = useState<Cs2ssMatchWithStats[] | null>(null);
 
   useEffect(() => {
     void api.getUpdateSnapshot().then(setUpdates).catch(() => {});
@@ -50,14 +50,14 @@ export default function OverviewDashboard({ onNavigate }: { onNavigate: (view: D
 
   useEffect(() => {
     if (!csgo) {
-      setHistory(null);
+      setMatches(null);
       return;
     }
-    void api.listMatchHistory(csgo).then(setHistory).catch(() => {});
+    void api.listCs2ssMatchesWithStats(csgo).then(setMatches).catch(() => setMatches([]));
   }, [csgo]);
 
   const updateAvailable = !!updates && (updates.panel.update_available || updates.plugin.update_available);
-  const latest = history?.[0] ?? null;
+  const latest = matches?.[0] ?? null;
 
   return (
     <div className="dashboard">
@@ -85,21 +85,21 @@ export default function OverviewDashboard({ onNavigate }: { onNavigate: (view: D
       </div>
 
       {latest ? (
-        <button className="recent-match glass" onClick={() => onNavigate("matchHistory")}>
+        <button className="recent-match glass" onClick={() => onNavigate("stats")}>
           <span className="recent-match__map" aria-hidden="true">
-            {MAP_IMAGES[latest.map_id] && <img src={MAP_IMAGES[latest.map_id]} alt="" />}
-            <i>{MAP_LABELS[latest.map_id] ?? latest.map_id}</i>
+            {MAP_IMAGES[latest.map] && <img src={MAP_IMAGES[latest.map]} alt="" />}
+            <i>{cs2ssMapLabel(latest.map)}</i>
           </span>
           <span className="recent-match__body">
             <small>{t("match.recentMatches")}</small>
             <strong>
-              {latest.player_score} : {latest.opponent_score}
-              <em>· {latest.opponent_name}</em>
+              {latest.teamAScore} : {latest.teamBScore}
+              <em> · {t("stats.matchNumber", { id: latest.matchId })}</em>
             </strong>
-            <span>{new Date(latest.created_at_unix * 1000).toLocaleString()}</span>
+            <span>{new Date(latest.startedAt).toLocaleString()}</span>
           </span>
-          <span className={`recent-match__state is-${latest.state}`}>
-            {t(latest.state === "finished" ? "match.finished" : "match.interrupted")}
+          <span className={`recent-match__state is-${latest.result === "W" ? "finished" : "interrupted"}`}>
+            {latest.result ?? t("match.finished")}
           </span>
         </button>
       ) : (
@@ -108,7 +108,7 @@ export default function OverviewDashboard({ onNavigate }: { onNavigate: (view: D
           <span className="recent-match__body">
             <small>{t("match.recentMatches")}</small>
             <strong>{t("overview.startFirstMatch")}</strong>
-            <span>{t("match.emptyHistory")}</span>
+            <span>{t("stats.noMatches")}</span>
           </span>
           <ArrowRight size={16} className="recent-match__chev" />
         </button>
