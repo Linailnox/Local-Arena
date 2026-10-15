@@ -206,10 +206,6 @@ export const EN = {
   "match.demoState.failed": "Failed",
   "match.demoState.interrupted": "Interrupted",
   "startup.failed": "Panel failed to start",
-  "mh.totalMatches": "Matches",
-  "mh.completedMatches": "Completed",
-  "mh.avgScore": "Avg score",
-  "mh.favMap": "Top map",
   "match.player": "Player",
   "match.swing": "Swing",
   "match.players": "players",
@@ -328,7 +324,6 @@ export const EN = {
   "tb.settings": "Settings",
   "tb.minimize": "Minimize",
   "tb.close": "Close",
-
   "st.directory": "Directory",
   "st.files": "Files",
   "st.installation": "Installation",
@@ -342,7 +337,6 @@ export const EN = {
   "st.multiple": "Multiple installs — choose in Settings",
   "st.viewMissing": "View missing files",
   "st.wrongLocation": "Files are in the wrong folder — move them into game\\csgo",
-
   "mode.title": "Mode",
   "mode.online": "Online Mode",
   "mode.preview": "Cosmetics Preview",
@@ -352,7 +346,6 @@ export const EN = {
   "mode.launchPreview": "Launch cosmetics preview",
   "mode.launchBots": "Launch enhanced bots",
   "mode.launching": "Launching CS2…",
-
   "diff.title": "Difficulty",
   "diff.low": "Low",
   "diff.medium": "Medium",
@@ -360,7 +353,6 @@ export const EN = {
   "diff.lowDesc": "Lower reaction, accuracy, and tactical pressure for learning maps, features, and basic engagements",
   "diff.mediumDesc": "Balanced reaction speed, accuracy, and teamwork pressure for regular practice",
   "diff.highDesc": "Faster reactions, more active coordination, and harsher punishment for mistakes in high-intensity practice",
-
   "pre.title": "Bot presets",
   "pre.aim": "Aim",
   "pre.nades": "Nades",
@@ -409,7 +401,6 @@ export const EN = {
   "pre.timescaleToggleHint": "Enjoy your gold time!",
   "pre.infiniteAmmo": "Infinite ammo",
   "pre.infiniteAmmoHint": "Injects sv_infinite_ammo 2 at the start of each match so magazines and grenades never run out.",
-
   "live.wear": "Wear",
   "live.seed": "Pattern seed",
   "live.nameTag": "Name tag",
@@ -520,13 +511,11 @@ export const EN = {
   "music.remove": "Use Steam default",
   "music.saving": "Saving…",
   "music.noResults": "No matching music kits",
-
   "bi.title": "Bot Items",
   "bi.skins": "Skins",
   "bi.profiles": "Profiles",
   "bi.agents": "Agents",
   "bi.music": "Music Kits",
-
   "cmd.title": "Commands",
   "cmd.search": "Search…",
   "cmd.searchCommands": "Search commands",
@@ -597,7 +586,6 @@ export const EN = {
   // Placeholder hints shown (non-selectable) after certain bot commands.
   "cmd.hint.botName": "bot name",
   "cmd.hint.number": "number",
-
   "set.title": "Settings",
   "set.about": "About",
   "set.aboutDesc": "Product information, legal terms, and open-source notices",
@@ -962,9 +950,6 @@ export const EN = {
   "upstream.titleDesc": "Resolve, download, and cache the upstream package that every Local Arena installation is merged with",
   "upstream.latest": "Latest version",
   "upstream.source": "Source",
-  "upstream.source.api": "GitHub API",
-  "upstream.source.fallback": "GitHub redirect",
-  "upstream.source.manual": "Local import",
   "upstream.check": "Check again",
   "upstream.checking": "Checking…",
   "upstream.downloader": "Downloader",
@@ -1015,9 +1000,7 @@ export const EN = {
   "first.cs2Detected": "CS2 may still be running",
   "first.cs2DetectedDesc": "Close CS2 and recheck, or continue to let the installer perform a fresh authoritative process check",
   "first.recheck": "Recheck",
-
   "ctx.refresh": "Refresh",
-
   "common.ok": "OK",
   "common.copied": "Copied",
   "common.copyFailed": "Copy failed",
@@ -1031,7 +1014,6 @@ export const EN = {
   "err.exportReady": "Diagnostics package ready",
   "err.exportFailed": "Export failed. Check the Panel logs for details",
   "err.copyPath": "Copy path",
-
   // Per-category user-facing messages (chosen by AppError.category).
   "errcat.path": "A required file or folder was not found.",
   "errcat.permission": "Permission denied. Try running as administrator.",
@@ -1049,5 +1031,4 @@ export const EN = {
   "errcat.launch": "Steam or CS2 could not be launched.",
   "errcat.update": "The online update failed verification, download, installation, or rollback.",
 } as const;
-
 export type I18nKey = keyof typeof EN;
