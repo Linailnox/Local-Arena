@@ -124,12 +124,9 @@ pub struct MatchResult {
     pub map_id: String,
     pub started_at_unix: u64,
     pub finished_at_unix: u64,
-    pub player_score: u32,
-    pub opponent_score: u32,
     pub opponent_name: String,
-    pub rating_model_version: String,
     pub demo: DemoStatus,
-    pub players: Vec<serde_json::Value>,
+    #[serde(default)]
     pub interruption_reason: Option<String>,
 }
 
@@ -141,8 +138,6 @@ pub struct MatchSession {
     pub map_id: String,
     pub opponent_name: String,
     pub created_at_unix: u64,
-    pub player_score: u32,
-    pub opponent_score: u32,
     pub demo: DemoStatus,
     pub result_path: Option<String>,
 }
@@ -390,7 +385,7 @@ fn session_from_request(request: &MatchRequest) -> MatchSession {
     MatchSession {
         schema_version: SCHEMA_VERSION, session_id: request.session_id.clone(), state: MatchState::Launching,
         map_id: request.map_id.clone(), opponent_name: request.opponent_name.clone(),
-        created_at_unix: request.created_at_unix, player_score: 0, opponent_score: 0,
+        created_at_unix: request.created_at_unix,
         demo: DemoStatus { state: if request.record_demo { "pending" } else { "disabled" }.into(), path: request.record_demo.then(|| request.demo_path.clone()), size_bytes: 0, error_code: None, detail: None },
         result_path: Some(request.result_path.clone()),
     }
@@ -404,8 +399,6 @@ fn session_from_result(result: MatchResult, result_path: PathBuf) -> MatchSessio
         map_id: result.map_id,
         opponent_name: result.opponent_name,
         created_at_unix: result.started_at_unix,
-        player_score: result.player_score,
-        opponent_score: result.opponent_score,
         demo: result.demo,
         result_path: Some(result_path.to_string_lossy().into_owned()),
     }
@@ -418,6 +411,7 @@ fn clear_active_session(csgo: &Path, session_id: &str) {
     }
 }
 
+#[cfg(test)]
 pub fn get_result(csgo: &Path, session_id: &str) -> Result<MatchResult> {
     validate_segment(session_id, "session id")?;
     let path = match_root(csgo).join(session_id).join("result.json");
@@ -457,10 +451,7 @@ pub fn interrupt_active(csgo: &Path, error_code: &str, detail: &str, clear_activ
         map_id: request.map_id,
         started_at_unix: request.created_at_unix,
         finished_at_unix: now(),
-        player_score: 0,
-        opponent_score: 0,
         opponent_name: request.opponent_name,
-        rating_model_version: "open-rating-3.0-proxy-v1".into(),
         demo: DemoStatus {
             state: if request.record_demo { "validating" } else { "disabled" }.into(),
             path: request.record_demo.then(|| demo_path.to_string_lossy().into_owned()),
@@ -468,7 +459,6 @@ pub fn interrupt_active(csgo: &Path, error_code: &str, detail: &str, clear_activ
             error_code: None,
             detail: None,
         },
-        players: vec![],
         interruption_reason: Some(format!("{error_code}: {detail}")),
     };
     if request.record_demo {
@@ -483,39 +473,6 @@ pub fn interrupt_active(csgo: &Path, error_code: &str, detail: &str, clear_activ
     write_json(&result_path, &result)?;
     if clear_active { clear_active_session(csgo, &request.session_id); }
     Ok(Some(result))
-}
-
-pub fn history(csgo: &Path) -> Result<Vec<MatchSession>> {
-    let mut sessions = Vec::new();
-    for entry in fs::read_dir(match_root(csgo)).into_iter().flatten().flatten() {
-        if !entry.path().is_dir() { continue; }
-        let result_path = entry.path().join("result.json");
-        let request_path = entry.path().join("request.json");
-        if result_path.is_file() {
-            if let Ok(result) = read_json::<MatchResult>(&result_path) {
-                sessions.push(session_from_result(result, result_path));
-            }
-        } else if let Ok(request) = read_json::<MatchRequest>(&request_path) { sessions.push(session_from_request(&request)); }
-    }
-    sessions.sort_by_key(|session| std::cmp::Reverse(session.created_at_unix));
-    Ok(sessions)
-}
-
-pub fn delete(csgo: &Path, session_id: &str) -> Result<()> {
-    validate_segment(session_id, "session id")?;
-    if active(csgo)?.is_some_and(|active| active.session_id == session_id) { return Err(AppError::new("E1702", "match", "An active match cannot be deleted")); }
-    let directory = match_root(csgo).join(session_id);
-    let canonical_root = fs::canonicalize(match_root(csgo)).map_err(AppError::transaction_io)?;
-    let canonical = fs::canonicalize(&directory).map_err(AppError::transaction_io)?;
-    if !canonical.starts_with(&canonical_root) { return Err(AppError::invalid("Match history path escapes the managed root")); }
-    if let Ok(request) = read_json::<MatchRequest>(&directory.join("request.json")) {
-        if request.session_id != session_id {
-            return Err(AppError::invalid("Match request session id does not match its managed directory"));
-        }
-        let (_, demo) = validated_request_paths(csgo, &request)?;
-        if demo.is_file() { fs::remove_file(demo).map_err(AppError::transaction_io)?; }
-    }
-    fs::remove_dir_all(directory).map_err(AppError::transaction_io)
 }
 
 pub fn validate_demo(csgo: &Path, result: &mut MatchResult) {
@@ -645,118 +602,32 @@ pub fn watch(app: AppHandle, csgo: &Path) -> Result<()> {
     Ok(())
 }
 
-// ---- Aggregated match history stats ----
+// ---- Session lookup for the stats view ----
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct MapStatEntry {
-    pub map: String,
-    #[serde(rename = "avgRating")]
-    pub avg_rating: f64,
-    #[serde(rename = "avgAdr")]
-    pub avg_adr: f64,
-    pub matches: usize,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct RatingTrendPoint {
-    #[serde(rename = "sessionId")]
-    pub session_id: String,
-    pub map: String,
-    pub timestamp: u64,
-    pub rating: f64,
-    pub adr: f64,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct MatchHistoryStats {
-    #[serde(rename = "avgRating")]
-    pub avg_rating: f64,
-    #[serde(rename = "avgAdr")]
-    pub avg_adr: f64,
-    #[serde(rename = "totalMatches")]
-    pub total_matches: usize,
-    #[serde(rename = "perMap")]
-    pub per_map: Vec<MapStatEntry>,
-    #[serde(rename = "ratingTrend")]
-    pub rating_trend: Vec<RatingTrendPoint>,
-}
-
-fn extract_player_rating(players: &[serde_json::Value]) -> Option<(f64, f64)> {
-    let human = players.iter().find(|p| p.get("kind").and_then(|v| v.as_str()) == Some("human"));
-    match human {
-        Some(p) => {
-            let rating = p.get("rating").and_then(|r| {
-                r.get("open_rating").and_then(|v| v.as_f64())
-                    .or_else(|| r.get("rating_plus").and_then(|v| v.as_f64()))
-            });
-            let adr = p.get("adr").and_then(|v| v.as_f64());
-            match (rating, adr) {
-                (Some(r), Some(a)) => Some((r, a)),
-                _ => None,
-            }
-        }
-        None => None,
-    }
-}
-
-pub fn aggregated_stats(csgo: &Path) -> Result<MatchHistoryStats> {
-    let sessions = history(csgo)?;
-    let finished: Vec<_> = sessions.iter().filter(|s| matches!(s.state, MatchState::Finished | MatchState::Interrupted)).collect();
-
-    let mut ratings: Vec<f64> = Vec::new();
-    let mut adrs: Vec<f64> = Vec::new();
-    let mut map_entries: BTreeMap<String, (Vec<f64>, Vec<f64>)> = BTreeMap::new();
-    let mut trend: Vec<RatingTrendPoint> = Vec::new();
-
-    for session in &finished {
-        let result_path = match &session.result_path {
-            Some(p) => PathBuf::from(p),
-            None => continue,
+/// Finds the managed match session closest to `started_at_unix` on `map_id` so the
+/// stats view can offer the recorded Demo for a cs2ss match. Returns `None` when no
+/// session is close enough, which keeps a wrong (unrelated) Demo from being offered.
+pub fn session_demo_for(csgo: &Path, map_id: &str, started_at_unix: u64, tolerance_seconds: u64) -> Result<Option<MatchSession>> {
+    let mut best: Option<(u64, MatchSession)> = None;
+    for entry in fs::read_dir(match_root(csgo)).into_iter().flatten().flatten() {
+        if !entry.path().is_dir() { continue; }
+        let result_path = entry.path().join("result.json");
+        let request_path = entry.path().join("request.json");
+        let session = if result_path.is_file() {
+            read_json::<MatchResult>(&result_path).ok().map(|result| session_from_result(result, result_path))
+        } else {
+            read_json::<MatchRequest>(&request_path).ok().map(|request| session_from_request(&request))
         };
-        if !result_path.is_file() { continue; }
-
-        if let Ok(result) = read_json::<MatchResult>(&result_path) {
-            if let Some((rating, adr)) = extract_player_rating(&result.players) {
-                ratings.push(rating);
-                adrs.push(adr);
-                let entry = map_entries.entry(result.map_id.clone()).or_insert((Vec::new(), Vec::new()));
-                entry.0.push(rating);
-                entry.1.push(adr);
-                trend.push(RatingTrendPoint {
-                    session_id: result.session_id.clone(),
-                    map: result.map_id.clone(),
-                    timestamp: result.finished_at_unix.max(result.started_at_unix),
-                    rating,
-                    adr,
-                });
-            }
+        let Some(session) = session else { continue };
+        if session.map_id != map_id || session.demo.path.is_none() { continue; }
+        let distance = session.created_at_unix.abs_diff(started_at_unix);
+        if distance > tolerance_seconds { continue; }
+        if best.as_ref().is_none_or(|(best_distance, _)| distance < *best_distance) {
+            best = Some((distance, session));
         }
     }
-
-    trend.sort_by_key(|p| p.timestamp);
-
-    let avg_rating = if ratings.is_empty() { 0.0 } else { ratings.iter().sum::<f64>() / ratings.len() as f64 };
-    let avg_adr = if adrs.is_empty() { 0.0 } else { adrs.iter().sum::<f64>() / adrs.len() as f64 };
-
-    let per_map: Vec<MapStatEntry> = map_entries.into_iter().map(|(map, (rts, as_))| {
-        let n = rts.len();
-        MapStatEntry {
-            map,
-            avg_rating: rts.iter().sum::<f64>() / n as f64,
-            avg_adr: as_.iter().sum::<f64>() / n as f64,
-            matches: n,
-        }
-    }).collect();
-
-    Ok(MatchHistoryStats {
-        avg_rating,
-        avg_adr,
-        total_matches: finished.len(),
-        per_map,
-        rating_trend: trend,
-    })
+    Ok(best.map(|(_, session)| session))
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -825,15 +696,16 @@ mod tests {
     }
 
     #[test]
-    fn history_delete_stays_inside_match_root() {
-        let csgo = root("delete");
+    fn session_demo_lookup_matches_map_and_time_window() {
+        let csgo = root("demo-lookup");
         let directory = match_root(&csgo).join("session-1");
         fs::create_dir_all(&directory).unwrap();
-        let request = MatchRequest { schema_version: 1, session_id: "session-1".into(), created_at_unix: 1, map_id: "de_mirage".into(), player_side: "ct".into(), difficulty: "medium".into(), opponent_kind: "random".into(), opponent_team_id: None, opponent_name: "Random Opponents".into(), record_demo: false, player_team: vec![], opponent_team: vec![], result_path: directory.join("result.json").to_string_lossy().into_owned(), demo_path: csgo.join("demos/csbip/session-1.dem").to_string_lossy().into_owned() };
+        let request = MatchRequest { schema_version: 1, session_id: "session-1".into(), created_at_unix: 1_000, map_id: "de_mirage".into(), player_side: "ct".into(), difficulty: "medium".into(), opponent_kind: "random".into(), opponent_team_id: None, opponent_name: "Random Opponents".into(), record_demo: true, player_team: vec![], opponent_team: vec![], result_path: directory.join("result.json").to_string_lossy().into_owned(), demo_path: csgo.join("demos/csbip/session-1.dem").to_string_lossy().into_owned() };
         write_json(&directory.join("request.json"), &request).unwrap();
-        assert_eq!(history(&csgo).unwrap().len(), 1);
-        delete(&csgo, "session-1").unwrap();
-        assert!(!directory.exists());
+
+        assert!(session_demo_for(&csgo, "de_mirage", 1_010, 900).unwrap().is_some());
+        assert!(session_demo_for(&csgo, "de_mirage", 9_999, 900).unwrap().is_none(), "outside the tolerance window must not match");
+        assert!(session_demo_for(&csgo, "de_dust2", 1_010, 900).unwrap().is_none(), "another map must not match");
         fs::remove_dir_all(csgo).unwrap();
     }
 
@@ -843,7 +715,7 @@ mod tests {
         let path = csgo.join("demos/csbip/x.dem");
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(&path, b"broken").unwrap();
-        let mut result = MatchResult { schema_version: 1, session_id: "x".into(), state: MatchState::Finished, map_id: "de_mirage".into(), started_at_unix: 1, finished_at_unix: 2, player_score: 13, opponent_score: 0, opponent_name: "random".into(), rating_model_version: "test".into(), demo: DemoStatus { state: "validating".into(), path: Some(path.to_string_lossy().into_owned()), size_bytes: 0, error_code: None, detail: None }, players: vec![], interruption_reason: None };
+        let mut result = MatchResult { schema_version: 1, session_id: "x".into(), state: MatchState::Finished, map_id: "de_mirage".into(), started_at_unix: 1, finished_at_unix: 2, opponent_name: "random".into(), demo: DemoStatus { state: "validating".into(), path: Some(path.to_string_lossy().into_owned()), size_bytes: 0, error_code: None, detail: None }, interruption_reason: None };
         validate_demo(&csgo, &mut result);
         assert_eq!(result.demo.state, "failed");
         assert_eq!(result.demo.error_code.as_deref(), Some("DEMO_TOO_SMALL"));
@@ -855,7 +727,7 @@ mod tests {
         let csgo = root("demo-missing");
         let path = csgo.join("demos/csbip/x.dem");
         fs::create_dir_all(path.parent().unwrap()).unwrap();
-        let mut result = MatchResult { schema_version: 1, session_id: "x".into(), state: MatchState::Finished, map_id: "de_mirage".into(), started_at_unix: 1, finished_at_unix: 2, player_score: 13, opponent_score: 0, opponent_name: "random".into(), rating_model_version: "test".into(), demo: DemoStatus { state: "validating".into(), path: Some(path.to_string_lossy().into_owned()), size_bytes: 0, error_code: None, detail: None }, players: vec![], interruption_reason: None };
+        let mut result = MatchResult { schema_version: 1, session_id: "x".into(), state: MatchState::Finished, map_id: "de_mirage".into(), started_at_unix: 1, finished_at_unix: 2, opponent_name: "random".into(), demo: DemoStatus { state: "validating".into(), path: Some(path.to_string_lossy().into_owned()), size_bytes: 0, error_code: None, detail: None }, interruption_reason: None };
         validate_demo(&csgo, &mut result);
         assert_eq!(result.demo.error_code.as_deref(), Some("DEMO_NOT_CREATED"));
         fs::remove_dir_all(csgo).unwrap();
@@ -869,11 +741,11 @@ mod tests {
         let request = MatchRequest { schema_version: 1, session_id: "session-1".into(), created_at_unix: 1, map_id: "de_mirage".into(), player_side: "ct".into(), difficulty: "medium".into(), opponent_kind: "random".into(), opponent_team_id: None, opponent_name: "Random Opponents".into(), record_demo: false, player_team: vec![], opponent_team: vec![], result_path: directory.join("result.json").to_string_lossy().into_owned(), demo_path: csgo.join("demos/csbip/session-1.dem").to_string_lossy().into_owned() };
         write_json(&directory.join("request.json"), &request).unwrap();
         write_json(&active_path(&csgo), &request).unwrap();
-        let result = MatchResult { schema_version: 1, session_id: "session-1".into(), state: MatchState::Finished, map_id: "de_mirage".into(), started_at_unix: 1, finished_at_unix: 2, player_score: 13, opponent_score: 8, opponent_name: "Random Opponents".into(), rating_model_version: "test".into(), demo: DemoStatus { state: "disabled".into(), path: None, size_bytes: 0, error_code: None, detail: None }, players: vec![], interruption_reason: None };
+        let result = MatchResult { schema_version: 1, session_id: "session-1".into(), state: MatchState::Finished, map_id: "de_mirage".into(), started_at_unix: 1, finished_at_unix: 2, opponent_name: "Random Opponents".into(), demo: DemoStatus { state: "disabled".into(), path: None, size_bytes: 0, error_code: None, detail: None }, interruption_reason: None };
         write_json(&directory.join("result.json"), &result).unwrap();
 
         assert!(active(&csgo).unwrap().is_some_and(|session| session.state == MatchState::Finished));
-        assert_eq!(get_result(&csgo, "session-1").unwrap().player_score, 13);
+        assert_eq!(get_result(&csgo, "session-1").unwrap().session_id, "session-1");
         assert!(!active_path(&csgo).exists());
         fs::remove_dir_all(csgo).unwrap();
     }
@@ -895,12 +767,8 @@ mod tests {
             map_id: "de_mirage".into(),
             started_at_unix: 1,
             finished_at_unix: 2,
-            player_score: 1,
-            opponent_score: 0,
             opponent_name: "Falcons".into(),
-            rating_model_version: "test".into(),
             demo: DemoStatus { state: "validating".into(), path: Some(demo.to_string_lossy().into_owned()), size_bytes: 0, error_code: None, detail: None },
-            players: vec![],
             interruption_reason: Some("user_finished_early".into()),
         };
         write_json(&directory.join("result.json"), &result).unwrap();
@@ -915,13 +783,12 @@ mod tests {
     #[test]
     fn corrected_result_at_the_same_path_is_emitted_again() {
         let path = root("result-overwrite").join("result.json");
-        let mut result = MatchResult { schema_version: 1, session_id: "overwrite".into(), state: MatchState::Interrupted, map_id: "de_mirage".into(), started_at_unix: 1, finished_at_unix: 2, player_score: 0, opponent_score: 0, opponent_name: "Team".into(), rating_model_version: "test".into(), demo: DemoStatus { state: "failed".into(), path: None, size_bytes: 0, error_code: Some("DEMO_NOT_CREATED".into()), detail: None }, players: vec![], interruption_reason: Some("early".into()) };
+        let mut result = MatchResult { schema_version: 1, session_id: "overwrite".into(), state: MatchState::Interrupted, map_id: "de_mirage".into(), started_at_unix: 1, finished_at_unix: 2, opponent_name: "Team".into(), demo: DemoStatus { state: "failed".into(), path: None, size_bytes: 0, error_code: Some("DEMO_NOT_CREATED".into()), detail: None }, interruption_reason: Some("early".into()) };
         assert!(should_emit_result(&path, &result));
         assert!(!should_emit_result(&path, &result));
 
         result.state = MatchState::Finished;
-        result.player_score = 13;
-        result.players.push(serde_json::json!({"name":"ZywOo"}));
+        result.demo.state = "ready".into();
         assert!(should_emit_result(&path, &result));
     }
 
@@ -949,7 +816,7 @@ mod tests {
             demo_path: outside.to_string_lossy().into_owned(),
         };
         write_json(&directory.join("request.json"), &request).unwrap();
-        assert!(delete(&csgo, "session-1").is_err());
+        assert!(validated_request_paths(&csgo, &request).is_err());
         assert!(outside.is_file());
         fs::remove_dir_all(csgo).unwrap();
         fs::remove_file(outside).unwrap();

@@ -640,12 +640,8 @@ export type MatchResult = {
   map_id: string;
   started_at_unix: number;
   finished_at_unix: number;
-  player_score: number;
-  opponent_score: number;
   opponent_name: string;
-  rating_model_version: string;
   demo: DemoStatus;
-  players: PlayerMatchStats[];
   interruption_reason: string | null;
 };
 
@@ -656,8 +652,6 @@ export type MatchSession = {
   map_id: string;
   opponent_name: string;
   created_at_unix: number;
-  player_score: number;
-  opponent_score: number;
   demo: DemoStatus;
   result_path: string | null;
 };
@@ -746,13 +740,8 @@ export const api = {
   finishActiveMatch: (csgo: string, sessionId: string) =>
     invoke<MatchSession>("finish_active_match", { csgo, sessionId }),
   getActiveMatch: (csgo: string) => invoke<MatchSession | null>("get_active_match", { csgo }),
-  listMatchHistory: (csgo: string) => invoke<MatchSession[]>("list_match_history", { csgo }),
-  getMatchResult: (csgo: string, sessionId: string) =>
-    invoke<MatchResult>("get_match_result", { csgo, sessionId }),
-  deleteMatch: (csgo: string, sessionId: string, confirmed: boolean) =>
-    invoke<void>("delete_match", { csgo, sessionId, confirmed }),
-  getMatchHistoryStats: (csgo: string) =>
-    invoke<MatchHistoryStats>("get_match_history_stats", { csgo }),
+  matchSessionDemo: (csgo: string, mapId: string, startedAtUnix: number) =>
+    invoke<MatchSession | null>("match_session_demo", { csgo, mapId, startedAtUnix }),
   playDemo: (csgo: string, demoPath: string) =>
     invoke<void>("play_demo", { csgo, demoPath }),
   openDemoFolder: (csgo: string, demoPath: string) =>
