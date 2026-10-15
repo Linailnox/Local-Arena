@@ -72,7 +72,23 @@ public class OfflineMatchTelemetryPlugin : BasePlugin
         Directory.CreateDirectory(dataDir);
         _databasePath = Path.Combine(dataDir, "telemetry.db");
 
-        _sqliteNativeLibrary = NativeLibrary.Load(ResolveSqliteNativeLibrary(pluginDir));
+        // SQLitePCLRaw's provider resolves its native asset through DllImport("e_sqlite3"),
+        // which probes the host's native search directories — not the plugin folder. Loading
+        // the library by path is therefore not enough: the DllImport still fails. Register a
+        // resolver on the provider assembly so the platform-named asset beside this plugin
+        // is returned instead (Windows: e_sqlite3.dll, Linux: libe_sqlite3.so).
+        var nativePath = ResolveSqliteNativeLibrary(pluginDir);
+        _sqliteNativeLibrary = NativeLibrary.Load(nativePath);
+        try
+        {
+            NativeLibrary.SetDllImportResolver(
+                typeof(SQLitePCL.SQLite3Provider_e_sqlite3).Assembly,
+                (name, _assembly, _searchPath) => name is "e_sqlite3" or "libe_sqlite3" ? _sqliteNativeLibrary : IntPtr.Zero);
+        }
+        catch (InvalidOperationException)
+        {
+            // A hot reload registers the resolver a second time; the first registration wins.
+        }
         InitializeDatabases();
         CleanOrphanedMatches();
         Log("Database: {Database}", _databasePath);
