@@ -587,52 +587,6 @@ export type DemoStatus = {
   detail: string | null;
 };
 
-export type OpenRatingBreakdown = {
-  model_version: string;
-  kills: number;
-  damage: number;
-  survival: number;
-  kast: number;
-  multi_kills: number;
-  round_swing: number;
-  economy_adjustment: number;
-  open_rating?: number;
-  /** Legacy field emitted by matches created before the OpenRating migration. */
-  rating_plus?: number;
-};
-
-export type PlayerMatchStats = {
-  player_id: string;
-  name: string;
-  kind: "human" | "bot";
-  team: "ct" | "t";
-  kills: number;
-  deaths: number;
-  assists: number;
-  headshots: number;
-  damage: number;
-  rounds_played: number;
-  rounds_survived: number;
-  kast_rounds: number;
-  first_kills: number;
-  first_deaths: number;
-  mvps: number;
-  clutches: number;
-  trade_kills: number;
-  trade_denials: number;
-  failed_trades: number;
-  ct_kills: number;
-  t_kills: number;
-  round_swing: number;
-  economy_adjustment: number;
-  multi_kills: Record<string, number>;
-  rating: OpenRatingBreakdown | null;
-  difference: number;
-  adr: number;
-  kast_percent: number;
-  headshot_percent: number;
-};
-
 export type MatchResult = {
   schema_version: number;
   session_id: string;
