@@ -17,21 +17,16 @@ public sealed class PlusMatchCoordinatorPlugin : BasePlugin
     public override string ModuleName => "PLUS Match Coordinator";
     public override string ModuleVersion => "1.4.3.3";
     public override string ModuleAuthor => "CS2BotImproverPlus contributors";
-    public override string ModuleDescription => "Offline MR12 match sessions, GOTV demos, and OpenRating statistics";
+    public override string ModuleDescription => "Offline MR12 match sessions and GOTV demos";
 
     private readonly object _gate = new();
-    private readonly TradeTracker _trades = new();
     private readonly Dictionary<int, string> _playerIdsBySlot = new();
-    private OpenRatingWeights _ratingWeights = OpenRatingWeights.ProxyV1;
     private string? _csgoRoot;
     private BotIdentityCatalog? _identityCatalog;
     private IBotHiderApi? _botHider;
     private MatchRequest? _request;
-    private MatchStatistics? _statistics;
     private MatchRules? _rules;
     private DateTimeOffset _startedAt;
-    private bool _roundHasOpeningKill;
-    private bool _bombPlanted;
     private bool _live;
     private bool _finalizing;
     private bool _rosterValidated;
@@ -54,7 +49,6 @@ public sealed class PlusMatchCoordinatorPlugin : BasePlugin
 
     public override void Load(bool hotReload)
     {
-        _ratingWeights = OpenRatingWeights.Load(Path.Combine(ModuleDirectory, "open-rating-3.0-proxy-v1.json"));
         try
         {
             _csgoRoot = PlusManagedPaths.ResolveCsgoRoot(Server.GameDirectory);
@@ -74,16 +68,10 @@ public sealed class PlusMatchCoordinatorPlugin : BasePlugin
         RegisterListener<Listeners.OnMapStart>(OnMapStart);
         RegisterListener<Listeners.OnMapEnd>(OnMapEnd);
         RegisterEventHandler<EventRoundStart>(OnRoundStart);
-        RegisterEventHandler<EventPlayerHurt>(OnPlayerHurt);
-        RegisterEventHandler<EventPlayerDeath>(OnPlayerDeath);
         RegisterEventHandler<EventRoundEnd>(OnRoundEnd);
-        RegisterEventHandler<EventRoundMvp>(OnRoundMvp);
         RegisterEventHandler<EventPlayerConnectFull>(OnPlayerConnectFull);
         RegisterEventHandler<EventPlayerSpawn>(OnPlayerSpawn);
         RegisterEventHandler<EventPlayerDisconnect>(OnPlayerDisconnect);
-        RegisterEventHandler<EventBombPlanted>(OnBombPlanted);
-        RegisterEventHandler<EventBombDefused>(OnBombDefused);
-        RegisterEventHandler<EventBombExploded>(OnBombExploded);
         RegisterEventHandler<EventCsWinPanelMatch>(OnWinPanelMatch);
     }
 
@@ -210,8 +198,8 @@ public sealed class PlusMatchCoordinatorPlugin : BasePlugin
                 WriteResult(resultPath, new MatchResult(
                     MatchJson.SchemaVersion, request.SessionId, MatchState.Interrupted,
                     request.MapId, request.CreatedAtUnix, DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
-                    0, 0, request.OpponentName, _ratingWeights.ModelVersion,
-                    demo with { Path = request.RecordDemo ? managedDemo : null }, [], "request_rejected"));
+                    request.OpponentName,
+                    demo with { Path = request.RecordDemo ? managedDemo : null }, "request_rejected"));
             }
         }
     }
@@ -262,11 +250,9 @@ public sealed class PlusMatchCoordinatorPlugin : BasePlugin
         lock (_gate)
         {
             _request = request;
-            _statistics = new MatchStatistics();
             _rules = new MatchRules();
             _playerIdsBySlot.Clear();
             _startedAt = DateTimeOffset.UtcNow;
-            _bombPlanted = false;
             _live = false;
             _finalizing = false;
             _rosterValidated = false;
@@ -325,17 +311,12 @@ public sealed class PlusMatchCoordinatorPlugin : BasePlugin
     private void RegisterPlayers()
     {
         var request = _request;
-        var statistics = _statistics;
-        if (request == null || statistics == null) return;
-        var playerSide = request.PlayerSide == MatchSide.T ? TeamSide.T : TeamSide.Ct;
-        var opponentSide = playerSide == TeamSide.Ct ? TeamSide.T : TeamSide.Ct;
+        if (request == null) return;
         foreach (var player in Utilities.GetPlayers().Where(player => player is { IsValid: true }))
         {
             if (!player.IsBot) _playerIdsBySlot[player.Slot] = "player-local";
             else _playerIdsBySlot.TryAdd(player.Slot, $"bot-{player.PlayerName}");
         }
-        foreach (var player in request.PlayerTeam) statistics.Register(player, playerSide);
-        foreach (var player in request.OpponentTeam) statistics.Register(player, opponentSide);
     }
 
     private void StartRosterSync()
@@ -644,50 +625,6 @@ public sealed class PlusMatchCoordinatorPlugin : BasePlugin
             StopRosterSync();
             Logger.LogInformation("[PlusMatchCoordinator] Session {SessionId} is live", _request.SessionId);
         }
-        _roundHasOpeningKill = false;
-        _bombPlanted = false;
-        _trades.Clear();
-        _statistics?.StartRound();
-        return HookResult.Continue;
-    }
-
-    private HookResult OnPlayerHurt(EventPlayerHurt @event, GameEventInfo info)
-    {
-        var attacker = IdFor(@event.Attacker);
-        var victim = IdFor(@event.Userid);
-        if (_live && attacker != null && victim != null && attacker != victim && SideFor(@event.Attacker) != SideFor(@event.Userid))
-            _statistics?.Damage(attacker, @event.DmgHealth);
-        return HookResult.Continue;
-    }
-
-    private HookResult OnPlayerDeath(EventPlayerDeath @event, GameEventInfo info)
-    {
-        if (!_live) return HookResult.Continue;
-        var attackerId = IdFor(@event.Attacker);
-        var victimId = IdFor(@event.Userid);
-        if (attackerId == null || victimId == null || attackerId == victimId) return HookResult.Continue;
-
-        var now = DateTimeOffset.UtcNow;
-        var attackerSide = SideFor(@event.Attacker);
-        var victimSide = SideFor(@event.Userid);
-        var trade = _trades.RecordKill(attackerId, victimId, attackerSide, victimSide, now);
-        var opening = !_roundHasOpeningKill;
-        _roundHasOpeningKill = true;
-        var after = SwingContext(attackerSide);
-        var before = after with
-        {
-            CtAlive = after.CtAlive + (victimSide == TeamSide.Ct ? 1 : 0),
-            TAlive = after.TAlive + (victimSide == TeamSide.T ? 1 : 0)
-        };
-        var victimPawn = @event.Userid?.PlayerPawn.Value;
-        var economy = OpenRatingCalculator.EconomyKillAdjustment(
-            victimPawn?.ArmorValue ?? 0,
-            HighestValueWeaponClass(@event.Userid));
-        _statistics?.Kill(attackerId, victimId, attackerSide, @event.Headshot, opening, trade.IsTrade, RoundSwingModel.Delta(before, after), economy);
-        if (trade.TradedPlayerId != null) _statistics?.MarkTraded(trade.TradedPlayerId);
-
-        var assister = IdFor(@event.Assister);
-        if (assister != null) _statistics?.Assist(assister);
         return HookResult.Continue;
     }
 
@@ -695,7 +632,6 @@ public sealed class PlusMatchCoordinatorPlugin : BasePlugin
     {
         if (!_live) return HookResult.Continue;
         var winner = @event.Winner == (byte)CsTeam.Terrorist ? TeamSide.T : TeamSide.Ct;
-        _statistics?.EndRound(winner);
         if (_rules?.AddRound(winner) == true) FinalizeMatch(MatchState.Finished, null);
         return HookResult.Continue;
     }
@@ -707,15 +643,6 @@ public sealed class PlusMatchCoordinatorPlugin : BasePlugin
             if (_request != null && _live && !_finalizing)
                 FinalizeMatch(MatchState.Finished, null);
         }, TimerFlags.STOP_ON_MAPCHANGE);
-        return HookResult.Continue;
-    }
-
-    private HookResult OnRoundMvp(EventRoundMvp @event, GameEventInfo info)
-    {
-        if (!_live) return HookResult.Continue;
-        var id = IdFor(@event.Userid);
-        var player = _statistics?.Players.FirstOrDefault(value => value.PlayerId == id);
-        if (player != null) player.Mvps++;
         return HookResult.Continue;
     }
 
@@ -750,7 +677,6 @@ public sealed class PlusMatchCoordinatorPlugin : BasePlugin
     private void FinalizeMatch(MatchState state, string? reason)
     {
         MatchRequest? request;
-        MatchStatistics? statistics;
         MatchRules? rules;
         lock (_gate)
         {
@@ -758,7 +684,6 @@ public sealed class PlusMatchCoordinatorPlugin : BasePlugin
             _finalizing = true;
             _live = false;
             request = _request;
-            statistics = _statistics;
             rules = _rules;
         }
 
@@ -771,7 +696,6 @@ public sealed class PlusMatchCoordinatorPlugin : BasePlugin
             Server.ExecuteCommand("tv_stoprecord");
             Logger.LogInformation("[PlusMatchCoordinator] GOTV recording stopped for {SessionId}", request.SessionId);
         }
-        var players = statistics?.FinalizeRatings(_ratingWeights) ?? [];
         var playerSide = request.PlayerSide == MatchSide.T ? TeamSide.T : TeamSide.Ct;
         var playerScore = playerSide == TeamSide.Ct ? rules?.CtScore ?? 0 : rules?.TScore ?? 0;
         var opponentScore = playerSide == TeamSide.Ct ? rules?.TScore ?? 0 : rules?.CtScore ?? 0;
@@ -779,14 +703,14 @@ public sealed class PlusMatchCoordinatorPlugin : BasePlugin
         var result = new MatchResult(
             MatchJson.SchemaVersion, request.SessionId, state, request.MapId,
             _startedAt.ToUnixTimeSeconds(), DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
-            playerScore, opponentScore, opponentName, _ratingWeights.ModelVersion,
+            opponentName,
             new DemoStatus(
                 !request.RecordDemo ? DemoState.Disabled : _demoRecordingStarted ? DemoState.Validating : DemoState.Failed,
                 request.RecordDemo ? ManagedDemoPath(request) : null,
                 0,
                 request.RecordDemo && !_demoRecordingStarted ? "DEMO_RECORDING_NOT_STARTED" : null,
                 request.RecordDemo && !_demoRecordingStarted ? "Roster validation ended before GOTV recording could start" : null),
-            players, reason);
+            reason);
 
         var resultPath = ManagedResultPath(request);
         _resultWriteTask = Task.Run(() =>
@@ -794,14 +718,13 @@ public sealed class PlusMatchCoordinatorPlugin : BasePlugin
             var written = WriteResult(resultPath, result);
             if (written)
                 Logger.LogInformation(
-                    "[PlusMatchCoordinator] Result written for {SessionId}: state={State}, score={PlayerScore}-{OpponentScore}, players={PlayerCount}, path={Path}",
-                    result.SessionId, result.State, result.PlayerScore, result.OpponentScore, result.Players.Count, resultPath);
+                    "[PlusMatchCoordinator] Result written for {SessionId}: state={State}, score={PlayerScore}-{OpponentScore}, path={Path}",
+                    result.SessionId, result.State, playerScore, opponentScore, resultPath);
             lock (_gate)
             {
                 if (written)
                 {
                     _request = null;
-                    _statistics = null;
                     _rules = null;
                     _playerIdsBySlot.Clear();
                     _activatedSessionId = null;
@@ -875,62 +798,4 @@ public sealed class PlusMatchCoordinatorPlugin : BasePlugin
 
     private static TeamSide SideFor(CCSPlayerController? player) =>
         player?.Team == CsTeam.Terrorist ? TeamSide.T : TeamSide.Ct;
-
-    private RoundSwingContext SwingContext(TeamSide eventTeam)
-    {
-        var players = Utilities.GetPlayers().Where(player => player is { IsValid: true, PawnIsAlive: true }).ToArray();
-        return new RoundSwingContext(
-            _ratingWeights.MapSidePrior(_request?.MapId ?? ""),
-            players.Count(player => player.Team == CsTeam.CounterTerrorist),
-            players.Count(player => player.Team == CsTeam.Terrorist),
-            players.Where(player => player.Team == CsTeam.CounterTerrorist).Sum(EquipmentValue),
-            players.Where(player => player.Team == CsTeam.Terrorist).Sum(EquipmentValue),
-            _bombPlanted,
-            eventTeam);
-    }
-
-    private static WeaponClass HighestValueWeaponClass(CCSPlayerController? player)
-    {
-        var weapons = player?.PlayerPawn.Value?.WeaponServices?.MyWeapons;
-        if (weapons == null) return WeaponClass.Other;
-        return weapons
-            .Select(handle => handle.Value?.DesignerName)
-            .Where(name => !string.IsNullOrWhiteSpace(name))
-            .Select(name => OpenRatingCalculator.ClassifyWeapon(name!))
-            .OrderByDescending(OpenRatingCalculator.EquipmentValue)
-            .DefaultIfEmpty(WeaponClass.Other)
-            .FirstOrDefault();
-    }
-
-    private static int EquipmentValue(CCSPlayerController player)
-    {
-        var pawn = player.PlayerPawn.Value;
-        if (pawn == null || !pawn.IsValid) return 0;
-        var weapons = pawn.WeaponServices?.MyWeapons;
-        var weaponValue = weapons == null ? 0 : weapons
-            .Select(handle => handle.Value?.DesignerName)
-            .Where(name => !string.IsNullOrWhiteSpace(name))
-            .Select(name => OpenRatingCalculator.EquipmentValue(OpenRatingCalculator.ClassifyWeapon(name!)))
-            .DefaultIfEmpty(0)
-            .Max();
-        return weaponValue + Math.Clamp(pawn.ArmorValue, 0, 100) * 10;
-    }
-
-    private HookResult OnBombPlanted(EventBombPlanted @event, GameEventInfo info)
-    {
-        if (_live) _bombPlanted = true;
-        return HookResult.Continue;
-    }
-
-    private HookResult OnBombDefused(EventBombDefused @event, GameEventInfo info)
-    {
-        if (_live) _bombPlanted = false;
-        return HookResult.Continue;
-    }
-
-    private HookResult OnBombExploded(EventBombExploded @event, GameEventInfo info)
-    {
-        if (_live) _bombPlanted = false;
-        return HookResult.Continue;
-    }
 }
