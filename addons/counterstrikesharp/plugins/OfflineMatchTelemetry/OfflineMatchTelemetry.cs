@@ -72,7 +72,7 @@ public class OfflineMatchTelemetryPlugin : BasePlugin
         Directory.CreateDirectory(dataDir);
         _databasePath = Path.Combine(dataDir, "telemetry.db");
 
-        _sqliteNativeLibrary = NativeLibrary.Load(Path.Combine(pluginDir, "e_sqlite3.dll"));
+        _sqliteNativeLibrary = NativeLibrary.Load(ResolveSqliteNativeLibrary(pluginDir));
         InitializeDatabases();
         CleanOrphanedMatches();
         Log("Database: {Database}", _databasePath);
@@ -87,8 +87,26 @@ public class OfflineMatchTelemetryPlugin : BasePlugin
         Log("Event handlers registered (hotReload={HotReload}, API build=1.0.367). Run css_omt_status to verify.", hotReload);
     }
 
-    private void OnMapStart(string mapName)
+    /// <summary>
+    /// The SQLitePCLRaw native asset is platform-named: Windows ships e_sqlite3.dll
+    /// while Linux ships libe_sqlite3.so (package.ps1 -Linux swaps it in). Pick the
+    /// file that exists for the current platform instead of hard-coding the Windows name.
+    /// </summary>
+    private static string ResolveSqliteNativeLibrary(string pluginDir)
     {
+        string[] candidates = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+            ? ["e_sqlite3.dll"]
+            : ["libe_sqlite3.so", "e_sqlite3.so"];
+        foreach (var name in candidates)
+        {
+            var path = Path.Combine(pluginDir, name);
+            if (File.Exists(path)) return path;
+        }
+        // Nothing matched: return the platform default so the loader error names a useful file.
+        return Path.Combine(pluginDir, candidates[0]);
+    }
+
+    private void OnMapStart(string mapName)    {
         if (!IsValidMap(mapName)) return;
 
         if (_matchActive) FinalizeMatch("MAP_CHANGED");
