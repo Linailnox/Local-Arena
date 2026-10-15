@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from "react";
+import { Film, FolderOpen, Play } from "lucide-react";
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { api } from "../lib/api";
+import { api, type MatchSession } from "../lib/api";
 import type { Cs2ssMatchDetailResponse, Cs2ssRoundPlayer } from "../data/cs2ssTypes";
 import { cs2ssCalcRating, cs2ssCalcAdr, cs2ssCalcKast, cs2ssCalcHsPct, cs2ssRatingBreakdown } from "../data/cs2ssRating";
 import { cs2ssMapLabel } from "../data/cs2ssMaps";
@@ -12,7 +13,7 @@ import "./StatsPanel.css";
 
 const CH = ["#7c5cff", "#20b486", "#ff9f43", "#e05d75", "#3f8efc", "#00a8a8", "#bf6bdb", "#d87b35"];
 
-interface Props { csgo: string; matchId: number; onBack: () => void; }
+interface Props { csgo: string; matchId: number; onBack: () => void; demoSession?: MatchSession | null; }
 
 function rcol(r: number) { return r >= 1.1 ? "#20b486" : r >= 0.9 ? "#e67e22" : "#e05d75"; }
 function fmtT(iso: string) { try { const d = new Date(iso); return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; } catch { return iso; } }
@@ -26,14 +27,38 @@ function badges(p: Cs2ssRoundPlayer, t: ReturnType<typeof useT>) {
   return bs;
 }
 
-export default function StatsMatchDetail({ csgo, matchId, onBack }: Props) {
+export default function StatsMatchDetail({ csgo, matchId, onBack, demoSession }: Props) {
   const { reportError } = useStore();
+  const [demoBusy, setDemoBusy] = useState(false);
   const t = useT();
   const [data, setData] = useState<Cs2ssMatchDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<string | null>(null);
+
+  const playDemo = async () => {
+    const path = demoSession?.demo.path;
+    if (!path || demoBusy) return;
+    setDemoBusy(true);
+    try {
+      await api.playDemo(csgo, path);
+    } catch (error) {
+      reportError(error);
+    } finally {
+      setDemoBusy(false);
+    }
+  };
+
+  const openDemoFolder = async () => {
+    const path = demoSession?.demo.path;
+    if (!path) return;
+    try {
+      await api.openDemoFolder(csgo, path);
+    } catch (error) {
+      reportError(error);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -280,6 +305,26 @@ export default function StatsMatchDetail({ csgo, matchId, onBack }: Props) {
           ))}
         </div>
       </div>
+
+      {demoSession?.demo.path && (
+        <div className="stats-panel-block">
+          <div className="stats-panel-block__title"><div><span>{t("match.demoStatus")}</span><h2>{t(`match.demoState.${demoSession.demo.state}` as never)}</h2></div></div>
+          <div className="stats-demo">
+            <span className="stats-demo__icon" aria-hidden="true"><Film size={18} /></span>
+            <code title={demoSession.demo.path}>{demoSession.demo.path}</code>
+            <div className="stats-demo__actions">
+              {demoSession.demo.state === "ready" && (
+                <button className="stats-demo__play" disabled={demoBusy} onClick={() => void playDemo()}>
+                  <Play size={15} fill="currentColor" />{t("match.playDemo")}
+                </button>
+              )}
+              <button className="stats-demo__folder" onClick={() => void openDemoFolder()}>
+                <FolderOpen size={15} />{t("match.openDemoFolder")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,12 +1,9 @@
 import { EN, type I18nKey } from "./keys";
-
 type Partial18n = Partial<Record<I18nKey, string>>;
-
 // Per-locale overrides. Any missing key falls back to English (EN).
 // Game terms/values are intentionally left in English.
 export const DICTS: Record<string, Partial18n> = {
   english: EN,
-
   schinese: {
     "pre.aimUnavailable": "未安装托管瞄准插件，上游 BotAI 仍可正常运行",
     "pre.aimRuntimeActive": "上一次 CS2 运行已确认托管瞄准生效，目标更新 {count} 次，错误 {errors} 次",
@@ -75,7 +72,6 @@ export const DICTS: Record<string, Partial18n> = {
     "match.demoState.disabled": "未开启", "match.demoState.pending": "等待录制", "match.demoState.recording": "录制中", "match.demoState.validating": "正在校验", "match.demoState.ready": "可播放", "match.demoState.failed": "录制失败", "match.demoState.interrupted": "录制中断", "startup.failed": "面板启动失败",
     "match.kindHuman": "玩家", "match.kindBot": "人机", "match.rounds": "回合",
     "match.mvps": "MVP 次数", "match.clutches": "残局获胜", "match.firstKills": "首杀", "match.breakdown": "Rating 构成 — 基础值为 1",
-    "mh.totalMatches": "记录总数", "mh.completedMatches": "已完成", "mh.avgScore": "平均比分", "mh.favMap": "常用地图",
     "cosmetics.transferTitle": "饰品预设导入导出", "cosmetics.exportPreset": "导出预设", "cosmetics.importPreset": "导入预设",
     "cosmetics.exporting": "正在导出...", "cosmetics.importing": "正在导入...", "cosmetics.exported": "饰品预设已导出", "cosmetics.imported": "饰品预设已导入，原实时预设已自动备份",
     "overview.tutorialEyebrow": "使用指南", "overview.tutorialTitle": "安装与使用教程",
@@ -468,8 +464,7 @@ export const DICTS: Record<string, Partial18n> = {
     "update.cancel": "取消", "update.closeCs2": "更新插件前请关闭所选目录对应的 CS2。",
     "update.panelRequired": "请先更新面板，才能安装此插件版本。", "update.releaseNotes": "更新说明",
     "upstream.title": "上游组件", "upstream.titleDesc": "解析、下载并缓存上游包，每次 Local Arena 安装都会与它合并",
-    "upstream.latest": "最新版本", "upstream.source": "来源", "upstream.source.api": "GitHub API",
-    "upstream.source.fallback": "GitHub 重定向", "upstream.source.manual": "本地导入",
+    "upstream.latest": "最新版本", "upstream.source": "来源",
     "upstream.check": "重新检查", "upstream.checking": "正在检查…", "upstream.download": "下载",
     "upstream.downloading": "正在下载 {n}%", "upstream.progress": "{done} / {total} · {speed} MB/s",
     "upstream.cancel": "取消下载", "upstream.resume": "取消后的下载会从已下载的部分继续", "upstream.verifying": "正在校验压缩包…",
@@ -512,7 +507,6 @@ export const DICTS: Record<string, Partial18n> = {
     "errcat.installation": "安装事务失败，已尝试回滚。", "errcat.launch": "无法启动 Steam 或 CS2。", "errcat.update": "在线更新在校验、下载、安装或回滚阶段失败。",
     "st.wrongLocation": "文件放错文件夹了 — 请移动到 game\\csgo", "cmd.h.botManagement": "机器人管理", "cmd.hint.botName": "机器人名称", "cmd.hint.number": "数量",
   } satisfies Record<I18nKey, string>,
-
   tchinese: {
     "pre.aimUnavailable": "未安裝託管瞄準外掛，上游 BotAI 仍可正常運作",
     "pre.aimRuntimeActive": "上一次 CS2 運行已確認託管瞄準生效，目標更新 {count} 次，錯誤 {errors} 次",
@@ -543,7 +537,6 @@ export const DICTS: Record<string, Partial18n> = {
     "match.finishEarly": "提前結束並產生報告", "match.finishingEarly": "正在產生部分報告...",
     "match.finishEarlyConfirm": "現在結束本場比賽？已完成回合、部分統計和目前 Demo 都會保留。",
     "match.mvps": "MVP 次數", "match.clutches": "殘局獲勝", "match.firstKills": "首殺", "match.breakdown": "Rating 構成",
-    "mh.totalMatches": "記錄總數", "mh.completedMatches": "已完成", "mh.avgScore": "平均比分", "mh.favMap": "常用地圖",
     "overview.tutorialEyebrow": "使用指南", "overview.tutorialTitle": "安裝與使用教學",
     "overview.tutorialDesc": "開啟持續更新的小黑盒教學，查看安裝、強化電腦人對局、控制台指令與連線使用方式",
     "overview.tutorialAction": "查看教學",
@@ -909,8 +902,7 @@ export const DICTS: Record<string, Partial18n> = {
     "update.cancel": "取消", "update.closeCs2": "更新插件前請關閉所選目錄對應的 CS2。",
     "update.panelRequired": "請先更新面板，才能安裝此插件版本。", "update.releaseNotes": "更新說明",
     "upstream.title": "上游元件", "upstream.titleDesc": "解析、下載並快取上游套件，每次 Local Arena 安裝都會與它合併",
-    "upstream.latest": "最新版本", "upstream.source": "來源", "upstream.source.api": "GitHub API",
-    "upstream.source.fallback": "GitHub 重定向", "upstream.source.manual": "本機匯入",
+    "upstream.latest": "最新版本", "upstream.source": "來源",
     "upstream.check": "重新檢查", "upstream.checking": "檢查中…", "upstream.download": "下載",
     "upstream.downloading": "下載中 {n}%", "upstream.progress": "{done} / {total} · {speed} MB/s",
     "upstream.cancel": "取消下載", "upstream.resume": "取消後的下載會從已下載的部分繼續", "upstream.verifying": "正在驗證壓縮檔…",
@@ -953,7 +945,6 @@ export const DICTS: Record<string, Partial18n> = {
     "errcat.installation": "安裝交易失敗，已嘗試回復。", "errcat.launch": "無法啟動 Steam 或 CS2。", "errcat.update": "線上更新在驗證、下載、安裝或回復階段失敗。",
     "st.wrongLocation": "檔案放錯資料夾了 — 請移動到 game\\csgo", "cmd.h.botManagement": "電腦人管理", "cmd.hint.botName": "電腦人名稱", "cmd.hint.number": "數量",
   },
-
   japanese: {
     "tb.settings": "設定", "tb.minimize": "最小化", "tb.close": "閉じる",
     "st.directory": "ディレクトリ", "st.files": "ファイル", "st.allPresent": "すべて揃っています",
@@ -990,7 +981,6 @@ export const DICTS: Record<string, Partial18n> = {
     "upstream.needDownload": "インストール前に上流コンポーネントをダウンロードしてください", "upstream.notReady": "上流パッケージは未準備です",
     "upstream.downloader": "Downloader", "upstream.downloaderBuiltin": "Built-in", "upstream.downloaderAria2": "aria2", "upstream.downloaderAria2Missing": "aria2c was not found on PATH; install aria2 to enable multi-threaded downloads",
   },
-
   koreana: {
     "tb.settings": "설정", "tb.minimize": "최소화", "tb.close": "닫기",
     "st.directory": "디렉터리", "st.files": "파일", "st.allPresent": "모두 있음",
@@ -1027,7 +1017,6 @@ export const DICTS: Record<string, Partial18n> = {
     "upstream.needDownload": "설치하기 전에 업스트림 구성 요소를 다운로드하세요", "upstream.notReady": "업스트림 패키지가 준비되지 않았습니다",
     "upstream.downloader": "Downloader", "upstream.downloaderBuiltin": "Built-in", "upstream.downloaderAria2": "aria2", "upstream.downloaderAria2Missing": "aria2c was not found on PATH; install aria2 to enable multi-threaded downloads",
   },
-
   french: {
     "bi.title": "Objets des bots", "bi.skins": "Skins", "bi.profiles": "Profils", "bi.agents": "Agents", "bi.music": "Kits musicaux",
     "cmd.title": "Commandes", "cmd.search": "Rechercher…",
@@ -1346,8 +1335,6 @@ export const DICTS: Record<string, Partial18n> = {
     "match.demoState.recording": "Enregistrement", "match.demoState.validating": "Validation",
     "match.demoState.ready": "Prêt", "match.demoState.failed": "Échoué", "match.demoState.interrupted": "Interrompu",
     "match.player": "Joueur", "match.swing": "Swing", "match.players": "joueurs", "match.demoStatus": "Demo",
-    "mh.totalMatches": "Enregistrements", "mh.completedMatches": "Terminés", "mh.avgScore": "Score moyen",
-    "mh.favMap": "Carte fréquente",
     "mode.title": "Mode", "mode.online": "Mode en ligne", "mode.preview": "Aperçu cosmétique",
     "mode.bot": "Mode Bot", "mode.launch": "Lancer CS2",
     "mode.launchOnline": "Lancer le matchmaking normal en toute sécurité",
@@ -1427,7 +1414,6 @@ export const DICTS: Record<string, Partial18n> = {
     "upstream.needDownload": "Téléchargez le composant en amont avant l'installation", "upstream.notReady": "Package en amont indisponible",
     "upstream.downloader": "Downloader", "upstream.downloaderBuiltin": "Built-in", "upstream.downloaderAria2": "aria2", "upstream.downloaderAria2Missing": "aria2c was not found on PATH; install aria2 to enable multi-threaded downloads",
   },
-
   german: {
     "tb.settings": "Einstellungen", "tb.minimize": "Minimieren", "tb.close": "Schließen",
     "st.directory": "Verzeichnis", "st.files": "Dateien", "st.allPresent": "Alle vorhanden",
@@ -1464,7 +1450,6 @@ export const DICTS: Record<string, Partial18n> = {
     "upstream.needDownload": "Lade die Upstream-Komponente vor der Installation herunter", "upstream.notReady": "Upstream-Paket nicht bereit",
     "upstream.downloader": "Downloader", "upstream.downloaderBuiltin": "Built-in", "upstream.downloaderAria2": "aria2", "upstream.downloaderAria2Missing": "aria2c was not found on PATH; install aria2 to enable multi-threaded downloads",
   },
-
   spanish: {
     "tb.settings": "Ajustes", "tb.minimize": "Minimizar", "tb.close": "Cerrar",
     "st.directory": "Directorio", "st.files": "Archivos", "st.allPresent": "Todo presente",
@@ -1501,7 +1486,6 @@ export const DICTS: Record<string, Partial18n> = {
     "upstream.needDownload": "Descarga el componente upstream antes de instalar", "upstream.notReady": "Paquete upstream no disponible",
     "upstream.downloader": "Downloader", "upstream.downloaderBuiltin": "Built-in", "upstream.downloaderAria2": "aria2", "upstream.downloaderAria2Missing": "aria2c was not found on PATH; install aria2 to enable multi-threaded downloads",
   },
-
   italian: {
     "tb.settings": "Impostazioni", "tb.minimize": "Riduci a icona", "tb.close": "Chiudi",
     "st.directory": "Directory", "st.files": "File", "st.allPresent": "Tutto presente",
@@ -1538,7 +1522,6 @@ export const DICTS: Record<string, Partial18n> = {
     "upstream.needDownload": "Scarica il componente upstream prima dell'installazione", "upstream.notReady": "Pacchetto upstream non pronto",
     "upstream.downloader": "Downloader", "upstream.downloaderBuiltin": "Built-in", "upstream.downloaderAria2": "aria2", "upstream.downloaderAria2Missing": "aria2c was not found on PATH; install aria2 to enable multi-threaded downloads",
   },
-
   russian: {
     "tb.settings": "Настройки", "tb.minimize": "Свернуть", "tb.close": "Закрыть",
     "st.directory": "Каталог", "st.files": "Файлы", "st.allPresent": "Всё на месте",
@@ -1575,7 +1558,6 @@ export const DICTS: Record<string, Partial18n> = {
     "upstream.needDownload": "Скачайте компонент upstream перед установкой", "upstream.notReady": "Пакет upstream не готов",
     "upstream.downloader": "Downloader", "upstream.downloaderBuiltin": "Built-in", "upstream.downloaderAria2": "aria2", "upstream.downloaderAria2Missing": "aria2c was not found on PATH; install aria2 to enable multi-threaded downloads",
   },
-
   ukrainian: {
     "tb.settings": "Налаштування", "tb.minimize": "Згорнути", "tb.close": "Закрити",
     "st.directory": "Каталог", "st.files": "Файли", "st.allPresent": "Усе на місці",
@@ -1612,7 +1594,6 @@ export const DICTS: Record<string, Partial18n> = {
     "upstream.needDownload": "Завантажте компонент upstream перед встановленням", "upstream.notReady": "Пакет upstream не готовий",
     "upstream.downloader": "Downloader", "upstream.downloaderBuiltin": "Built-in", "upstream.downloaderAria2": "aria2", "upstream.downloaderAria2Missing": "aria2c was not found on PATH; install aria2 to enable multi-threaded downloads",
   },
-
   polish: {
     "tb.settings": "Ustawienia", "tb.minimize": "Minimalizuj", "tb.close": "Zamknij",
     "st.directory": "Katalog", "st.files": "Pliki", "st.allPresent": "Wszystko obecne",
@@ -1649,7 +1630,6 @@ export const DICTS: Record<string, Partial18n> = {
     "upstream.needDownload": "Pobierz komponent upstream przed instalacją", "upstream.notReady": "Pakiet upstream niegotowy",
     "upstream.downloader": "Downloader", "upstream.downloaderBuiltin": "Built-in", "upstream.downloaderAria2": "aria2", "upstream.downloaderAria2Missing": "aria2c was not found on PATH; install aria2 to enable multi-threaded downloads",
   },
-
   dutch: {
     "tb.settings": "Instellingen", "tb.minimize": "Minimaliseren", "tb.close": "Sluiten",
     "st.directory": "Map", "st.files": "Bestanden", "st.allPresent": "Alles aanwezig",
@@ -1686,7 +1666,6 @@ export const DICTS: Record<string, Partial18n> = {
     "upstream.needDownload": "Download het upstream-onderdeel vóór installatie", "upstream.notReady": "Upstreampakket niet gereed",
     "upstream.downloader": "Downloader", "upstream.downloaderBuiltin": "Built-in", "upstream.downloaderAria2": "aria2", "upstream.downloaderAria2Missing": "aria2c was not found on PATH; install aria2 to enable multi-threaded downloads",
   },
-
   turkish: {
     "tb.settings": "Ayarlar", "tb.minimize": "Simge durumuna küçült", "tb.close": "Kapat",
     "st.directory": "Dizin", "st.files": "Dosyalar", "st.allPresent": "Hepsi mevcut",
@@ -1723,7 +1702,6 @@ export const DICTS: Record<string, Partial18n> = {
     "upstream.needDownload": "Kurulumdan önce upstream bileşenini indirin", "upstream.notReady": "Upstream paketi hazır değil",
     "upstream.downloader": "Downloader", "upstream.downloaderBuiltin": "Built-in", "upstream.downloaderAria2": "aria2", "upstream.downloaderAria2Missing": "aria2c was not found on PATH; install aria2 to enable multi-threaded downloads",
   },
-
   vietnamese: {
     "tb.settings": "Cài đặt", "tb.minimize": "Thu nhỏ", "tb.close": "Đóng",
     "st.directory": "Thư mục", "st.files": "Tệp", "st.allPresent": "Đầy đủ",
@@ -1760,7 +1738,6 @@ export const DICTS: Record<string, Partial18n> = {
     "upstream.needDownload": "Tải xuống thành phần upstream trước khi cài đặt", "upstream.notReady": "Gói upstream chưa sẵn sàng",
     "upstream.downloader": "Downloader", "upstream.downloaderBuiltin": "Built-in", "upstream.downloaderAria2": "aria2", "upstream.downloaderAria2Missing": "aria2c was not found on PATH; install aria2 to enable multi-threaded downloads",
   },
-
   thai: {
     "tb.settings": "การตั้งค่า", "tb.minimize": "ย่อหน้าต่าง", "tb.close": "ปิด",
     "st.directory": "ไดเรกทอรี", "st.files": "ไฟล์", "st.allPresent": "ครบทั้งหมด",
@@ -1797,7 +1774,6 @@ export const DICTS: Record<string, Partial18n> = {
     "upstream.needDownload": "ดาวน์โหลดคอมโพเนนต์ต้นน้ำก่อนติดตั้ง", "upstream.notReady": "แพ็กเกจต้นน้ำยังไม่พร้อม",
     "upstream.downloader": "Downloader", "upstream.downloaderBuiltin": "Built-in", "upstream.downloaderAria2": "aria2", "upstream.downloaderAria2Missing": "aria2c was not found on PATH; install aria2 to enable multi-threaded downloads",
   },
-
   indonesian: {
     "tb.settings": "Pengaturan", "tb.minimize": "Perkecil", "tb.close": "Tutup",
     "st.directory": "Direktori", "st.files": "Berkas", "st.allPresent": "Semua ada",
@@ -1834,7 +1810,6 @@ export const DICTS: Record<string, Partial18n> = {
     "upstream.needDownload": "Unduh komponen upstream sebelum memasang", "upstream.notReady": "Paket upstream belum siap",
     "upstream.downloader": "Downloader", "upstream.downloaderBuiltin": "Built-in", "upstream.downloaderAria2": "aria2", "upstream.downloaderAria2Missing": "aria2c was not found on PATH; install aria2 to enable multi-threaded downloads",
   },
-
   czech: {
     "tb.settings": "Nastavení", "tb.minimize": "Minimalizovat", "tb.close": "Zavřít",
     "st.directory": "Složka", "st.files": "Soubory", "st.allPresent": "Vše přítomno",
@@ -1871,7 +1846,6 @@ export const DICTS: Record<string, Partial18n> = {
     "upstream.needDownload": "Před instalací stáhněte komponentu upstream", "upstream.notReady": "Balíček upstream není připraven",
     "upstream.downloader": "Downloader", "upstream.downloaderBuiltin": "Built-in", "upstream.downloaderAria2": "aria2", "upstream.downloaderAria2Missing": "aria2c was not found on PATH; install aria2 to enable multi-threaded downloads",
   },
-
   swedish: {
     "tb.settings": "Inställningar", "tb.minimize": "Minimera", "tb.close": "Stäng",
     "st.directory": "Katalog", "st.files": "Filer", "st.allPresent": "Allt finns",
@@ -1908,7 +1882,6 @@ export const DICTS: Record<string, Partial18n> = {
     "upstream.needDownload": "Hämta upstream-komponenten före installation", "upstream.notReady": "Upstream-paketet är inte klart",
     "upstream.downloader": "Downloader", "upstream.downloaderBuiltin": "Built-in", "upstream.downloaderAria2": "aria2", "upstream.downloaderAria2Missing": "aria2c was not found on PATH; install aria2 to enable multi-threaded downloads",
   },
-
   danish: {
     "tb.settings": "Indstillinger", "tb.minimize": "Minimer", "tb.close": "Luk",
     "st.directory": "Mappe", "st.files": "Filer", "st.allPresent": "Alt til stede",
@@ -1945,7 +1918,6 @@ export const DICTS: Record<string, Partial18n> = {
     "upstream.needDownload": "Download upstream-komponenten før installation", "upstream.notReady": "Upstream-pakken er ikke klar",
     "upstream.downloader": "Downloader", "upstream.downloaderBuiltin": "Built-in", "upstream.downloaderAria2": "aria2", "upstream.downloaderAria2Missing": "aria2c was not found on PATH; install aria2 to enable multi-threaded downloads",
   },
-
   norwegian: {
     "tb.settings": "Innstillinger", "tb.minimize": "Minimer", "tb.close": "Lukk",
     "st.directory": "Mappe", "st.files": "Filer", "st.allPresent": "Alt til stede",
@@ -1982,7 +1954,6 @@ export const DICTS: Record<string, Partial18n> = {
     "upstream.needDownload": "Last ned oppstrømskomponenten før installasjon", "upstream.notReady": "Oppstrømspakkelen er ikke klar",
     "upstream.downloader": "Downloader", "upstream.downloaderBuiltin": "Built-in", "upstream.downloaderAria2": "aria2", "upstream.downloaderAria2Missing": "aria2c was not found on PATH; install aria2 to enable multi-threaded downloads",
   },
-
   finnish: {
     "tb.settings": "Asetukset", "tb.minimize": "Pienennä", "tb.close": "Sulje",
     "st.directory": "Hakemisto", "st.files": "Tiedostot", "st.allPresent": "Kaikki paikalla",
@@ -2019,7 +1990,6 @@ export const DICTS: Record<string, Partial18n> = {
     "upstream.needDownload": "Lataa upstream-komponentti ennen asennusta", "upstream.notReady": "Upstream-paketti ei ole valmis",
     "upstream.downloader": "Downloader", "upstream.downloaderBuiltin": "Built-in", "upstream.downloaderAria2": "aria2", "upstream.downloaderAria2Missing": "aria2c was not found on PATH; install aria2 to enable multi-threaded downloads",
   },
-
   hungarian: {
     "tb.settings": "Beállítások", "tb.minimize": "Kis méret", "tb.close": "Bezárás",
     "st.directory": "Könyvtár", "st.files": "Fájlok", "st.allPresent": "Minden megvan",
@@ -2056,7 +2026,6 @@ export const DICTS: Record<string, Partial18n> = {
     "upstream.needDownload": "Töltsd le az upstream összetevőt a telepítés előtt", "upstream.notReady": "Az upstream csomag nem áll készen",
     "upstream.downloader": "Downloader", "upstream.downloaderBuiltin": "Built-in", "upstream.downloaderAria2": "aria2", "upstream.downloaderAria2Missing": "aria2c was not found on PATH; install aria2 to enable multi-threaded downloads",
   },
-
   romanian: {
     "tb.settings": "Setări", "tb.minimize": "Minimizează", "tb.close": "Închide",
     "st.directory": "Director", "st.files": "Fișiere", "st.allPresent": "Toate prezente",
@@ -2093,7 +2062,6 @@ export const DICTS: Record<string, Partial18n> = {
     "upstream.needDownload": "Descarcă componenta upstream înainte de instalare", "upstream.notReady": "Pachetul upstream nu este pregătit",
     "upstream.downloader": "Downloader", "upstream.downloaderBuiltin": "Built-in", "upstream.downloaderAria2": "aria2", "upstream.downloaderAria2Missing": "aria2c was not found on PATH; install aria2 to enable multi-threaded downloads",
   },
-
   greek: {
     "tb.settings": "Ρυθμίσεις", "tb.minimize": "Ελαχιστοποίηση", "tb.close": "Κλείσιμο",
     "st.directory": "Κατάλογος", "st.files": "Αρχεία", "st.allPresent": "Όλα παρόντα",
@@ -2130,7 +2098,6 @@ export const DICTS: Record<string, Partial18n> = {
     "upstream.needDownload": "Κατεβάστε το συστατικό upstream πριν την εγκατάσταση", "upstream.notReady": "Το πακέτο upstream δεν είναι έτοιμο",
     "upstream.downloader": "Downloader", "upstream.downloaderBuiltin": "Built-in", "upstream.downloaderAria2": "aria2", "upstream.downloaderAria2Missing": "aria2c was not found on PATH; install aria2 to enable multi-threaded downloads",
   },
-
   bulgarian: {
     "tb.settings": "Настройки", "tb.minimize": "Минимизиране", "tb.close": "Затваряне",
     "st.directory": "Директория", "st.files": "Файлове", "st.allPresent": "Всичко налично",
@@ -2167,7 +2134,6 @@ export const DICTS: Record<string, Partial18n> = {
     "upstream.needDownload": "Изтеглете компонента upstream преди инсталацията", "upstream.notReady": "Пакетът upstream не е готов",
     "upstream.downloader": "Downloader", "upstream.downloaderBuiltin": "Built-in", "upstream.downloaderAria2": "aria2", "upstream.downloaderAria2Missing": "aria2c was not found on PATH; install aria2 to enable multi-threaded downloads",
   },
-
   // Portuguese (pt-PT) and Brazilian Portuguese
   portuguese: {
     "tb.settings": "Definições", "tb.minimize": "Minimizar", "tb.close": "Fechar",
@@ -2205,7 +2171,6 @@ export const DICTS: Record<string, Partial18n> = {
     "upstream.needDownload": "Transfira o componente upstream antes de instalar", "upstream.notReady": "Pacote upstream não disponível",
     "upstream.downloader": "Downloader", "upstream.downloaderBuiltin": "Built-in", "upstream.downloaderAria2": "aria2", "upstream.downloaderAria2Missing": "aria2c was not found on PATH; install aria2 to enable multi-threaded downloads",
   },
-
   brazilian: {
     "tb.settings": "Configurações", "tb.minimize": "Minimizar", "tb.close": "Fechar",
     "st.directory": "Diretório", "st.files": "Arquivos", "st.allPresent": "Tudo presente",
@@ -2242,7 +2207,6 @@ export const DICTS: Record<string, Partial18n> = {
     "upstream.needDownload": "Baixe o componente upstream antes de instalar", "upstream.notReady": "Pacote upstream não está pronto",
     "upstream.downloader": "Downloader", "upstream.downloaderBuiltin": "Built-in", "upstream.downloaderAria2": "aria2", "upstream.downloaderAria2Missing": "aria2c was not found on PATH; install aria2 to enable multi-threaded downloads",
   },
-
   // Latin-American Spanish — reuse Spanish with minor wording
   latam: {
     "tb.settings": "Configuración", "tb.minimize": "Minimizar", "tb.close": "Cerrar",
