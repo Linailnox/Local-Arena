@@ -558,14 +558,6 @@ public sealed class PlayerKnifeCustomizerPlugin : BasePlugin
             var item = weapon.AttributeManager?.Item;
             if (item == null || !HasReadyAttributeLists(item)) return false;
 
-            // Write the texture attributes before any state-mutating step. RemoveAll() and
-            // AssignItemId() (and the subclass switch the caller performs) can reallocate or
-            // invalidate the underlying CAttributeList, leaving a stale non-zero Handle whose
-            // use throws "Invalid function pointer". Capturing the Handles up front keeps
-            // every native call on handles that are still valid.
-            nint networkedAttributes = item.NetworkedDynamicAttributes.Handle;
-            nint attributeList = item.AttributeList.Handle;
-
             item.ItemDefinitionIndex = defIndex;
             item.EntityQuality = preset.SouvenirEnabled ? (byte)12
                 : preset.StatTrakEnabled ? (byte)9 : (byte)3;
@@ -578,8 +570,8 @@ public sealed class PlayerKnifeCustomizerPlugin : BasePlugin
             weapon.FallbackSeed = preset.Seed;
             weapon.FallbackWear = preset.Wear;
 
-            SetTextureAttributes(networkedAttributes, preset);
-            SetTextureAttributes(attributeList, preset);
+            SetTextureAttributes(item.NetworkedDynamicAttributes.Handle, preset);
+            SetTextureAttributes(item.AttributeList.Handle, preset);
             if (preset.StatTrakEnabled && !preset.SouvenirEnabled) ApplyStatTrak(weapon, preset);
             if (DecorationReleaseEnabled &&
                 StickerFailurePolicy.ShouldRestoreBaseSkin(TryApplyDecorations(defIndex, item, preset)))
