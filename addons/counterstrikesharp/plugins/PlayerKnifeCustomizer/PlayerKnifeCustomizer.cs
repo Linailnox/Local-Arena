@@ -200,6 +200,15 @@ public sealed class PlayerKnifeCustomizerPlugin : BasePlugin
     private readonly HashSet<(ushort DefIndex, int Paint)> _legacyPaints = new();
     private KnifeConfig _config = new();
     private MemoryFunctionVoid<nint, string, float>? _setAttrByName;
+
+    /// <summary>
+    /// True only when the attribute signature actually resolved to an address. A signature that
+    /// no longer matches the installed CS2 build still yields a non-null wrapper whose resolved
+    /// Handle is zero, and BaseMemoryFunction.InvokeInternal passes that Handle straight to
+    /// NativeAPI.ExecuteVirtualFunction, which throws "Invalid function pointer" — so a null
+    /// test alone reports a false "loaded". Check the resolved handle instead.
+    /// </summary>
+    private bool AttributeFunctionReady => _setAttrByName != null && _setAttrByName.Handle != nint.Zero;
     private ulong _nextItemId = 0xC5200000;
     private readonly ApplyErrorThrottle _applyErrorThrottle = new(TimeSpan.FromSeconds(30));
     private int _loadedConfigSchema = KnifeConfig.CurrentSchemaVersion;
@@ -225,10 +234,17 @@ public sealed class PlayerKnifeCustomizerPlugin : BasePlugin
 
         try
         {
+            // Signature of CAttributeList::SetOrAddAttributeValueByName(const char*, float).
+            // Verified against the current build: after the 2026-10-15 CS2 update the previous
+            // Linux pattern matched libserver.so zero times while this one matches exactly once
+            // (offset 0x1CA0F00, preceded by int3 padding and carrying the push rbp/mov rbp,rsp
+            // prologue with rdi→r13, rsi→rbx and the float spilled to [rbp-0x94], i.e. the
+            // (this, name, value) shape). That stale pattern is what made every apply throw
+            // "Invalid function pointer".
             _setAttrByName = new MemoryFunctionVoid<nint, string, float>(
                 RuntimeInformation.IsOSPlatform(OSPlatform.Linux)
-                    ? "55 48 89 E5 41 57 41 56 49 89 FE 41 55 41 54 53 48 89 F3 48 83 EC ? F3 0F 11 85"
-                    : "40 53 55 41 56 48 81 EC 90 00 00 00");
+                    ? "55 48 89 E5 41 57 41 56 41 55 49 89 FD 41 54 53 48 89 F3 48 83 EC ? F3 0F 11 85"
+                    : "48 89 4C 24 ? 53 41 55 41 56");
         }
         catch (Exception ex)
         {
@@ -247,7 +263,7 @@ public sealed class PlayerKnifeCustomizerPlugin : BasePlugin
         RegisterListener<Listeners.OnMapEnd>(() => _applyTracker.CancelAll());
         VirtualFunctions.GiveNamedItemFunc.Hook(OnGiveNamedItemPost, HookMode.Post);
         Logger.LogInformation("[PlayerKnifeCustomizer] Loaded generation-safe pipeline; enabled={Enabled}, signature={Signature}, catalog={Catalog}",
-            _config.Enabled, _setAttrByName != null, _skinCatalog.Values.Sum(skins => skins.Count));
+            _config.Enabled, AttributeFunctionReady, _skinCatalog.Values.Sum(skins => skins.Count));
     }
 
     public override void Unload(bool hotReload)
@@ -273,7 +289,7 @@ public sealed class PlayerKnifeCustomizerPlugin : BasePlugin
 
     private HookResult OnGiveNamedItemPost(DynamicHook hook)
     {
-        if (_setAttrByName == null || !_config.Enabled) return HookResult.Continue;
+        if (!AttributeFunctionReady || !_config.Enabled) return HookResult.Continue;
         try
         {
             var itemServices = hook.GetParam<CCSPlayer_ItemServices>(0);
@@ -551,7 +567,7 @@ public sealed class PlayerKnifeCustomizerPlugin : BasePlugin
 
     private bool ApplyPreset(CBasePlayerWeapon weapon, ushort defIndex, KnifePreset preset)
     {
-        if (_setAttrByName == null || !weapon.IsValid || !ValidatePreset(defIndex, preset)) return false;
+        if (!AttributeFunctionReady || !weapon.IsValid || !ValidatePreset(defIndex, preset)) return false;
 
         try
         {
@@ -593,7 +609,7 @@ public sealed class PlayerKnifeCustomizerPlugin : BasePlugin
     {
         var preset = _config.Loadouts.For(team).Glove;
         if (!preset.Enabled) return true;
-        if (_setAttrByName == null || preset.DefIndex == 0 || preset.Paint <= 0) return false;
+        if (!AttributeFunctionReady || preset.DefIndex == 0 || preset.Paint <= 0) return false;
 
         try
         {
@@ -687,7 +703,7 @@ public sealed class PlayerKnifeCustomizerPlugin : BasePlugin
 
     private void ApplyStatTrak(CBasePlayerWeapon weapon, KnifePreset preset)
     {
-        if (_setAttrByName == null) return;
+        if (!AttributeFunctionReady) return;
         var item = weapon.AttributeManager?.Item;
         if (item == null || !HasReadyAttributeLists(item)) return;
 
@@ -1163,13 +1179,13 @@ public sealed class PlayerKnifeCustomizerPlugin : BasePlugin
         LoadStickerCatalog();
         LoadPlayerCosmeticCatalog();
         LoadConfig();
-        string restart = _config.Enabled && _setAttrByName == null ? "; restart CS2 to initialize runtime hooks" : string.Empty;
+        string restart = _config.Enabled && !AttributeFunctionReady ? "; restart CS2 to initialize runtime hooks" : string.Empty;
         command.ReplyToCommand($"[PlayerKnifeCustomizer] reloaded; enabled={_config.Enabled}, stickers={DecorationReleaseEnabled && _config.StickersEnabled}, charms={DecorationReleaseEnabled && _config.CharmsEnabled}, agents={DecorationReleaseEnabled && _config.AgentsEnabled}, sticker_catalog={_validStickers.Count}, charm_catalog={_validCharms.Count}, agent_catalog={_agentModels.Values.Sum(models => models.Count)}, ct_knives={_config.Loadouts.Ct.KnifePresets.Count}, t_knives={_config.Loadouts.T.KnifePresets.Count}, ct_guns={_config.Loadouts.Ct.GunPresets.Count}, t_guns={_config.Loadouts.T.GunPresets.Count}, music={_config.MusicKitId}{restart}");
     }
 
     private void OnStatusCommand(CCSPlayerController? player, CommandInfo command)
     {
-        command.ReplyToCommand($"[PlayerKnifeCustomizer] enabled={_config.Enabled}, stickers={DecorationReleaseEnabled && _config.StickersEnabled}, charms={DecorationReleaseEnabled && _config.CharmsEnabled}, agents={DecorationReleaseEnabled && _config.AgentsEnabled}, signature={(_setAttrByName == null ? "missing" : "loaded")}, ct_knives={_config.Loadouts.Ct.KnifePresets.Count}, t_knives={_config.Loadouts.T.KnifePresets.Count}, ct_guns={_config.Loadouts.Ct.GunPresets.Count}, t_guns={_config.Loadouts.T.GunPresets.Count}, music={_config.MusicKitId}, catalog={_skinCatalog.Values.Sum(skins => skins.Count)}, sticker_catalog={_validStickers.Count}, charm_catalog={_validCharms.Count}, agent_catalog={_agentModels.Values.Sum(models => models.Count)}, active_generations={_applyTracker.ActiveCount}, schedules={_applyTracker.Schedules}, phase_completions={_applyTracker.PhaseCompletions}, retry_exhaustions={_applyTracker.RetryExhaustions}, context_invalidations={_applyTracker.ContextInvalidations}");
+        command.ReplyToCommand($"[PlayerKnifeCustomizer] enabled={_config.Enabled}, stickers={DecorationReleaseEnabled && _config.StickersEnabled}, charms={DecorationReleaseEnabled && _config.CharmsEnabled}, agents={DecorationReleaseEnabled && _config.AgentsEnabled}, signature={(AttributeFunctionReady ? "loaded" : "missing")}, ct_knives={_config.Loadouts.Ct.KnifePresets.Count}, t_knives={_config.Loadouts.T.KnifePresets.Count}, ct_guns={_config.Loadouts.Ct.GunPresets.Count}, t_guns={_config.Loadouts.T.GunPresets.Count}, music={_config.MusicKitId}, catalog={_skinCatalog.Values.Sum(skins => skins.Count)}, sticker_catalog={_validStickers.Count}, charm_catalog={_validCharms.Count}, agent_catalog={_agentModels.Values.Sum(models => models.Count)}, active_generations={_applyTracker.ActiveCount}, schedules={_applyTracker.Schedules}, phase_completions={_applyTracker.PhaseCompletions}, retry_exhaustions={_applyTracker.RetryExhaustions}, context_invalidations={_applyTracker.ContextInvalidations}");
     }
 
     private void LogApplyError(string operation, Exception ex)
