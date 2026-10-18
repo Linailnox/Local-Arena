@@ -271,7 +271,17 @@ try {
 }
 finally {
     foreach ($name in $environmentNames) {
-        [Environment]::SetEnvironmentVariable($name, $previousEnvironment[$name], "Process")
+        # Restoring a variable that did not exist needs [NullString]::Value: passing $null
+        # coerces to an empty string, which leaves the variable defined-but-empty and makes
+        # the next cargo call in this process fail with "the target directory is set to an
+        # empty string in the CARGO_TARGET_DIR environment variable".
+        $previous = $previousEnvironment[$name]
+        if ($null -eq $previous) {
+            [Environment]::SetEnvironmentVariable($name, [NullString]::Value, "Process")
+        }
+        else {
+            [Environment]::SetEnvironmentVariable($name, $previous, "Process")
+        }
     }
 }
 
