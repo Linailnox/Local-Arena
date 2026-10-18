@@ -6,6 +6,7 @@ using CounterStrikeSharp.API.Modules.Utils;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 using System.Runtime.InteropServices;
+using System.Text.Json;
 
 namespace OfflineMatchTelemetry;
 
@@ -13,6 +14,8 @@ public class OfflineMatchTelemetryPlugin : BasePlugin
 {
     private const int PollInterval = 64;
     private string _databasePath = "";
+    private string _dataDir = "";
+    private static readonly JsonSerializerOptions MarkerJson = new() { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
     private IntPtr _sqliteNativeLibrary;
     private int _currentMatchId;
     private string _matchMap = "";
@@ -70,6 +73,7 @@ public class OfflineMatchTelemetryPlugin : BasePlugin
         var csgoDir = Path.GetFullPath(Path.Combine(pluginDir, "..", "..", "..", ".."));
         var dataDir = Path.Combine(csgoDir, ".csbip", "cs2ss");
         Directory.CreateDirectory(dataDir);
+        _dataDir = dataDir;
         _databasePath = Path.Combine(dataDir, "telemetry.db");
 
         // SQLitePCLRaw's provider resolves its native asset through DllImport("e_sqlite3"),
@@ -500,6 +504,37 @@ public class OfflineMatchTelemetryPlugin : BasePlugin
             throw;
         }
         Log("Match {MatchId} ended: {Map} reason={Reason}", _currentMatchId, _matchMap, endReason);
+        PublishCompletionMarker(endReason);
+    }
+
+    /// <summary>
+    /// Publishes the wire marker the Panel watches to learn that a match was settled. The Panel
+    /// must not render results before this file exists: the match row is only marked completed
+    /// here, so an earlier read returns the previous match on the same map instead. Written to a
+    /// temporary name and renamed so the reader never observes a partially written file.
+    /// </summary>
+    private void PublishCompletionMarker(string endReason)
+    {
+        try
+        {
+            var marker = new
+            {
+                SchemaVersion = 1,
+                MatchId = _currentMatchId,
+                Map = _matchMap,
+                StartedAtUnix = _matchStartedAt.ToUnixTimeSeconds(),
+                EndedAtUnix = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                EndReason = endReason,
+            };
+            var path = Path.Combine(_dataDir, "last-completed.json");
+            var temporary = path + ".tmp";
+            File.WriteAllText(temporary, JsonSerializer.Serialize(marker, MarkerJson));
+            File.Move(temporary, path, true);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "[OMT] Failed to publish the completion marker");
+        }
     }
 
     private void WriteRoundSummary(int round, string? winner, int? endReason, string source)
