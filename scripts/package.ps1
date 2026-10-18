@@ -323,16 +323,34 @@ Get-ChildItem -LiteralPath $OutputDirectory -File -ErrorAction SilentlyContinue 
 $fullZip = Join-Path $OutputDirectory "LocalArena-$releaseTag-$osSuffix.zip"
 Compress-Archive -Path $releaseRoot -DestinationPath $fullZip -CompressionLevel Optimal
 
+function Get-PanelArtifactCandidates {
+    param([string]$FileName)
+    $candidates = @()
+    if ($env:CARGO_TARGET_DIR) { $candidates += Join-Path $env:CARGO_TARGET_DIR "release\$FileName" }
+    $candidates += Join-Path $repo "Panel\src-tauri\target\release\$FileName"
+    try {
+        $cargo = if ($Cargo) { $Cargo } else { "cargo" }
+        $manifest = Join-Path $repo "Panel\src-tauri\Cargo.toml"
+        $metadata = & $cargo metadata --format-version 1 --no-deps --manifest-path $manifest 2>$null | ConvertFrom-Json
+        if ($metadata.target_directory) { $candidates += Join-Path $metadata.target_directory "release\$FileName" }
+    }
+    catch { }
+    return $candidates
+}
+
 $panelLinuxBinary = $null
 if ($Linux) {
     # Ship the natively built Linux Panel beside the package when it exists; -Linux
-    # itself never runs cargo, so a missing binary is a skip, not an error.
-    $candidate = Join-Path $repo "Panel\src-tauri\target\release\cs2-bot-improver-plus-panel"
-    if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+    # itself never runs cargo, so a missing binary is a skip, not an error. Cargo is
+    # asked where it actually put the build, so a custom build.target-dir (a global
+    # [build] target-dir, or CARGO_TARGET_DIR) is honored instead of silently missing.
+    foreach ($candidate in Get-PanelArtifactCandidates "cs2-bot-improver-plus-panel") {
+        if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) { continue; }
         $panelLinuxBinary = Join-Path $OutputDirectory "cs2-bot-improver-plus-panel"
         Copy-Item -LiteralPath $candidate -Destination $panelLinuxBinary -Force
+        break
     }
-    else {
+    if (-not $panelLinuxBinary) {
         Write-Host "Panel Linux binary skipped (not built): cargo build --release --features custom-protocol --manifest-path Panel/src-tauri/Cargo.toml"
     }
 }
