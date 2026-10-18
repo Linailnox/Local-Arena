@@ -587,6 +587,15 @@ export type DemoStatus = {
   detail: string | null;
 };
 
+export type CompletedMatchMarker = {
+  schema_version: number;
+  match_id: number;
+  map: string;
+  started_at_unix: number;
+  ended_at_unix: number;
+  end_reason: string;
+};
+
 export type MatchResult = {
   schema_version: number;
   session_id: string;
@@ -696,6 +705,8 @@ export const api = {
   getActiveMatch: (csgo: string) => invoke<MatchSession | null>("get_active_match", { csgo }),
   matchSessionDemo: (csgo: string, mapId: string, startedAtUnix: number) =>
     invoke<MatchSession | null>("match_session_demo", { csgo, mapId, startedAtUnix }),
+  cs2ssLastCompleted: (csgo: string) =>
+    invoke<CompletedMatchMarker | null>("cs2ss_last_completed", { csgo }),
   playDemo: (csgo: string, demoPath: string) =>
     invoke<void>("play_demo", { csgo, demoPath }),
   openDemoFolder: (csgo: string, demoPath: string) =>

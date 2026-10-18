@@ -143,6 +143,9 @@ pub struct MatchSession {
 }
 
 fn match_root(csgo: &Path) -> PathBuf { csgo.join(".csbip").join("matches") }
+fn cs2ss_root(csgo: &Path) -> PathBuf { csgo.join(".csbip").join("cs2ss") }
+const COMPLETION_MARKER: &str = "last-completed.json";
+const COMPLETION_EVENT: &str = "cs2ss-match-completed";
 fn active_path(csgo: &Path) -> PathBuf { csgo.join(".csbip").join("match-active.json") }
 
 fn expected_session_paths(csgo: &Path, session_id: &str) -> Result<(PathBuf, PathBuf)> {
@@ -562,6 +565,27 @@ pub fn watch(app: AppHandle, csgo: &Path) -> Result<()> {
     let root_key = fs::canonicalize(&root).unwrap_or(root.clone());
     let watchers = WATCHERS.get_or_init(|| Mutex::new(BTreeMap::new()));
     let mut guard = watchers.lock().unwrap_or_else(|error| error.into_inner());
+    let marker_root = cs2ss_root(csgo);
+    fs::create_dir_all(&marker_root).map_err(AppError::transaction_io)?;
+    let marker_key = fs::canonicalize(&marker_root).unwrap_or(marker_root.clone());
+    if !guard.contains_key(&marker_key) {
+        let app_for_marker = app.clone();
+        let marker_file = marker_root.join(COMPLETION_MARKER);
+        let mut marker_watcher = notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
+            let Ok(event) = event else { return; };
+            if !matches!(event.kind, EventKind::Create(_) | EventKind::Modify(_)) { return; }
+            if !event.paths.iter().any(|path| path.file_name().and_then(|name| name.to_str()) == Some(COMPLETION_MARKER)) { return; }
+            let app = app_for_marker.clone();
+            let path = marker_file.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_millis(120));
+                let Ok(marker) = read_json::<CompletedMatchMarker>(&path) else { return; };
+                let _ = app.emit(COMPLETION_EVENT, &marker);
+            });
+        }).map_err(|error| AppError::new("E1701", "match", error.to_string()))?;
+        marker_watcher.watch(&marker_root, RecursiveMode::NonRecursive).map_err(|error| AppError::new("E1701", "match", error.to_string()))?;
+        guard.insert(marker_key, marker_watcher);
+    }
     if guard.contains_key(&root_key) { return Ok(()); }
     let app_for_events = app.clone();
     let mut watcher = notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
@@ -600,6 +624,26 @@ pub fn watch(app: AppHandle, csgo: &Path) -> Result<()> {
     watcher.watch(&root, RecursiveMode::Recursive).map_err(|error| AppError::new("E1701", "match", error.to_string()))?;
     guard.insert(root_key, watcher);
     Ok(())
+}
+
+// ---- Telemetry completion marker ----
+
+/// The marker OfflineMatchTelemetry publishes once it has settled a match (the row is flipped to
+/// `completed` in the same breath). The Panel waits for it so the results view opens with the
+/// finished match instead of guessing from the telemetry DB while the current match is still
+/// `in_progress` — which resolved to the previous match on that map.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CompletedMatchMarker {
+    pub schema_version: u32,
+    pub match_id: i64,
+    pub map: String,
+    pub started_at_unix: u64,
+    pub ended_at_unix: u64,
+    pub end_reason: String,
+}
+
+pub fn read_completion_marker(csgo: &Path) -> Option<CompletedMatchMarker> {
+    read_json::<CompletedMatchMarker>(&cs2ss_root(csgo).join(COMPLETION_MARKER)).ok()
 }
 
 // ---- Session lookup for the stats view ----
@@ -706,6 +750,24 @@ mod tests {
         assert!(session_demo_for(&csgo, "de_mirage", 1_010, 900).unwrap().is_some());
         assert!(session_demo_for(&csgo, "de_mirage", 9_999, 900).unwrap().is_none(), "outside the tolerance window must not match");
         assert!(session_demo_for(&csgo, "de_dust2", 1_010, 900).unwrap().is_none(), "another map must not match");
+        fs::remove_dir_all(csgo).unwrap();
+    }
+
+    #[test]
+    fn completion_marker_round_trips_and_ignores_a_partial_write() {
+        let csgo = root("completion-marker");
+        assert!(read_completion_marker(&csgo).is_none(), "an absent marker directory must read as absent");
+        let directory = cs2ss_root(&csgo);
+        fs::create_dir_all(&directory).unwrap();
+        let path = directory.join(COMPLETION_MARKER);
+        fs::write(&path, br#"{"schema_version":1,"match_id":102,"map":"de_dust2","started_at_unix":1760804536,"ended_at_unix":1760806338,"end_reason":"MAP_END"}"#).unwrap();
+        let marker = read_completion_marker(&csgo).expect("the marker OfflineMatchTelemetry publishes must parse");
+        assert_eq!(marker.match_id, 102);
+        assert_eq!(marker.map, "de_dust2");
+        assert_eq!(marker.started_at_unix, 1_760_804_536);
+        assert_eq!(marker.end_reason, "MAP_END");
+        fs::write(&path, b"{\"schema_version\":1,\"match_id\":").unwrap();
+        assert!(read_completion_marker(&csgo).is_none(), "a partially written marker must not be trusted");
         fs::remove_dir_all(csgo).unwrap();
     }
 

@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Play, RotateCcw, Shield, Square, Swords, Users, X } from "lucide-react";
-import { api, type MatchCatalog, type MatchResult, type MatchSession, type PrepareMatchInput } from "../lib/api";
+import { api, type CompletedMatchMarker, type MatchCatalog, type MatchResult, type MatchSession, type PrepareMatchInput } from "../lib/api";
 import { useT } from "../i18n";
 import { useStore } from "../state/store";
 import { listenAppEvent } from "../lib/platform";
@@ -16,21 +16,18 @@ type Props = { onOpenInstallation?: () => void; onOpenLineup?: () => void };
 
 type FinishedMatch = { matchId: number; demoSession: MatchSession | null };
 
-// A finished Panel session is shown through the cs2ss stats view, so the session has to be
-// translated into the telemetry match it produced. `match_session_demo` matches on map +
-// start time; when nothing is close enough we still open the newest match on that map so the
-// player is never dropped on a dead end.
-async function resolveFinished(csgo: string, mapId: string, startedAtUnix: number): Promise<FinishedMatch | null> {
-  const demoSession = await api.matchSessionDemo(csgo, mapId, startedAtUnix).catch(() => null);
-  const matches = await api.listCs2ssMatchesWithStats(csgo).catch(() => []);
-  const onMap = matches.filter((entry) => entry.map === mapId);
-  if (onMap.length === 0) return null;
-  const nearest = onMap.reduce((best, entry) => {
-    const distance = Math.abs(new Date(entry.startedAt).getTime() / 1000 - startedAtUnix);
-    const bestDistance = Math.abs(new Date(best.startedAt).getTime() / 1000 - startedAtUnix);
-    return distance < bestDistance ? entry : best;
-  });
-  return { matchId: nearest.matchId, demoSession: demoSession ?? null };
+type PendingSettlement = { mapId: string; anchorUnix: number };
+
+const SETTLE_TOLERANCE_SECONDS = 900;
+
+// The results view opens only after OfflineMatchTelemetry settles the match and publishes its
+// completion marker. Rendering any earlier resolves against the telemetry DB while the current
+// match is still `in_progress`, which is how the previous match on the same map got shown.
+async function settle(csgo: string, marker: CompletedMatchMarker, pending: PendingSettlement): Promise<FinishedMatch | null> {
+  if (marker.map !== pending.mapId) return null;
+  if (Math.abs(marker.started_at_unix - pending.anchorUnix) > SETTLE_TOLERANCE_SECONDS) return null;
+  const demoSession = await api.matchSessionDemo(csgo, marker.map, pending.anchorUnix).catch(() => null);
+  return { matchId: marker.match_id, demoSession: demoSession ?? null };
 }
 
 export default function MatchPanel({ onOpenInstallation, onOpenLineup }: Props) {
@@ -40,6 +37,7 @@ export default function MatchPanel({ onOpenInstallation, onOpenLineup }: Props) 
   const [catalog, setCatalog] = useState<MatchCatalog | null>(null);
   const [activeMatch, setActiveMatch] = useState<MatchSession | null>(null);
   const [finishedMatch, setFinishedMatch] = useState<FinishedMatch | null>(null);
+  const pendingSettlement = useRef<PendingSettlement | null>(null);
   const [selectedMap, setSelectedMap] = useState("de_mirage");
   const [opponentKind, setOpponentKind] = useState<PrepareMatchInput["opponent_kind"]>("featured_team");
   const [teamId, setTeamId] = useState<string | null>(null);
@@ -55,9 +53,13 @@ export default function MatchPanel({ onOpenInstallation, onOpenLineup }: Props) 
       setCatalog(value);
       setTeamId((current) => current && value.teams.some((team) => team.id === current) ? current : value.teams[0]?.id ?? null);
     }).catch(reportError);
-    void api.getActiveMatch(csgo).then((active) => {
+    void api.getActiveMatch(csgo).then(async (active) => {
       if (active && (active.state === "finished" || active.state === "interrupted")) {
-        void resolveFinished(csgo, active.map_id, active.created_at_unix).then(setFinishedMatch).catch(() => {});
+        const pending: PendingSettlement = { mapId: active.map_id, anchorUnix: active.created_at_unix };
+        pendingSettlement.current = pending;
+        const marker = await api.cs2ssLastCompleted(csgo).catch(() => null);
+        const settled = marker ? await settle(csgo, marker, pending) : null;
+        if (settled) { pendingSettlement.current = null; setFinishedMatch(settled); }
       } else {
         setActiveMatch(active);
       }
@@ -65,12 +67,24 @@ export default function MatchPanel({ onOpenInstallation, onOpenLineup }: Props) 
   }, [csgo]);
 
   useEffect(() => {
-    const promise = listenAppEvent<MatchResult>("match-finished", (event) => {
+    const finished = listenAppEvent<MatchResult>("match-finished", (event) => {
       setActiveMatch(null);
       setBusy(false);
-      if (csgo) void resolveFinished(csgo, event.payload.map_id, event.payload.started_at_unix).then(setFinishedMatch).catch(() => {});
+      pendingSettlement.current = { mapId: event.payload.map_id, anchorUnix: event.payload.started_at_unix };
     });
-    return () => { void promise.then((dispose) => dispose()); };
+    const completed = listenAppEvent<CompletedMatchMarker>("cs2ss-match-completed", (event) => {
+      const pending = pendingSettlement.current;
+      if (!csgo || !pending) return;
+      void settle(csgo, event.payload, pending).then((settled) => {
+        if (!settled) return;
+        pendingSettlement.current = null;
+        setFinishedMatch(settled);
+      }).catch(() => {});
+    });
+    return () => {
+      void finished.then((dispose) => dispose());
+      void completed.then((dispose) => dispose());
+    };
   }, [csgo]);
 
   const selectedTeam = useMemo(() => catalog?.teams.find((team) => team.id === teamId) ?? null, [catalog, teamId]);
