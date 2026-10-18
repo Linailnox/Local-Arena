@@ -1798,6 +1798,11 @@ fn match_session_demo(csgo: String, map_id: String, started_at_unix: u64) -> Res
 }
 
 #[tauri::command]
+fn cs2ss_last_completed(csgo: String) -> Result<Option<match_system::CompletedMatchMarker>> {
+    Ok(match_system::read_completion_marker(&csgo_path(&csgo)?))
+}
+
+#[tauri::command]
 fn run_install_checks(app: AppHandle, csgo: String, selected_map: Option<String>) -> Result<InstallCheckReport> {
     let root = csgo_path(&csgo)?;
     collect_install_checks(&merged_payload_root(&app, &root)?, &local_state_root(&app)?, &root, selected_map.as_deref())
@@ -4519,7 +4524,7 @@ pub fn run() {
             upstream_aria2_available,
             upstream_cache_info, upstream_cache_clear, upstream_import_local,
             upstream_installed_state, launch_upstream_panel,
-            get_match_catalog, prepare_and_launch_match, finish_active_match, get_active_match, match_session_demo,
+            get_match_catalog, prepare_and_launch_match, finish_active_match, get_active_match, match_session_demo, cs2ss_last_completed,
             run_install_checks, play_demo, open_demo_folder,
             cs2ss_bridge::get_cs2ss_overview, cs2ss_bridge::list_cs2ss_matches,
             cs2ss_bridge::get_cs2ss_match_detail, cs2ss_bridge::get_cs2ss_player_detail,
