@@ -617,12 +617,10 @@ pub fn watch(app: AppHandle, csgo: &Path) -> Result<()> {
                 if !matches!(&result.state, MatchState::Finished | MatchState::Interrupted) {
                     return;
                 }
+                // Deliberately no window raise here: the match is decided, but the telemetry
+                // has not settled yet, so the results view stays closed until the completion
+                // marker arrives (that watcher below raises the window instead).
                 let _ = app.emit("match-finished", &result);
-                if let Some(window) = app.get_webview_window("main") {
-                    let _ = window.show();
-                    let _ = window.unminimize();
-                    if window.set_focus().is_err() { let _ = window.request_user_attention(Some(UserAttentionType::Informational)); }
-                }
             });
         }
     }).map_err(|error| AppError::new("E1701", "match", error.to_string()))?;
