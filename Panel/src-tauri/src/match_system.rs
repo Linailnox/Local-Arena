@@ -581,6 +581,11 @@ pub fn watch(app: AppHandle, csgo: &Path) -> Result<()> {
                 std::thread::sleep(Duration::from_millis(120));
                 let Ok(marker) = read_json::<CompletedMatchMarker>(&path) else { return; };
                 let _ = app.emit(COMPLETION_EVENT, &marker);
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.unminimize();
+                    if window.set_focus().is_err() { let _ = window.request_user_attention(Some(UserAttentionType::Informational)); }
+                }
             });
         }).map_err(|error| AppError::new("E1701", "match", error.to_string()))?;
         marker_watcher.watch(&marker_root, RecursiveMode::NonRecursive).map_err(|error| AppError::new("E1701", "match", error.to_string()))?;
