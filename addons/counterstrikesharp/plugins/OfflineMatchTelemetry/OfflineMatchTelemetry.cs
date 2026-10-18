@@ -528,7 +528,12 @@ public class OfflineMatchTelemetryPlugin : BasePlugin
             };
             var path = Path.Combine(_dataDir, "last-completed.json");
             var temporary = path + ".tmp";
-            File.WriteAllText(temporary, JsonSerializer.Serialize(marker, MarkerJson));
+            var bytes = JsonSerializer.SerializeToUtf8Bytes(marker, MarkerJson);
+            using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.WriteThrough))
+            {
+                stream.Write(bytes);
+                stream.Flush(true);
+            }
             File.Move(temporary, path, true);
         }
         catch (Exception ex)
