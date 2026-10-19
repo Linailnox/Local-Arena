@@ -20,6 +20,7 @@ const TITLE_KEYS: Partial<Record<string, I18nKey>> = {
   TRANSACTION_JOURNAL: "install.checkTitle.journal",
   BACKUP_READABLE: "install.checkTitle.backup",
   INSTALL_RECORD: "install.checkTitle.record",
+  MANAGED_FILES: "install.checkTitle.managedFiles",
 };
 
 const COMPONENT_KEYS: Partial<Record<string, I18nKey>> = {
@@ -63,6 +64,7 @@ function failureKeys(check: InstallCheckItem): [I18nKey, I18nKey] | null {
     case "TRANSACTION_JOURNAL": return ["install.checkCause.journal", "install.checkAction.journal"];
     case "BACKUP_READABLE": return ["install.checkCause.backup", "install.checkAction.backup"];
     case "INSTALL_RECORD": return ["install.checkCause.record", "install.checkAction.record"];
+    case "MANAGED_FILES": return ["install.checkCause.managedFiles", "install.checkAction.managedFiles"];
     default:
       if (check.code.startsWith("PAYLOAD_"))
         return ["install.checkCause.packageComponent", "install.checkAction.packageComponent"];
