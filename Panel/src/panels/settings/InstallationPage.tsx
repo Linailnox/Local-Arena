@@ -485,7 +485,7 @@ export default function InstallationPage() {
             {checks.checks.map((check) => {
               const Icon = check.status === "pass" ? CheckCircle2 : check.status === "warn" ? CircleAlert : CircleX;
               const copy = localizeInstallCheck(check, t);
-              return <details className={`install-check check-${check.status} ${check.blocking ? "is-blocking" : ""}`} key={check.code} open={check.status === "fail"}>
+              return <details className={`install-check check-${check.status} ${check.blocking ? "is-blocking" : ""}`} key={check.code} open={check.status === "fail" || (check.code === "MANAGED_FILES" && check.status !== "pass")}>
                 <summary><Icon size={16} /><span><strong>{copy.title}</strong><small>{check.code}{check.blocking ? ` · ${t("install.action.blocked")}` : ""}</small></span></summary>
                 <div><p><b>{t("install.evidence")}</b>{check.evidence}</p>{check.status !== "pass" && <><p><b>{t("install.cause")}</b>{copy.cause}</p><p><b>{t("install.solution")}</b>{copy.action}</p></>}</div>
               </details>;
