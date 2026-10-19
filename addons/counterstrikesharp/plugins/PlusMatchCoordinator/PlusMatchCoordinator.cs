@@ -25,7 +25,6 @@ public sealed class PlusMatchCoordinatorPlugin : BasePlugin
     private BotIdentityCatalog? _identityCatalog;
     private IBotHiderApi? _botHider;
     private MatchRequest? _request;
-    private MatchRules? _rules;
     private DateTimeOffset _startedAt;
     private bool _live;
     private bool _finalizing;
@@ -68,7 +67,6 @@ public sealed class PlusMatchCoordinatorPlugin : BasePlugin
         RegisterListener<Listeners.OnMapStart>(OnMapStart);
         RegisterListener<Listeners.OnMapEnd>(OnMapEnd);
         RegisterEventHandler<EventRoundStart>(OnRoundStart);
-        RegisterEventHandler<EventRoundEnd>(OnRoundEnd);
         RegisterEventHandler<EventPlayerConnectFull>(OnPlayerConnectFull);
         RegisterEventHandler<EventPlayerSpawn>(OnPlayerSpawn);
         RegisterEventHandler<EventPlayerDisconnect>(OnPlayerDisconnect);
@@ -250,7 +248,6 @@ public sealed class PlusMatchCoordinatorPlugin : BasePlugin
         lock (_gate)
         {
             _request = request;
-            _rules = new MatchRules();
             _playerIdsBySlot.Clear();
             _startedAt = DateTimeOffset.UtcNow;
             _live = false;
@@ -628,14 +625,9 @@ public sealed class PlusMatchCoordinatorPlugin : BasePlugin
         return HookResult.Continue;
     }
 
-    private HookResult OnRoundEnd(EventRoundEnd @event, GameEventInfo info)
-    {
-        if (!_live) return HookResult.Continue;
-        var winner = @event.Winner == (byte)CsTeam.Terrorist ? TeamSide.T : TeamSide.Ct;
-        if (_rules?.AddRound(winner) == true) FinalizeMatch(MatchState.Finished, null);
-        return HookResult.Continue;
-    }
-
+    // Finalization is the engine's verdict: PMC configures the engine (mp_maxrounds 24,
+    // overtime) and reacts to its win panel. Counting rounds here would only duplicate the
+    // engine's own bookkeeping, so there is deliberately no EventRoundEnd handler.
     private HookResult OnWinPanelMatch(EventCsWinPanelMatch @event, GameEventInfo info)
     {
         AddTimer(0.25f, () =>
@@ -677,14 +669,12 @@ public sealed class PlusMatchCoordinatorPlugin : BasePlugin
     private void FinalizeMatch(MatchState state, string? reason)
     {
         MatchRequest? request;
-        MatchRules? rules;
         lock (_gate)
         {
             if (_request == null || _finalizing) return;
             _finalizing = true;
             _live = false;
             request = _request;
-            rules = _rules;
         }
 
         StopRosterSync();
@@ -696,9 +686,6 @@ public sealed class PlusMatchCoordinatorPlugin : BasePlugin
             Server.ExecuteCommand("tv_stoprecord");
             Logger.LogInformation("[PlusMatchCoordinator] GOTV recording stopped for {SessionId}", request.SessionId);
         }
-        var playerSide = request.PlayerSide == MatchSide.T ? TeamSide.T : TeamSide.Ct;
-        var playerScore = playerSide == TeamSide.Ct ? rules?.CtScore ?? 0 : rules?.TScore ?? 0;
-        var opponentScore = playerSide == TeamSide.Ct ? rules?.TScore ?? 0 : rules?.CtScore ?? 0;
         var opponentName = request.OpponentName;
         var result = new MatchResult(
             MatchJson.SchemaVersion, request.SessionId, state, request.MapId,
@@ -718,14 +705,13 @@ public sealed class PlusMatchCoordinatorPlugin : BasePlugin
             var written = WriteResult(resultPath, result);
             if (written)
                 Logger.LogInformation(
-                    "[PlusMatchCoordinator] Result written for {SessionId}: state={State}, score={PlayerScore}-{OpponentScore}, path={Path}",
-                    result.SessionId, result.State, playerScore, opponentScore, resultPath);
+                    "[PlusMatchCoordinator] Result written for {SessionId}: state={State}, path={Path}",
+                    result.SessionId, result.State, resultPath);
             lock (_gate)
             {
                 if (written)
                 {
                     _request = null;
-                    _rules = null;
                     _playerIdsBySlot.Clear();
                     _activatedSessionId = null;
                     _demoRecordingStarted = false;
