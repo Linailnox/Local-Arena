@@ -33,6 +33,16 @@ public class OfflineMatchTelemetryPlugin : BasePlugin
     private string? _roundCtTeam;
     private string? _roundTTeam;
     private bool _matchActive;
+    // Settlement is separate from session closure: FinalizeMatch writes the row, but the
+    // Panel-facing marker is only flushed once the session actually closes (FlushCompletionMarker).
+    // The closed identity is stashed because ResetMatchState wipes it.
+    private bool _matchSettled;
+    private bool _completionPending;
+    private int _completedMatchId;
+    private string _completedMap = "";
+    private long _completedStartedAtUnix;
+    private long _completedEndedAtUnix;
+    private string _completedReason = "";
     private DateTimeOffset _matchStartedAt;
     private readonly Dictionary<string, PrevStat> _prev = new();
     private List<PlayerSnapshot> _lastPlayers = [];
@@ -98,6 +108,7 @@ public class OfflineMatchTelemetryPlugin : BasePlugin
         Log("Database: {Database}", _databasePath);
         RegisterEventHandler<EventRoundStart>(OnRoundStart);
         RegisterEventHandler<EventRoundEnd>(OnRoundEnd);
+        RegisterEventHandler<EventCsWinPanelMatch>(OnWinPanelMatch);
         RegisterEventHandler<EventPlayerDeath>(OnPlayerDeath);
         RegisterEventHandler<EventPlayerSpawn>(OnPlayerSpawn);
         RegisterListener<Listeners.OnMapStart>(OnMapStart);
@@ -131,6 +142,7 @@ public class OfflineMatchTelemetryPlugin : BasePlugin
 
         if (_matchActive) FinalizeMatch("MAP_CHANGED");
         ResetMatchState();
+        FlushCompletionMarker();
         Log("Map start: {Map}", mapName);
     }
 
@@ -169,6 +181,27 @@ public class OfflineMatchTelemetryPlugin : BasePlugin
         catch (Exception ex)
         {
             Logger.LogError(ex, "[OMT] RoundEnd error");
+        }
+        return HookResult.Continue;
+    }
+
+    /// <summary>
+    /// Settles the match the moment the engine announces the winner panel. Round data is already
+    /// on disk (measured ~3 s earlier), so no delay is needed. The session deliberately stays
+    /// "active" afterwards: resetting here would let OnTick/BeginMatch open an empty match row
+    /// while the players are still on the server, and the Panel-facing marker is held back until
+    /// the session really closes so results keep opening at the same moment they always have.
+    /// </summary>
+    private HookResult OnWinPanelMatch(EventCsWinPanelMatch @event, GameEventInfo info)
+    {
+        try
+        {
+            _eventCallbacks++;
+            FinalizeMatch("MATCH_DECIDED");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "[OMT] WinPanel error");
         }
         return HookResult.Continue;
     }
@@ -272,6 +305,7 @@ public class OfflineMatchTelemetryPlugin : BasePlugin
                 // resets this counter before the next selected side begins a new match.
                 FinalizeMatch("ROUND_COUNTER_RESET");
                 ResetMatchState();
+                FlushCompletionMarker();
                 if (!BeginMatch()) return;
             }
 
@@ -322,6 +356,7 @@ public class OfflineMatchTelemetryPlugin : BasePlugin
         finally
         {
             ResetMatchState();
+            FlushCompletionMarker();
         }
     }
 
@@ -357,6 +392,7 @@ public class OfflineMatchTelemetryPlugin : BasePlugin
     private void FinalizeMatch(string endReason)
     {
         if (!_matchActive) return;
+        if (_matchSettled) return;
 
         CachePlayers(CapturePlayers());
         var players = _lastPlayers;
@@ -504,7 +540,15 @@ public class OfflineMatchTelemetryPlugin : BasePlugin
             throw;
         }
         Log("Match {MatchId} ended: {Map} reason={Reason}", _currentMatchId, _matchMap, endReason);
-        PublishCompletionMarker(endReason);
+        // Stash what the Panel-facing marker needs: ResetMatchState wipes the identity, and the
+        // marker is only flushed when the session actually closes (FlushCompletionMarker).
+        _matchSettled = true;
+        _completionPending = true;
+        _completedMatchId = _currentMatchId;
+        _completedMap = _matchMap;
+        _completedStartedAtUnix = _matchStartedAt.ToUnixTimeSeconds();
+        _completedEndedAtUnix = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        _completedReason = endReason;
     }
 
     /// <summary>
@@ -512,19 +556,23 @@ public class OfflineMatchTelemetryPlugin : BasePlugin
     /// must not render results before this file exists: the match row is only marked completed
     /// here, so an earlier read returns the previous match on the same map instead. Written to a
     /// temporary name and renamed so the reader never observes a partially written file.
+    ///
+    /// The marker carries the stashed identity because the row is settled when the winner panel
+    /// appears, while ResetMatchState only runs when the session closes.
     /// </summary>
-    private void PublishCompletionMarker(string endReason)
+    private void FlushCompletionMarker()
     {
+        if (!_completionPending) return;
         try
         {
             var marker = new
             {
                 SchemaVersion = 1,
-                MatchId = _currentMatchId,
-                Map = _matchMap,
-                StartedAtUnix = _matchStartedAt.ToUnixTimeSeconds(),
-                EndedAtUnix = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
-                EndReason = endReason,
+                MatchId = _completedMatchId,
+                Map = _completedMap,
+                StartedAtUnix = _completedStartedAtUnix,
+                EndedAtUnix = _completedEndedAtUnix,
+                EndReason = _completedReason,
             };
             var path = Path.Combine(_dataDir, "last-completed.json");
             var temporary = path + ".tmp";
@@ -535,6 +583,7 @@ public class OfflineMatchTelemetryPlugin : BasePlugin
                 stream.Flush(true);
             }
             File.Move(temporary, path, true);
+            _completionPending = false;
         }
         catch (Exception ex)
         {
@@ -545,6 +594,8 @@ public class OfflineMatchTelemetryPlugin : BasePlugin
     private void WriteRoundSummary(int round, string? winner, int? endReason, string source)
     {
         if (round <= _lastWrittenRound) return;
+        // A settled match's ledger is closed: nothing may be appended after the winner panel.
+        if (_matchSettled) return;
         // A round whose roster never settled used to be dropped outright here. Record it
         // anyway: FixedTeamForSide falls back to a deterministic identity so the win is
         // never silently lost from team_a_score/team_b_score.
@@ -662,7 +713,7 @@ public class OfflineMatchTelemetryPlugin : BasePlugin
         SnapshotBase();
         _eventRoundActive = false;
         _roundRosterReady = false;
-        Log("Round {Round}: match={MatchId} source={Source}", round, _currentMatchId, source);
+        Log("Round {Round}: match={MatchId} source={Source} tick={Tick}", round, _currentMatchId, source, Server.TickCount);
     }
 
     private int InsertMatch(DateTimeOffset startedAt)
@@ -878,6 +929,7 @@ public class OfflineMatchTelemetryPlugin : BasePlugin
             try { FinalizeMatch("PLUGIN_UNLOAD"); }
             catch (Exception ex) { Logger.LogError(ex, "[OMT] Unload finalize error"); }
         }
+        FlushCompletionMarker();
 
         if (_sqliteNativeLibrary != IntPtr.Zero)
         {
@@ -889,6 +941,7 @@ public class OfflineMatchTelemetryPlugin : BasePlugin
     private void ResetMatchState()
     {
         _matchActive = false;
+        _matchSettled = false;
         _currentMatchId = 0;
         _matchMap = "";
         _round = 0;
