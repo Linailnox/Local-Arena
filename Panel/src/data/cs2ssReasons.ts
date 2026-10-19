@@ -1,3 +1,5 @@
+import type { I18nKey } from "../i18n";
+
 const REASON_MAP: Record<number, string> = {
   0: "Unknown",
   1: "Bomb Exploded",
@@ -24,4 +26,20 @@ const REASON_MAP: Record<number, string> = {
 export function cs2ssRoundEndReasonLabel(code: number | null): string {
   if (code === null) return "—";
   return REASON_MAP[code] ?? `Unknown(${code})`;
+}
+
+// Match-level end reasons are strings from the telemetry match row, not codes. Unmapped values
+// fall through to null so the caller can render the raw value (forward compatible).
+const MATCH_REASON_KEYS: Record<string, I18nKey> = {
+  MATCH_DECIDED: "stats.endReasonMatchedDecided",
+  MAP_END: "stats.endReasonMapEnd",
+  MAP_CHANGED: "stats.endReasonMapChanged",
+  ROUND_COUNTER_RESET: "stats.endReasonRoundCounterReset",
+  PLUGIN_UNLOAD: "stats.endReasonPluginUnload",
+  INTERRUPTED: "stats.endReasonInterrupted",
+};
+
+export function cs2ssMatchEndReasonKey(reason: string | null): I18nKey | null {
+  if (!reason) return null;
+  return MATCH_REASON_KEYS[reason] ?? null;
 }

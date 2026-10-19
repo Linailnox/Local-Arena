@@ -5,7 +5,7 @@ import { api, type MatchSession } from "../lib/api";
 import type { Cs2ssMatchDetailResponse, Cs2ssRoundPlayer } from "../data/cs2ssTypes";
 import { cs2ssCalcRating, cs2ssCalcAdr, cs2ssCalcKast, cs2ssCalcHsPct, cs2ssRatingBreakdown } from "../data/cs2ssRating";
 import { cs2ssMapLabel } from "../data/cs2ssMaps";
-import { cs2ssRoundEndReasonLabel } from "../data/cs2ssReasons";
+import { cs2ssMatchEndReasonKey, cs2ssRoundEndReasonLabel } from "../data/cs2ssReasons";
 import { useStore } from "../state/store";
 import { useT } from "../i18n";
 import StatsDMDetail from "./StatsDMDetail";
@@ -148,6 +148,8 @@ export default function StatsMatchDetail({ csgo, matchId, onBack, demoSession }:
   const en = rows.filter(r => r.side === "enemy");
   const sArr = [...sel].slice(0, 8);
   const myR = rows.find(r => r.mp.steamId === s.steamId)?.r ?? 0;
+  const endReasonKey = cs2ssMatchEndReasonKey(match.endReason);
+  const endReasonLabel = match.endReason ? (endReasonKey ? t(endReasonKey) : match.endReason) : null;
 
   const dmgData = tl.map(({ r }) => {
     const row: Record<string, any> = { round: `R${r.roundNumber + 1}` };
@@ -228,7 +230,10 @@ export default function StatsMatchDetail({ csgo, matchId, onBack, demoSession }:
         <div>
           <span className="stats-hero__eyebrow">{t("stats.matchNumber", { id: match.matchId })} · {fmtT(match.startedAt)}</span>
           <h1>{cs2ssMapLabel(match.map)}</h1>
-          <p style={{ color: "rgba(255,255,255,.68)", fontSize: 13 }}>{t("stats.roundsShort", { count: match.roundsPlayed })} · {t("stats.minutesShort", { count: Math.round(match.durationSeconds / 60) })}</p>
+          <p style={{ color: "rgba(255,255,255,.68)", fontSize: 13 }}>
+            {t("stats.roundsShort", { count: match.roundsPlayed })} · {t("stats.minutesShort", { count: Math.round(match.durationSeconds / 60) })}
+            {endReasonLabel ? ` · ${t("stats.endedBecause", { reason: endReasonLabel })}` : null}
+          </p>
         </div>
         <div className="stats-hero__rating">
           <small>{t("match.finished")}</small>
