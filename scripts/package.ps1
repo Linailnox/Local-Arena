@@ -123,7 +123,7 @@ if ($Linux) {
 }
 else {
     # The package carries Local-Arena's own content only. Upstream runtime files are
-    # downloaded by the Panel at install time (PLAN-upstream-download-install.md §0.2).
+    # downloaded by the Panel at install time (docs/plans/PLAN-upstream-download-install.md §0.2).
     New-Item -ItemType Directory -Path $releaseRoot,(Join-Path $payload "cfg") -Force | Out-Null
 }
 
