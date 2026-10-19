@@ -131,6 +131,47 @@ fn managed_component_check(code: &str, name: &str, path: PathBuf, missing_status
     check
 }
 
+// The preflight report is also persisted into the diagnostics bundle, so the evidence
+// lists at most this many damaged files and accounts for the remainder.
+const MANAGED_FILE_EVIDENCE_LIMIT: usize = 12;
+
+fn bounded_evidence(entries: &[String]) -> String {
+    if entries.len() <= MANAGED_FILE_EVIDENCE_LIMIT {
+        return entries.join("; ");
+    }
+    format!(
+        "{}; +{} more",
+        entries[..MANAGED_FILE_EVIDENCE_LIMIT].join("; "),
+        entries.len() - MANAGED_FILE_EVIDENCE_LIMIT
+    )
+}
+
+fn managed_files_check(missing: &[String], corrupt: &[String], healthy: usize, total: usize) -> InstallCheckItem {
+    if missing.is_empty() && corrupt.is_empty() {
+        return item(
+            "MANAGED_FILES",
+            CheckStatus::Pass,
+            "Managed payload files",
+            format!("{healthy} of {total} managed files match the manifest"),
+            "Every installed managed file matches the package manifest",
+            "No action required",
+        );
+    }
+    let damaged: Vec<String> = missing
+        .iter()
+        .map(|path| format!("missing: {path}"))
+        .chain(corrupt.iter().map(|path| format!("modified: {path}")))
+        .collect();
+    item(
+        "MANAGED_FILES",
+        CheckStatus::Warn,
+        "Managed payload files",
+        bounded_evidence(&damaged),
+        "Installed managed files are absent or were changed after installation",
+        "Run Repair installation to restore the reported files from the package",
+    )
+}
+
 pub fn run(payload_root: &Path, state_root: &Path, target: &Path, cs2_running: bool, selected_map: Option<&str>) -> Result<InstallCheckReport> {
     let mut checks = Vec::new();
     checks.push(if target.is_dir() { blocker("INSTALL_TARGET", CheckStatus::Pass, "CS2 game/csgo directory", target.display().to_string(), "Selected directory exists", "No action required") }
@@ -199,6 +240,7 @@ pub fn run(payload_root: &Path, state_root: &Path, target: &Path, cs2_running: b
                 else { item("TRANSACTION_JOURNAL", CheckStatus::Pass, "Installation transaction journal", "No interrupted journal", "Transaction state is clean", "No action required") });
             checks.push(if inspection.restore_available { item("BACKUP_READABLE", CheckStatus::Pass, "Installation backup", inspection.backup_path.unwrap_or_default(), "A managed backup record is readable", "No action required") }
                 else { item("BACKUP_READABLE", CheckStatus::Warn, "Installation backup", "No readable managed backup", "A clean install may not have an older baseline", "Export diagnostics before replacing an unknown or mixed installation") });
+            checks.push(managed_files_check(&inspection.missing, &inspection.corrupt, inspection.healthy, inspection.total));
             inspection.installed
         }
         Err(error) => {
@@ -309,5 +351,103 @@ mod tests {
         let result = atomic_probe(&root, "TEST", "test");
         assert_eq!(result.status, CheckStatus::Pass);
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn managed_files_check_names_every_missing_and_modified_file() {
+        let check = managed_files_check(
+            &["addons/counterstrikesharp/plugins/BotBuy/BotBuy.dll".to_string()],
+            &["cfg/bot_buy.cfg".to_string()],
+            40,
+            42,
+        );
+        assert_eq!(check.code, "MANAGED_FILES");
+        assert_eq!(check.status, CheckStatus::Warn);
+        assert!(!check.blocking);
+        assert!(check.evidence.contains("missing: addons/counterstrikesharp/plugins/BotBuy/BotBuy.dll"));
+        assert!(check.evidence.contains("modified: cfg/bot_buy.cfg"));
+    }
+
+    #[test]
+    fn managed_files_check_passes_when_every_managed_file_matches() {
+        let check = managed_files_check(&[], &[], 42, 42);
+        assert_eq!(check.status, CheckStatus::Pass);
+        assert!(!check.blocking);
+        assert!(check.evidence.contains("42 of 42"));
+    }
+
+    #[test]
+    fn managed_files_check_bounds_the_evidence_but_accounts_for_every_file() {
+        let missing: Vec<String> = (0..20).map(|index| format!("cfg/file-{index}.cfg")).collect();
+        let check = managed_files_check(&missing, &[], 0, 20);
+        assert!(check.evidence.contains("cfg/file-0.cfg"));
+        assert!(check.evidence.contains("cfg/file-11.cfg"));
+        assert!(check.evidence.ends_with("+8 more"));
+        assert!(!check.evidence.contains("cfg/file-12.cfg"));
+    }
+
+    // A payload with three restorable files, a real install record, and SHA-256 digests
+    // in the manifest so installer::install accepts the fixture.
+    fn managed_payload_fixture(base: &Path) -> (PathBuf, PathBuf, PathBuf) {
+        use sha2::{Digest, Sha256};
+
+        let payload = base.join("payload");
+        let state = base.join("state");
+        let target = base.join("game/csgo");
+        fs::create_dir_all(payload.join("cfg")).unwrap();
+        fs::create_dir_all(target.join("cfg")).unwrap();
+        let entries = [
+            ("cfg/kept.cfg", b"kept".as_slice()),
+            ("cfg/removed.cfg", b"removed".as_slice()),
+            ("cfg/tampered.cfg", b"tampered".as_slice()),
+        ]
+        .into_iter()
+        .map(|(path, bytes)| {
+            fs::write(payload.join(path), bytes).unwrap();
+            let digest = Sha256::digest(bytes);
+            installer::PayloadEntry {
+                path: path.to_string(),
+                size: bytes.len() as u64,
+                sha256: digest.iter().map(|byte| format!("{byte:02x}")).collect(),
+                component: "config".to_string(),
+                ownership: "plus".to_string(),
+                restore_policy: "restore".to_string(),
+            }
+        })
+        .collect();
+        let manifest = installer::PayloadManifest {
+            schema_version: 1,
+            package_version: "1.4.3.3".to_string(),
+            entries,
+        };
+        fs::write(
+            payload.join(installer::MANIFEST_FILE),
+            serde_json::to_vec_pretty(&manifest).unwrap(),
+        )
+        .unwrap();
+        (payload, state, target)
+    }
+
+    #[test]
+    fn preflight_report_names_the_damaged_managed_files() {
+        let base = std::env::temp_dir().join(format!("cs2bi-checks-managed-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        let (payload, state, target) = managed_payload_fixture(&base);
+        installer::install(&payload, &state, &target, false).unwrap();
+        fs::remove_file(target.join("cfg/removed.cfg")).unwrap();
+        fs::write(target.join("cfg/tampered.cfg"), b"player-edited").unwrap();
+
+        let report = run(&payload, &state, &target, false, None).unwrap();
+        let check = report
+            .checks
+            .iter()
+            .find(|check| check.code == "MANAGED_FILES")
+            .expect("the preflight report must carry a managed files check");
+        assert_eq!(check.status, CheckStatus::Warn);
+        assert!(!check.blocking);
+        assert!(check.evidence.contains("missing: cfg/removed.cfg"), "{}", check.evidence);
+        assert!(check.evidence.contains("modified: cfg/tampered.cfg"), "{}", check.evidence);
+        assert!(!check.evidence.contains("cfg/kept.cfg"), "{}", check.evidence);
+        fs::remove_dir_all(base).unwrap();
     }
 }
