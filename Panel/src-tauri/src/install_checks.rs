@@ -131,19 +131,21 @@ fn managed_component_check(code: &str, name: &str, path: PathBuf, missing_status
     check
 }
 
-// The preflight report is also persisted into the diagnostics bundle, so the evidence
-// lists at most this many damaged files and accounts for the remainder.
+// The report is also persisted into the diagnostics bundle, so the evidence lists at most
+// this many damaged files and accounts for the remainder.
 const MANAGED_FILE_EVIDENCE_LIMIT: usize = 12;
 
+// One damaged file per line: the report renders the evidence with newlines preserved.
 fn bounded_evidence(entries: &[String]) -> String {
-    if entries.len() <= MANAGED_FILE_EVIDENCE_LIMIT {
-        return entries.join("; ");
+    let mut lines: Vec<String> = entries
+        .iter()
+        .take(MANAGED_FILE_EVIDENCE_LIMIT)
+        .map(|entry| format!("{entry};"))
+        .collect();
+    if entries.len() > MANAGED_FILE_EVIDENCE_LIMIT {
+        lines.push(format!("+{} more;", entries.len() - MANAGED_FILE_EVIDENCE_LIMIT));
     }
-    format!(
-        "{}; +{} more",
-        entries[..MANAGED_FILE_EVIDENCE_LIMIT].join("; "),
-        entries.len() - MANAGED_FILE_EVIDENCE_LIMIT
-    )
+    lines.join("\n")
 }
 
 fn managed_files_check(missing: &[String], corrupt: &[String], healthy: usize, total: usize) -> InstallCheckItem {
@@ -364,8 +366,8 @@ mod tests {
         assert_eq!(check.code, "MANAGED_FILES");
         assert_eq!(check.status, CheckStatus::Warn);
         assert!(!check.blocking);
-        assert!(check.evidence.contains("missing: addons/counterstrikesharp/plugins/BotBuy/BotBuy.dll"));
-        assert!(check.evidence.contains("modified: cfg/bot_buy.cfg"));
+        assert!(check.evidence.contains("missing: addons/counterstrikesharp/plugins/BotBuy/BotBuy.dll;"));
+        assert!(check.evidence.contains("modified: cfg/bot_buy.cfg;"));
     }
 
     #[test]
@@ -380,9 +382,8 @@ mod tests {
     fn managed_files_check_bounds_the_evidence_but_accounts_for_every_file() {
         let missing: Vec<String> = (0..20).map(|index| format!("cfg/file-{index}.cfg")).collect();
         let check = managed_files_check(&missing, &[], 0, 20);
-        assert!(check.evidence.contains("cfg/file-0.cfg"));
-        assert!(check.evidence.contains("cfg/file-11.cfg"));
-        assert!(check.evidence.ends_with("+8 more"));
+        assert!(check.evidence.contains("cfg/file-0.cfg;"));
+        assert!(check.evidence.contains("cfg/file-11.cfg;\n+8 more;"));
         assert!(!check.evidence.contains("cfg/file-12.cfg"));
     }
 
@@ -445,8 +446,7 @@ mod tests {
             .expect("the preflight report must carry a managed files check");
         assert_eq!(check.status, CheckStatus::Warn);
         assert!(!check.blocking);
-        assert!(check.evidence.contains("missing: cfg/removed.cfg"), "{}", check.evidence);
-        assert!(check.evidence.contains("modified: cfg/tampered.cfg"), "{}", check.evidence);
+        assert!(check.evidence.contains("missing: cfg/removed.cfg;\nmodified: cfg/tampered.cfg;"), "{}", check.evidence);
         assert!(!check.evidence.contains("cfg/kept.cfg"), "{}", check.evidence);
         fs::remove_dir_all(base).unwrap();
     }
