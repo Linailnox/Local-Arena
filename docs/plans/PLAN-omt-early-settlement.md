@@ -75,18 +75,20 @@ OMT **没有**注册 `EventCsWinPanelMatch`（零命中）；哨兵 `last-comple
 ```
 EventCsWinPanelMatch
   → FinalizeMatch("MATCH_DECIDED")   // 写库：completed + 比分/rounds_played 定稿
-  → ResetMatchState()            // 必须，见下
+  → （**不** ResetMatchState，见下）
 ```
 
 - **为什么不要延迟**：§2.2 实测最后一回合比面板早约 **3.0 s**，结算那一刻数据已就绪；同步结算额外赢两点：
   - **`MATCH_DECIDED` 是确定性的**：定时器版带 `STOP_ON_MAPCHANGE`，若地图在这 0.25 s 内被换掉，回调作废、原因会退化成 `MAP_END`/`MAP_CHANGED`；同步版不会。
   - **少一套机制**：不需要 `Modules.Timers`、不需要定时器标志，处理器形态与 `OnRoundEnd`/`OnMapEnd` 同构。
   - **玩家快照更准**：`FinalizeMatch` 首行 `CachePlayers(CapturePlayers())` 读的是**当时还在服务器上的玩家实体**；面板那一刻玩家齐全，延迟 0.25 s 也无害，而旧的地图结束路径下玩家可能已开始卸载。
-- **已知残余风险（唯一一条）**：若某类结束方式下引擎在最后一个 `round_end` **之前**就发赢家面板，结算时比分字段 `_ctScore/_tScore/_teamAScore/_teamBScore` 仍停在前一回合，**最后一条回合行也不会被写入**（`OnRoundEnd` 的 `if (_matchActive)` 已因重置而跳过）。注意 `rounds_played` 有部分兜底：`CompletedRounds()` 取 `Math.Max(_lastWrittenRound + 1, Math.Max(_lastObservedRounds, GetTotalRoundsPlayed()))`，所以回合**数**可能仍对，但**比分与回合行**会缺。已测的常规结束（回合演出后出面板）有 **3 s** 余量；投降/特殊模式的结束未测量。检测方式：比最后一条 `Round N` 与 `WinPanel … round=N` 的先后，并核对库内回合行数/比分是否等于该局实际；一旦出现，恢复 0.25 s 延迟即可。
+- **已知残余风险（唯一一条）**：若某类结束方式下引擎在最后一个 `round_end` **之前**就发赢家面板，结算时比分字段 `_ctScore/_tScore/_teamAScore/_teamBScore` 仍停在前一回合，**最后一条回合行也不会被写入**（`WriteRoundSummary` 的 `_matchSettled` 门会跳过它）。注意 `rounds_played` 有部分兜底：`CompletedRounds()` 取 `Math.Max(_lastWrittenRound + 1, Math.Max(_lastObservedRounds, GetTotalRoundsPlayed()))`，所以回合**数**可能仍对，但**比分与回合行**会缺。已测的常规结束（回合演出后出面板）有 **3 s** 余量；投降/特殊模式的结束未测量。检测方式：比最后一条 `Round N … source=event` 与 `Match N ended: … reason=MATCH_DECIDED` 的先后，并核对库内回合行数/比分是否等于该局实际；一旦出现，恢复 0.25 s 延迟即可。
   - **用户裁决（2026-10-19）：不预先加保险**（当时实测回合结束总是在赢家面板前 3 s）——不加“库存回合行数 vs 游戏回合数”的一致性校验；真出问题再处理。
-- **为什么必须 `ResetMatchState()`**：不重置则 `_matchActive` 仍为真；玩家**留在服务器**、游戏回到选边界面时，`OnTick` 的"回合计数重置"分支会再次结算同一行，把 `end_reason` 覆盖成 `ROUND_COUNTER_RESET`（`MATCH_DECIDED` 白写）。重置是安全的：`DetectMode()` 在 `BeginMatch()` 内，下次开局自动重新识别模式。
+- **为什么结算后不能立刻重置状态**（实施时发现，方案原稿这一条写错了）：`OnTick` 开头是 `if (!_matchActive) BeginMatch();`，而 `BeginMatch` 只要两侧还有人在场就会插一条新比赛行。赢家面板出现时玩家都还在服务器上，此刻一旦 `ResetMatchState()`，下一帧就会立刻开出一条 **0 回合的空比赛行**。因此改成：保持 `_matchActive`，用新字段 `_matchSettled` 拦住后续动作——
+  - `FinalizeMatch` 首行加 `if (_matchSettled) return;`：后续 `ROUND_COUNTER_RESET`/`MAP_END`/`PLUGIN_UNLOAD` 都不会覆盖 `MATCH_DECIDED`；
+  - `WriteRoundSummary` 加 `if (_matchSettled) return;`：结算后不再向这局的账本追加回合；
+  - `ResetMatchState()` 里清 `_matchSettled`，真正关局时才复位（下次开局照常 `BeginMatch`）。
 - 不需要 `Modules.Timers`（同步结算）。
-- 幂等：`FinalizeMatch` 首行 `if (!_matchActive) return;` 已保证。
 - 附带收益：正常打完的局不再停留在 `in_progress`，启动清理（`INTERRUPTED`）只会命中真正异常退出的局。
 
 ### 3.2 end_reason 词表
@@ -164,7 +166,7 @@ EventCsWinPanelMatch
 ## 6. 落地清单（实施时按此顺序）
 
 1. `addons/counterstrikesharp/plugins/OfflineMatchTelemetry/OfflineMatchTelemetry.cs`
-   - 注册 `EventCsWinPanelMatch` + 处理器（**同步**：`FinalizeMatch("MATCH_DECIDED")` → `ResetMatchState()`，不加定时器）
+   - 注册 `EventCsWinPanelMatch` + 处理器（**同步**：`FinalizeMatch("MATCH_DECIDED")`；结算后**不**重置状态，改用 `_matchSettled` 拦 `FinalizeMatch`/`WriteRoundSummary`）
    - 哨兵写入拆出 `FlushCompletionMarker()` + 待发字段；四处关闭点调用
 2. `Panel/src/data/cs2ssRating.ts`（或现有 round 版所在文件）新增 match 级原因映射
 3. `Panel/src/panels/StatsMatchDetail.tsx` 渲染一行
