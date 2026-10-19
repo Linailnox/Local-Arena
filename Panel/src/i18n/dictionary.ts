@@ -5,6 +5,7 @@ type Partial18n = Partial<Record<I18nKey, string>>;
 export const DICTS: Record<string, Partial18n> = {
   english: EN,
   schinese: {
+    "stats.endedBecause": "结束原因：{reason}", "stats.endReasonMatchedDecided": "比赛已判定（引擎判定完成）", "stats.endReasonMapEnd": "地图结束（离开了服务器或换图）", "stats.endReasonMapChanged": "换图前收尾", "stats.endReasonRoundCounterReset": "回合计数重置（回到选边）", "stats.endReasonPluginUnload": "插件卸载（游戏退出或重载）", "stats.endReasonInterrupted": "未结算被打断（上次异常退出）",
     "pre.aimUnavailable": "未安装托管瞄准插件，上游 BotAI 仍可正常运行",
     "pre.aimRuntimeActive": "上一次 CS2 运行已确认托管瞄准生效，目标更新 {count} 次，错误 {errors} 次",
     "pre.aimRuntimeInactive": "上一次 CS2 运行仅停用了托管瞄准覆盖，上游 BotAI 仍保持运行",
