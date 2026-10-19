@@ -62,7 +62,7 @@ upstream's `BotRandomizer` `1.3.2` revision rather than the older Local Arena co
 
 ### 2026-10 upstream `v1.4.5` merge notes (historical)
 
-> Superseded on 2026-10-06 by the download-and-merge rework (see `PLAN-upstream-download-install.md` and the
+> Superseded on 2026-10-06 by the download-and-merge rework (see `docs/plans/PLAN-upstream-download-install.md` and the
 > sections below): eight of the nine submodules and the duplicated upstream trees were removed from this
 > repository (only `addons/BotHider` remains), `package.ps1` no longer packages any upstream archive, and
 > `verify-workspace.ps1` now asserts the LA-only package whitelist. The pin table below is retained as the
@@ -157,7 +157,7 @@ The machine-readable source of truth is `scripts/dependencies.json`.
 
 ## 2026-10 Download-and-Merge Architecture
 
-`PLAN-upstream-download-install.md` in the repository root records the full design; the essentials:
+`docs/plans/PLAN-upstream-download-install.md` records the full design; the essentials:
 
 - CI no longer downloads any pinned runtime asset; `package.ps1` stages Local Arena-owned files only, and the
   release zip shrank from 73 MB to a few megabytes.
