@@ -9,8 +9,8 @@ param(
     [string]$CargoHome,
     [string]$RustupHome,
     [string]$NodeBin,
-    [string]$Npm,
-    [switch]$SkipNpmInstall,
+    [string]$Bun,
+    [switch]$SkipBunInstall,
     [switch]$Linux
 )
 
@@ -54,21 +54,20 @@ function Resolve-PlatformTool {
     throw "Build tool $Label was not found: $Name"
 }
 
-# Node installs npm.cmd, npm.ps1 and npm side by side. Prefer the shim that
-# matches the host: the cmd shim on Windows (never the PowerShell shim), and the
-# POSIX shim elsewhere, where the on-PATH Windows npm.cmd cannot be executed.
-function Resolve-NpmTool {
+# Bun ships one native executable per host (bun.exe on Windows, bun elsewhere); unlike
+# Node there is no npm/npx shell-shim split to work around.
+function Resolve-BunTool {
     $names = if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) {
-        @("npm.cmd", "npm.exe", "npm")
+        @("bun.exe", "bun.cmd", "bun")
     }
     else {
-        @("npm", "npm.cmd", "npm.exe")
+        @("bun", "bun.exe")
     }
     foreach ($candidate in $names) {
         $command = Get-Command $candidate -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($command) { return $command.Source }
     }
-    throw "Build tool npm was not found: npm"
+    throw "Build tool bun was not found: bun"
 }
 
 if (-not $DotNet) { $DotNet = "dotnet" }
@@ -132,8 +131,8 @@ if (-not $Linux) {
     $rustc = (Get-Command $Rustc -ErrorAction Stop).Source
 }
 
-$npm = if ($Npm) { Resolve-ToolExecutable $Npm "npm" }
-else { Resolve-NpmTool }
+$bun = if ($Bun) { Resolve-ToolExecutable $Bun "bun" }
+else { Resolve-BunTool }
 
 $environmentNames = @(
     "CARGO_HOME",
@@ -142,7 +141,7 @@ $environmentNames = @(
     "DOTNET_ROLL_FORWARD",
     "NUGET_HTTP_CACHE_PATH",
     "NUGET_PACKAGES",
-    "npm_config_cache",
+    "BUN_INSTALL_CACHE_DIR",
     "PATH",
     "RC",
     "RUSTC",
@@ -164,7 +163,7 @@ try {
     $env:DOTNET_ROLL_FORWARD = "Major"
     $env:NUGET_HTTP_CACHE_PATH = Join-Path $cache "nuget\http"
     $env:NUGET_PACKAGES = Join-Path $cache "nuget\packages"
-    $env:npm_config_cache = Join-Path $cache "npm"
+    $env:BUN_INSTALL_CACHE_DIR = Join-Path $cache "bun"
     if (-not $Linux) {
         $env:RUSTC = $rustc
         if ($onWindowsHost -or $toolchainWasRequested) { $env:RUSTUP_TOOLCHAIN = $RustToolchain }
@@ -189,12 +188,12 @@ try {
         $env:PATH = ($toolPaths -join [IO.Path]::PathSeparator) + [IO.Path]::PathSeparator + $env:PATH
     }
 
-    if (-not $SkipNpmInstall) {
-        Invoke-Checked $npm @("ci") $panel
+    if (-not $SkipBunInstall) {
+        Invoke-Checked $bun @("install", "--frozen-lockfile") $panel
     }
-    Invoke-Checked $npm @("run", "test:stickers") $panel
-    Invoke-Checked $npm @("run", "test:install-gate") $panel
-    Invoke-Checked $npm @("run", "build") $panel
+    Invoke-Checked $bun @("run", "test:stickers") $panel
+    Invoke-Checked $bun @("run", "test:install-gate") $panel
+    Invoke-Checked $bun @("run", "build") $panel
 
     $pluginProjects = @(
         @{ Path = "addons\counterstrikesharp\plugins\PlayerKnifeCustomizer\PlayerKnifeCustomizer.csproj"; Properties = @() },
@@ -286,7 +285,7 @@ finally {
 }
 
 if ($Linux) {
-    Write-Host "Build complete (Linux mode): npm + dotnet only, Panel executable skipped"
+    Write-Host "Build complete (Linux mode): bun + dotnet only, Panel executable skipped"
 }
 else {
     $exe = Join-Path $panel "src-tauri\target\release\cs2-bot-improver-plus-panel.exe"
