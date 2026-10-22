@@ -20,8 +20,8 @@ Local Arena or compatibility with a current CS2 release, and preserve source att
 ## Verification
 
 ```powershell
-npm --prefix Panel ci
-npm --prefix Panel run build
+bun install --frozen-lockfile --cwd Panel
+bun run --cwd Panel build
 D:\dotnet-sdk-10\dotnet.exe build addons\counterstrikesharp\plugins\PlayerKnifeCustomizer\PlayerKnifeCustomizer.csproj -c Release
 D:\dotnet-sdk-10\dotnet.exe build addons\counterstrikesharp\plugins\BotHiderImpl\BotHiderImpl.csproj -c Release
 .\scripts\build.ps1 -DotNet D:\dotnet-sdk-10\dotnet.exe
@@ -29,7 +29,7 @@ D:\dotnet-sdk-10\dotnet.exe build addons\counterstrikesharp\plugins\BotHiderImpl
 ```
 
 The Panel native build uses the Rust MSVC target through `cargo-xwin` and portable LLVM/Clang. `build.ps1` accepts
-explicit `-Cargo`, `-Rustc`, `-LlvmBin`, and `-XwinCache` paths and keeps npm, NuGet, Cargo, xwin, and target caches
+explicit `-Cargo`, `-Rustc`, `-LlvmBin`, and `-XwinCache` paths and keeps bun, NuGet, Cargo, xwin, and target caches
 under the repository's ignored `.cache` or `Panel/src-tauri/target-msvc` directories. Visual Studio is not required.
 
 Before publishing, run `scripts/package.ps1`, inspect the ZIP file list, verify `SHA256SUMS.txt`, and smoke-test both
