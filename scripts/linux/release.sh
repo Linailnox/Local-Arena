@@ -60,7 +60,7 @@ command -v cargo  >/dev/null 2>&1 && ok "cargo: $(cargo --version)" || miss "car
 command -v rustc  >/dev/null 2>&1 && ok "rustc: $(rustc --version)" || miss "rustc"
 command -v rustup >/dev/null 2>&1 && ok "rustup" || miss "rustup" "needed to select the target toolchain"
 command -v node   >/dev/null 2>&1 && ok "node: $(node --version)" || miss "node"
-command -v npm    >/dev/null 2>&1 && ok "npm: $(npm --version)" || miss "npm"
+command -v bun    >/dev/null 2>&1 && ok "bun: $(bun --version)" || miss "bun" "install bun (https://bun.sh) and put it on PATH"
 command -v python3 >/dev/null 2>&1 && ok "python3" || miss "python3" "needed by sign-update.py when CSBIP_UPDATE_SIGNING_KEY is set"
 CLANG_CL=$(find_tool clang-cl)   && ok "clang-cl: $CLANG_CL"   || miss "clang-cl" "install LLVM (llvm package ships clang-cl on Linux)"
 LLD_LINK=$(find_tool lld-link)   && ok "lld-link: $LLD_LINK"   || miss "lld-link" "install LLVM (lld package)"
