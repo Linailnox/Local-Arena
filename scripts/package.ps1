@@ -12,7 +12,7 @@ param(
     [switch]$Linux,
     [switch]$Explode,
     [switch]$SkipBuild,
-    [switch]$SkipNpmInstall
+    [switch]$SkipBunInstall
 )
 
 $ErrorActionPreference = "Stop"
@@ -74,7 +74,7 @@ function Get-PinnedAsset {
 }
 
 if (-not $SkipBuild) {
-    $buildArguments = @{ SkipNpmInstall = $SkipNpmInstall; Linux = $Linux }
+    $buildArguments = @{ SkipBunInstall = $SkipBunInstall; Linux = $Linux }
     if ($DotNet) { $buildArguments.DotNet = $DotNet }
     if ($Cargo) { $buildArguments.Cargo = $Cargo }
     if ($Rustc) { $buildArguments.Rustc = $Rustc }

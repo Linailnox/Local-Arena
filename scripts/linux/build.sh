@@ -4,7 +4,7 @@
 # prints a PASS/FAIL summary; exits non-zero if any step fails.
 #
 #   scripts/linux/build.sh              full suite
-#   scripts/linux/build.sh --only npm   run a single step (pwsh|npm|dotnet|cargo|verify)
+#   scripts/linux/build.sh --only bun   run a single step (pwsh|bun|dotnet|cargo|verify)
 #
 # cargo test note: this suite runs on Linux. Two classes of tests can only pass
 # on Windows: literal Windows-path fixtures (F:\... / \\?\ verbatim semantics)
@@ -99,13 +99,13 @@ run_pwsh_parse() {
   "$p" -NoProfile -Command 'foreach ($f in "scripts/package.ps1","scripts/build.ps1","scripts/verify-workspace.ps1") { $t = Get-Content $f -Raw; [scriptblock]::Create($t) | Out-Null; Write-Host "OK $f" }'
 }
 
-run_npm() {
-  need node || return 1
-  need npm || return 1
-  if [ ! -d Panel/node_modules ]; then (cd Panel && npm ci) || return 1; fi
-  (cd Panel && npm run build) || return 1
-  (cd Panel && npm run test:stickers) || return 1
-  (cd Panel && npm run test:install-gate) || return 1
+run_bun() {
+  need bun || return 1
+  need node "the gate scripts and esbuild/tsc shims spawn node" || return 1
+  if [ ! -d Panel/node_modules ]; then (cd Panel && bun install --frozen-lockfile) || return 1; fi
+  (cd Panel && bun run build) || return 1
+  (cd Panel && bun run test:stickers) || return 1
+  (cd Panel && bun run test:install-gate) || return 1
 }
 
 run_dotnet() {
@@ -160,12 +160,13 @@ DOTNET_BIN="${DOTNET:-}"
 echo "=== toolchain ==="
 echo "bash    : $BASH_VERSION"
 node --version 2>/dev/null || echo "node    : MISSING"
+bun --version 2>/dev/null || echo "bun     : MISSING"
 if [ -n "$("$DOTNET_BIN" --list-sdks 2>/dev/null)" ]; then echo "dotnet  : $DOTNET_BIN ($($DOTNET_BIN --list-sdks | tail -1))"; else echo "dotnet  : MISSING (SDK not found via $DOTNET_BIN)"; fi
 cargo --version 2>/dev/null || echo "cargo   : MISSING"
 if find_pwsh >/dev/null 2>&1; then echo "pwsh    : $(find_pwsh)"; else echo "pwsh    : MISSING"; fi
 
 step pwsh    run_pwsh_parse
-step npm     run_npm
+step bun     run_bun
 step dotnet  run_dotnet
 step cargo   run_cargo
 step verify  run_verify
