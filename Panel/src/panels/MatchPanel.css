@@ -1,4 +1,6 @@
 .match-page { height: 100%; overflow-y: auto; padding: 18px 10px 28px; display: flex; flex-direction: column; gap: 16px; }
+/* Results render the stats detail view alone; it owns its own padding and scrolling. */
+.match-page--results { padding: 0; gap: 0; overflow: hidden; }
 .match-page__head { display: flex; flex: 0 0 auto; justify-content: space-between; align-items: flex-start; gap: 14px; }
 .match-page__title { min-width: 0; }
 .match-page__title h1 { margin: 0; }
