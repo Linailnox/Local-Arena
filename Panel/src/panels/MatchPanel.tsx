@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Play, RotateCcw, Shield, Square, Swords, Users, X } from "lucide-react";
+import { AlertTriangle, Play, RotateCcw, Shield, Square, Swords, Users } from "lucide-react";
 import { api, type CompletedMatchMarker, type MatchCatalog, type MatchResult, type MatchSession, type PrepareMatchInput } from "../lib/api";
 import { useT } from "../i18n";
 import { useStore } from "../state/store";
@@ -143,14 +143,7 @@ export default function MatchPanel({ onOpenInstallation, onOpenLineup }: Props) 
   };
 
   if (finishedMatch) return (
-    <div className="match-page">
-      <header className="workspace__head match-page__head">
-        <div className="match-page__title">
-          <span className="workspace__eyebrow">{t("match.resultsEyebrow")}</span>
-          <h1>{t("match.results")}</h1>
-        </div>
-        <button className="match-history-button" onClick={() => setFinishedMatch(null)}><X size={16} />{t("match.backToLobby")}</button>
-      </header>
+    <div className="match-page match-page--results">
       <StatsMatchDetail csgo={csgo!} matchId={finishedMatch.matchId} onBack={() => setFinishedMatch(null)} demoSession={finishedMatch.demoSession} />
     </div>
   );
