@@ -2,10 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { Crosshair, Gem, Swords } from "lucide-react";
 import SubPage from "../components/SubPage";
 import { useT } from "../i18n";
-import { api, type KnifeCustomizerConfig } from "../lib/api";
+import { api, type CosmeticsInventoryState } from "../lib/api";
+import { countWeapons, defaultKnifeId, glove, musicKitId, teamWeapons } from "../lib/cosmeticsInventory";
 import { useStore } from "../state/store";
 import { WEAPON_ICONS, type WeaponIcon } from "../data/weaponIcons";
-import { KNIFE_ICONS, type KnifeIcon } from "../data/knifeIcons";
+import { KNIFE_ICONS } from "../data/knifeIcons";
 import { itemName, localizedSkinName } from "../data/skinLocalization";
 import { captureKeyName } from "../lib/keycapture";
 import WeaponPresetModal from "./WeaponPresetModal";
@@ -22,9 +23,9 @@ import "./WeaponPresetsPanel.css";
 export default function WeaponPresetsPanel({ onBack }: { onBack?: () => void }) {
   const t = useT();
   const { csgoPath, reportError, config: appConfig, dropKnives, applyDropKnives, dropKnivesPending } = useStore();
-  const [config, setConfig] = useState<KnifeCustomizerConfig | null>(null);
+  const [state, setState] = useState<CosmeticsInventoryState | null>(null);
   const [editing, setEditing] = useState<WeaponIcon | null>(null);
-  const [editingKnife, setEditingKnife] = useState<KnifeIcon | null>(null);
+  const [editingKnife, setEditingKnife] = useState(false);
   const [editingGlove, setEditingGlove] = useState(false);
   const [editingMusicKit, setEditingMusicKit] = useState(false);
   const [capturing, setCapturing] = useState(false);
@@ -33,20 +34,22 @@ export default function WeaponPresetsPanel({ onBack }: { onBack?: () => void }) 
   const [team, setTeam] = useCosmeticsTeam();
 
   useEffect(() => {
-    if (!csgoPath) return setConfig(null);
-    api.getKnifeCustomizer(csgoPath).then((state) => setConfig(state.config)).catch(reportError);
+    if (!csgoPath) return setState(null);
+    api.getCosmeticsInventory(csgoPath).then(setState).catch(reportError);
   }, [csgoPath, reportError]);
 
   useEffect(() => {
     setDropDraft(dropKnives?.selected ?? []);
   }, [dropKnives?.selected]);
 
-  const teamWeapons = WEAPON_ICONS.filter((weapon) => weapon.availability === team || weapon.availability === "shared");
-  const exclusiveWeapons = teamWeapons.filter((weapon) => weapon.availability === team);
-  const sharedWeapons = teamWeapons.filter((weapon) => weapon.availability === "shared");
-  const presets = config?.loadouts?.[team]?.gun_presets ?? {};
-  const count = teamWeapons.filter((weapon) => !!presets[String(weapon.id)]).length;
-  const selectedMusicKit = MUSIC_KITS.find((kit) => kit.def_index === (config?.music_kit_id ?? 0));
+  const teamWeaponList = WEAPON_ICONS.filter((weapon) => weapon.availability === team || weapon.availability === "shared");
+  const exclusiveWeapons = teamWeaponList.filter((weapon) => weapon.availability === team);
+  const sharedWeapons = teamWeaponList.filter((weapon) => weapon.availability === "shared");
+  const presets = state ? teamWeapons(state.inventory, team) : {};
+  const count = state ? countWeapons(state.inventory, team) : 0;
+  const selectedMusicKit = MUSIC_KITS.find((kit) => kit.def_index === (state ? musicKitId(state.inventory) : 0));
+  const ctGlove = state ? glove(state.inventory, "ct") : undefined;
+  const tGlove = state ? glove(state.inventory, "t") : undefined;
 
   const bindKey = dropKnives?.bind_key ?? "\\";
   const dropSelected = new Set(dropDraft);
@@ -54,13 +57,10 @@ export default function WeaponPresetsPanel({ onBack }: { onBack?: () => void }) 
   const running = dropKnives?.cs2_running ?? false;
   const bindDisabled = !csgoPath || !cfgPresent;
   const cosmeticsDisabled = !csgoPath;
-  const ctLoadout = config?.loadouts?.ct;
-  const tLoadout = config?.loadouts?.t;
 
   const status: Status =
     !csgoPath ? "off" : !cfgPresent ? "red" : running && dropKnivesPending ? "yellow" : "green";
 
-  // Key capture: grab the first keydown after the box is clicked.
   useEffect(() => {
     if (!capturing) return;
     const onKey = (e: KeyboardEvent) => {
@@ -80,7 +80,6 @@ export default function WeaponPresetsPanel({ onBack }: { onBack?: () => void }) 
     const next = new Set(dropSelected);
     if (next.has(id)) next.delete(id);
     else next.add(id);
-    // keep numeric order for a stable bind string
     const ordered = KNIFE_ICONS.map((k) => k.id).filter((i) => next.has(i));
     setDropDraft(ordered);
     dropSaveQueue.current = dropSaveQueue.current.then(() => applyDropKnives(bindKey, ordered));
@@ -88,7 +87,7 @@ export default function WeaponPresetsPanel({ onBack }: { onBack?: () => void }) 
 
   const weaponGrid = (weapons: WeaponIcon[]) => <div className="wp__grid">
     {weapons.map((weapon) => {
-      const configured = !!presets[String(weapon.id)];
+      const configured = (presets[String(weapon.id)]?.paint ?? 0) > 0;
       return <button key={weapon.id} className={`wp__weapon ${configured ? "is-configured" : ""}`} onClick={() => setEditing(weapon)} title={`${weapon.name} · ${configured ? t("weapons.configured") : t("weapons.unconfigured")}`}>
         {configured && <i className="wp__dot" />}
         <img src={weapon.url} alt="" draggable={false} />
@@ -97,14 +96,14 @@ export default function WeaponPresetsPanel({ onBack }: { onBack?: () => void }) 
     })}
   </div>;
 
-  return <SubPage title={t("weapons.title")} onBack={onBack} status={status} right={<CosmeticsPresetActions csgoPath={csgoPath} onImported={setConfig} onError={reportError} />}>
+  return <SubPage title={t("weapons.title")} onBack={onBack} status={status} right={<CosmeticsPresetActions csgoPath={csgoPath} onImported={setState} onError={reportError} />}>
     <CosmeticsSourceCard csgoPath={csgoPath} onError={reportError} />
     <section className="cos-card">
       <header className="cos-card__head">
         <span className="cos-card__icon cos-card__icon--weapons" aria-hidden="true"><Crosshair size={18} /></span>
         <span className="cos-card__title">
           <strong>{t("cosmetics.sectionWeapons")}</strong>
-          <small>{team === "ct" ? t("weapons.ctLoadout") : t("weapons.tLoadout")} · {count} / {teamWeapons.length}</small>
+          <small>{team === "ct" ? t("weapons.ctLoadout") : t("weapons.tLoadout")} · {count} / {teamWeaponList.length}</small>
         </span>
         <CosmeticsTeamSwitch value={team} onChange={setTeam} ariaLabel={t("weapons.teamLoadout")} compact />
       </header>
@@ -139,8 +138,8 @@ export default function WeaponPresetsPanel({ onBack }: { onBack?: () => void }) 
           {KNIFE_ICONS.map((knife) => {
             const name = itemName(localizedSkinName(appConfig?.language, knife.id, 0, `Knife ${knife.id}`));
             const isDrop = dropSelected.has(knife.id);
-            const hasCt = ctLoadout?.default_knife_defindex === knife.id;
-            const hasT = tLoadout?.default_knife_defindex === knife.id;
+            const hasCt = state ? defaultKnifeId(state.panel, "ct") === knife.id : false;
+            const hasT = state ? defaultKnifeId(state.panel, "t") === knife.id : false;
             return (
               <button
                 key={knife.id}
@@ -148,7 +147,7 @@ export default function WeaponPresetsPanel({ onBack }: { onBack?: () => void }) 
                 onClick={() => toggleDrop(knife.id)}
                 onContextMenu={(event) => {
                   event.preventDefault();
-                  if (!cosmeticsDisabled) setEditingKnife(knife);
+                  if (!cosmeticsDisabled) setEditingKnife(true);
                 }}
                 disabled={cosmeticsDisabled}
                 title={`${name} · ${t("cosmetics.leftRight")}`}
@@ -183,24 +182,24 @@ export default function WeaponPresetsPanel({ onBack }: { onBack?: () => void }) 
           <span className="wp__music-action">›</span>
         </button>
         <button
-          className={`wp__music wp__glove ${ctLoadout?.glove?.enabled || tLoadout?.glove?.enabled ? "is-configured" : ""}`}
+          className={`wp__music wp__glove ${ctGlove || tGlove ? "is-configured" : ""}`}
           disabled={cosmeticsDisabled}
           onClick={() => setEditingGlove(true)}
           title={t("cosmetics.gloveOpen")}
         >
           <span className="wp__music-copy wp__glove-copy">
             <small>{t("cosmetics.playerGloves")}</small>
-            <strong><i className="wp-modal__team wp-modal__team--ct">CT</i> {ctLoadout?.glove?.enabled ? `${t("cosmetics.enabled")} · ${ctLoadout.glove.paint}` : t("cosmetics.disabled")}</strong>
-            <strong><i className="wp-modal__team wp-modal__team--t">T</i> {tLoadout?.glove?.enabled ? `${t("cosmetics.enabled")} · ${tLoadout.glove.paint}` : t("cosmetics.disabled")}</strong>
+            <strong><i className="wp-modal__team wp-modal__team--ct">CT</i> {ctGlove ? `${t("cosmetics.enabled")} · ${ctGlove.paint ?? 0}` : t("cosmetics.disabled")}</strong>
+            <strong><i className="wp-modal__team wp-modal__team--t">T</i> {tGlove ? `${t("cosmetics.enabled")} · ${tGlove.paint ?? 0}` : t("cosmetics.disabled")}</strong>
           </span>
           <span className="wp__music-action">›</span>
         </button>
       </div>
     </section>
 
-    <MusicKitPresetModal open={editingMusicKit} csgoPath={csgoPath} config={config} onSaved={setConfig} onError={reportError} onClose={() => setEditingMusicKit(false)} />
-    <WeaponPresetModal weapon={editing} team={team} csgoPath={csgoPath} config={config} onSaved={setConfig} onError={reportError} onClose={() => setEditing(null)} />
-    <KnifePresetModal knife={editingKnife} csgoPath={csgoPath} config={config} onSaved={setConfig} onError={reportError} onClose={() => setEditingKnife(null)} />
-    <GlovePresetModal open={editingGlove} csgoPath={csgoPath} config={config} onSaved={setConfig} onError={reportError} onClose={() => setEditingGlove(false)} />
+    <MusicKitPresetModal open={editingMusicKit} csgoPath={csgoPath} state={state} onSaved={setState} onError={reportError} onClose={() => setEditingMusicKit(false)} />
+    <WeaponPresetModal weapon={editing} team={team} csgoPath={csgoPath} state={state} onSaved={setState} onError={reportError} onClose={() => setEditing(null)} />
+    <KnifePresetModal open={editingKnife} csgoPath={csgoPath} state={state} onSaved={setState} onError={reportError} onClose={() => setEditingKnife(false)} />
+    <GlovePresetModal open={editingGlove} csgoPath={csgoPath} state={state} onSaved={setState} onError={reportError} onClose={() => setEditingGlove(false)} />
   </SubPage>;
 }

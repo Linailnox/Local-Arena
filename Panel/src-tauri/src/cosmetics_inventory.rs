@@ -11,6 +11,8 @@
 //!   agent_model         <-> agents[team].def      only when the catalog carries a defindex
 
 use std::collections::BTreeMap;
+use std::fs;
+use std::path::{Path, PathBuf};
 
 use serde_json::{json, Map, Value};
 
@@ -413,6 +415,45 @@ pub fn parse_document(raw: &str) -> Result<Value, AppError> {
         return Err(AppError::invalid("inventories.json must be a JSON object keyed by SteamID64"));
     }
     Ok(value)
+}
+
+pub fn read_document(root: &Path) -> Result<Option<(String, Value, Value)>, AppError> {
+    let path = crate::cosmetics_source::inventory_path(root);
+    if !path.is_file() {
+        return Ok(None);
+    }
+    let document = parse_document(&fs::read_to_string(&path)?)?;
+    let Some((steam_id, inventory)) = first_entry(&document) else {
+        return Ok(None);
+    };
+    let panel = inventory
+        .get(PANEL_NAMESPACE)
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    Ok(Some((steam_id.clone(), inventory.clone(), panel)))
+}
+
+pub fn write_document(
+    root: &Path,
+    steam_id: &str,
+    inventory: Value,
+    panel: Value,
+) -> Result<PathBuf, AppError> {
+    if steam_id.len() != 17 || !steam_id.chars().all(|c| c.is_ascii_digit()) {
+        return Err(AppError::invalid("SteamID64 must be 17 digits"));
+    }
+    let mut player = match inventory {
+        Value::Object(map) => map,
+        _ => return Err(AppError::invalid("Inventory must be a JSON object")),
+    };
+    player.insert(PANEL_NAMESPACE.into(), panel);
+    let document = document_for(steam_id, Value::Object(player));
+    let path = crate::cosmetics_source::inventory_path(root);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    crate::write_json_atomic(&path, &document)?;
+    Ok(path)
 }
 
 #[cfg(test)]

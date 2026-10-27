@@ -3,7 +3,8 @@ import { Disc3 } from "lucide-react";
 import Modal from "../components/Modal";
 import { MUSIC_KITS, musicKitName } from "../data/musicKits";
 import { useT } from "../i18n";
-import { api, type KnifeCustomizerConfig } from "../lib/api";
+import { api, type CosmeticsInventoryState } from "../lib/api";
+import { musicKitId, withMusicKit } from "../lib/cosmeticsInventory";
 import { useStore } from "../state/store";
 import { useSelectedPickerScroll } from "../lib/useSelectedPickerScroll";
 import "./KnifePresetModal.css";
@@ -12,13 +13,13 @@ import "./WeaponPresetsPanel.css";
 type Props = {
   open: boolean;
   csgoPath: string | null;
-  config: KnifeCustomizerConfig | null;
-  onSaved: (config: KnifeCustomizerConfig) => void;
+  state: CosmeticsInventoryState | null;
+  onSaved: (state: CosmeticsInventoryState) => void;
   onError: (error: unknown) => void;
   onClose: () => void;
 };
 
-export default function MusicKitPresetModal({ open, csgoPath, config, onSaved, onError, onClose }: Props) {
+export default function MusicKitPresetModal({ open, csgoPath, state, onSaved, onError, onClose }: Props) {
   const t = useT();
   const { config: appConfig } = useStore();
   const language = appConfig?.language;
@@ -29,9 +30,9 @@ export default function MusicKitPresetModal({ open, csgoPath, config, onSaved, o
 
   useEffect(() => {
     if (!open) return;
-    setSelectedId(config?.music_kit_id ?? 0);
+    setSelectedId(state ? musicKitId(state.inventory) : 0);
     setQuery("");
-  }, [open, config]);
+  }, [open, state]);
 
   const selected = MUSIC_KITS.find((kit) => kit.def_index === selectedId);
   const visible = useMemo(() => {
@@ -39,12 +40,13 @@ export default function MusicKitPresetModal({ open, csgoPath, config, onSaved, o
     return MUSIC_KITS.filter((kit) => !value || `${kit.name_en} ${kit.name_zh} ${kit.def_index}`.toLocaleLowerCase().includes(value));
   }, [query]);
 
-  const persist = async (musicKitId: number) => {
-    if (!csgoPath || !config) return;
+  const persist = async (id: number) => {
+    if (!csgoPath || !state) return;
     setSaving(true);
     try {
-      const state = await api.saveKnifeCustomizer(csgoPath, { ...config, enabled: true, music_kit_id: musicKitId });
-      onSaved(state.config);
+      const inventory = withMusicKit(state.inventory, id);
+      const next = await api.saveCosmeticsInventory(csgoPath, state.steam_id, inventory, state.panel);
+      onSaved(next);
       onClose();
     } catch (error) {
       onError(error);
@@ -54,7 +56,7 @@ export default function MusicKitPresetModal({ open, csgoPath, config, onSaved, o
   };
 
   return <Modal open={open} title={t("music.select")} onClose={onClose} width={880} scrimClassName="picker-modal" footer={<div className="kp__footer-actions">
-    <button className="wp-modal__remove" disabled={saving || !(config?.music_kit_id ?? 0)} onClick={() => void persist(0)}>{t("music.remove")}</button>
+    <button className="wp-modal__remove" disabled={saving || !(state ? musicKitId(state.inventory) : 0)} onClick={() => void persist(0)}>{t("music.remove")}</button>
     <button className="kp__save" disabled={saving || !selected} onClick={() => void persist(selectedId)}>{saving ? t("music.saving") : t("music.apply")}</button>
   </div>}>
     <div className="mk-modal">
