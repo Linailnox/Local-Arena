@@ -1,6 +1,6 @@
 # 计划：饰品插件（InventorySimulator）直连/本地双模式 + Panel 下载更新服务
 
-状态：**计划稿，未实施**。决策来源：用户 2026-10-27 口头拍板（见 §2）。事实基线取证于 2026-10-27，含本机实机验证。配套文档：`docs/COSMETICS-PROVIDER-EVALUATION.md`（可行性）、`docs/POC-INVENTORY-SIMULATOR.md`（一次性验证清单）。
+状态：**计划稿，未实施**。决策来源：用户 2026-10-27 口头拍板（见 §2）。事实基线取证于 2026-10-27，含本机实机验证。配套文档：`docs/COSMETICS-PROVIDER-EVALUATION.md`（可行性）。
 
 ---
 
@@ -85,7 +85,7 @@ invsim_url "https://inventory.cstrike.app"
 
 | 阶段 | 内容 | 验收 |
 | --- | --- | --- |
-| **P0 收口现状**（不改代码） | 删掉本机 `cfg/autoexec.cfg` 的 `invsim_file` 行与 0 字节 `/mnt/game/inventories.json`，确认直连可拉到数据 | 日志出现一次成功 equipped 拉取；游戏内看到官网配置的饰品 |
+| **P0 收口现状**（不改代码，**已完成 2026-10-27**） | 已删除 `cfg/autoexec.cfg`（内含手工 `invsim_file` 行），空文件已不再由启动链引用；直连路径已由用户实机确认可用 | 日志出现一次成功 equipped 拉取；游戏内看到官网配置的饰品 |
 | **P1 配置层** | `AppConfig.cosmetics_source` + managed block 读写器 + 单测（块外保留、切换幂等、行尾风格保持） | `cargo test` 新用例通过；连续切换两次后 `autoexec.cfg` 字节稳定 |
 | **P2 本地模式** | SteamID64 输入校验（17 位、以 7656119 开头）+ `inventories.json` 原子写入（temp → fsync → rename）+ schema 版本字段 + 从 PKC schema 5 映射 | 写入后插件加载无异常；切回直连后文件被改名且块内 `invsim_file` 指向不存在路径 |
 | **P3 下载服务** | `scripts/dependencies.json` 新增 `inventorySimulator` 钉版 + `inventory_plugin.rs`（status/check/download/install）+ 设置页卡片 | 断网给出可读错误；sha256 不符拒绝安装；更新只覆盖 `plugins/InventorySimulator/` 与 `gamedata/inventory-simulator.json`，不碰 `configs/` |
@@ -126,6 +126,7 @@ P0 今天可做且零代码；P1–P4 每阶段独立提交。
 | 已装 + 直连 + 断网 | 加载无异常；拉取失败有日志；UI 说明"离线时无饰品" |
 | 已装 + 本地 + 清单缺失 | Panel 立即生成合法清单（不写空文件） |
 | 已装 + 本地 + 清单写坏 | 依 D4：插件报错后退回远端；Panel 应检测到非法 JSON 并提示 |
+| 已装 + 直连 + 残留 `inventories.json` | 依 D4 实机观察：残留文件（含合法内容）在直连模式下仍会被 `Inventories.Load()` 读入，从而**劫持直连**。因此直连模式必须同时改名该文件，不能只改 `invsim_file` |
 | 用户手工改过 `autoexec.cfg` | managed block 外逐字节保留（单测） |
 | 上游删除旧资产 | 下载失败给出可读错误，不静默降级 |
 | 在线模式（Online） | 沿用现有 `enforce_mode_cosmetics` 门控，不因本计划放宽 |
@@ -160,6 +161,8 @@ P0 今天可做且零代码；P1–P4 每阶段独立提交。
 ---
 
 ## 10. 未验证项（显式标注）
+
+- **直连模式下残留 `inventories.json` 的优先级**：2026-10-27 实机观察到 `invsim_file` 已随 `autoexec.cfg` 删除、但 `inventories.json` 内容仍被加载——说明默认值 `inventories.json` 仍在生效，且文件存在时优先于远端。这直接支持 §3 的"直连模式必须改名该文件"设计；但"合法清单残留时是否仍静默劫持"尚无逐帧证据，实施 P1 时需复验。
 
 - 直连模式在**真实对局**中的稳定性（用户已确认能拉到数据，但长对局/换图/重连的表现未记录）。
 - 本地模式写入后，插件在"清单合法但 SteamID 未命中"时的回退行为（代码上会走 HTTP，实机未验）。
