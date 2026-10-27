@@ -167,19 +167,16 @@ fn copy_atomic(source: &Path, destination: &Path) -> Result<()> {
 }
 
 pub fn mirror_cosmetics(csgo: &Path) -> Result<usize> {
-    let source = csgo.join("addons/counterstrikesharp/plugins/PlayerKnifeCustomizer");
+    let source = crate::cosmetics_source::inventory_path(csgo);
     let destination = root()?.join("presets").join("current");
     let mut copied = 0;
-    for name in ["player_knife_presets.json", "player_gun_presets.json"] {
-        let from = source.join(name);
-        if from.is_file() {
-            copy_atomic(&from, &destination.join(name))?;
-            copied += 1;
-        }
+    if source.is_file() {
+        copy_atomic(&source, &destination.join("inventories.json"))?;
+        copied = 1;
     }
     if copied > 0 {
         let metadata = serde_json::to_vec_pretty(&serde_json::json!({
-            "schema_version": 1,
+            "schema_version": 2,
             "saved_at": unix_time(),
             "source": csgo.to_string_lossy(),
             "files_copied": copied,
@@ -219,11 +216,11 @@ mod tests {
         assert_eq!(read_ui_memory().unwrap().entries, entries);
 
         let csgo = base.join("fake-csgo");
-        let cosmetics = csgo.join("addons/counterstrikesharp/plugins/PlayerKnifeCustomizer");
+        let cosmetics = csgo.join(crate::cosmetics_source::CONFIG_DIR);
         fs::create_dir_all(&cosmetics).unwrap();
-        fs::write(cosmetics.join("player_knife_presets.json"), b"{}").unwrap();
+        fs::write(cosmetics.join("inventories.json"), b"{}").unwrap();
         assert_eq!(mirror_cosmetics(&csgo).unwrap(), 1);
-        assert!(base.join("presets/current/player_knife_presets.json").is_file());
+        assert!(base.join("presets/current/inventories.json").is_file());
         fs::remove_dir_all(&base).unwrap();
         unsafe { std::env::remove_var("CS2BI_STATE_ROOT"); }
     }

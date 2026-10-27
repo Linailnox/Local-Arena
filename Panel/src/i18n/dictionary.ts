@@ -508,6 +508,12 @@ export const DICTS: Record<string, Partial18n> = {
     "errcat.process": "执行此操作前必须关闭 CS2。", "errcat.payload": "安装包不完整。首次安装请下载完整的 Local Arena 压缩包，不要单独使用 panel 在线更新包；解压后请保持面板与 addons、cfg、overrides 和负载清单在同一文件夹。",
     "errcat.installation": "安装事务失败，已尝试回滚。", "errcat.launch": "无法启动 Steam 或 CS2。", "errcat.update": "在线更新在校验、下载、安装或回滚阶段失败。",
     "st.wrongLocation": "文件放错文件夹了 — 请移动到 game\\csgo", "cmd.h.botManagement": "机器人管理", "cmd.hint.botName": "机器人名称", "cmd.hint.number": "数量",
+    "cosmetics.sourceTitle": "饰品来源", "cosmetics.sourceRemote": "inventory.cstrike.app 网站", "cosmetics.sourceLocal": "本地预设文件",
+    "cosmetics.sourceRemoteHint": "插件为每位玩家从网站拉取库存", "cosmetics.sourceLocalHint": "插件读取已导入的文件，仅覆盖其中列出的 SteamID64",
+    "cosmetics.sourceMismatch": "磁盘上的文件与所选来源不一致，请再切换一次", "cosmetics.sourcePluginMissing": "请先安装 InventorySimulator 插件再使用此开关",
+    "cosmetics.sourceSaved": "饰品来源已更新，重启 CS2 后生效",
+    "cosmetics.sourceLocalMissing": "还没有有效的 inventories.json：请先运行 scripts/migrate-cosmetics-to-inventory.ps1",
+    "cosmetics.sourceFileValid": "JSON 有效", "cosmetics.sourceFileInvalid": "JSON 无法解析，插件会回退到网站",
   } satisfies Record<I18nKey, string>,
   tchinese: {
     "pre.aimUnavailable": "未安裝託管瞄準外掛，上游 BotAI 仍可正常運作",

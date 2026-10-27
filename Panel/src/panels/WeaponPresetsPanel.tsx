@@ -15,6 +15,7 @@ import MusicKitPresetModal from "./MusicKitPresetModal";
 import { MUSIC_KITS, musicKitName } from "../data/musicKits";
 import CosmeticsTeamSwitch, { useCosmeticsTeam } from "../components/CosmeticsTeamSwitch";
 import CosmeticsPresetActions from "../components/CosmeticsPresetActions";
+import CosmeticsSourceCard from "../components/CosmeticsSourceCard";
 import type { Status } from "../components/StatusDot";
 import "./WeaponPresetsPanel.css";
 
@@ -97,6 +98,7 @@ export default function WeaponPresetsPanel({ onBack }: { onBack?: () => void }) 
   </div>;
 
   return <SubPage title={t("weapons.title")} onBack={onBack} status={status} right={<CosmeticsPresetActions csgoPath={csgoPath} onImported={setConfig} onError={reportError} />}>
+    <CosmeticsSourceCard csgoPath={csgoPath} onError={reportError} />
     <section className="cos-card">
       <header className="cos-card__head">
         <span className="cos-card__icon cos-card__icon--weapons" aria-hidden="true"><Crosshair size={18} /></span>

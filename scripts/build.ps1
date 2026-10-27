@@ -196,7 +196,6 @@ try {
     Invoke-Checked $bun @("run", "build") $panel
 
     $pluginProjects = @(
-        @{ Path = "addons\counterstrikesharp\plugins\PlayerKnifeCustomizer\PlayerKnifeCustomizer.csproj"; Properties = @() },
         @{ Path = "addons\counterstrikesharp\plugins\TeamLineupInjector\TeamLineupInjector.csproj"; Properties = @() },
         @{ Path = "addons\counterstrikesharp\plugins\PlusMatchCoordinator\PlusMatchCoordinator.csproj"; Properties = @() }
     )
@@ -210,10 +209,6 @@ try {
     Invoke-Checked $DotNet @(
         "run", "--project", "addons\counterstrikesharp\shared\MatchCore.Tests\MatchCore.Tests.csproj",
         "-c", "Release", "--nologo"
-    )
-    Invoke-Checked $DotNet @(
-        "run", "--project", "addons\counterstrikesharp\plugins\PlayerKnifeCustomizer.Tests\PlayerKnifeCustomizer.Tests.csproj",
-        "-c", "Release"
     )
 
     if (-not $Linux) {

@@ -131,7 +131,6 @@ else {
 Copy-Item -LiteralPath (Join-Path $repo "cfg\my_bot_ffa_config.cfg") -Destination (Join-Path $payload "cfg\my_bot_ffa_config.cfg") -Force
 Copy-Item -LiteralPath (Join-Path $repo "cfg\my_bot_normal_config.cfg") -Destination (Join-Path $payload "cfg\my_bot_normal_config.cfg") -Force
 
-$pluginBuild = Join-Path $repo "addons\counterstrikesharp\plugins\PlayerKnifeCustomizer\bin\Release\net10.0"
 $upstreamPluginBuilds = @(
     @{ Name = "PlusMatchCoordinator"; Framework = "net10.0" },
     @{ Name = "TeamLineupInjector"; Framework = "net10.0" }
@@ -202,7 +201,6 @@ else {
     }
     Copy-Tree $telemetryStage (Join-Path $payload "addons\counterstrikesharp\plugins\OfflineMatchTelemetry")
 }
-Copy-Tree $pluginBuild (Join-Path $payload "addons\counterstrikesharp\plugins\PlayerKnifeCustomizer")
 $openRatingModelPath = Join-Path $repo "addons\counterstrikesharp\shared\MatchCore\open-rating-3.0-proxy-v1.json"
 $openRatingModel = Get-Content -LiteralPath $openRatingModelPath -Raw | ConvertFrom-Json
 if (-not $openRatingModel.release_gate.passed) {
@@ -278,8 +276,7 @@ $manifestEntries = foreach ($topLevel in @("addons", "cfg", "overrides")) {
     if (-not (Test-Path -LiteralPath $root)) { continue }
     foreach ($file in Get-ChildItem -LiteralPath $root -File -Recurse) {
         $relative = [IO.Path]::GetRelativePath($payload, $file.FullName).Replace("\", "/")
-        $plusOwned = $relative -like "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/*" -or
-            $relative -like "addons/counterstrikesharp/plugins/PlusMatchCoordinator/*" -or
+        $plusOwned = $relative -like "addons/counterstrikesharp/plugins/PlusMatchCoordinator/*" -or
             $relative -like "addons/counterstrikesharp/plugins/TeamLineupInjector/*" -or
             $relative -like "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/*" -or
             $relative -in @("cfg/my_bot_ffa_config.cfg", "cfg/my_bot_normal_config.cfg")
@@ -290,8 +287,7 @@ $manifestEntries = foreach ($topLevel in @("addons", "cfg", "overrides")) {
         elseif ($relative -like "cfg/*") { "configuration" }
         elseif ($relative -like "overrides/*") { "overrides" }
         else { "runtime" }
-        $preserveConfig = $relative -like "*/PlayerKnifeCustomizer/player_*_presets.json" -or
-            $relative -in @(
+        $preserveConfig = $relative -in @(
                 "cfg/my_bot_ffa_config.cfg",
                 "cfg/my_bot_normal_config.cfg"
             )
