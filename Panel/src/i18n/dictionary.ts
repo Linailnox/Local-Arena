@@ -514,6 +514,7 @@ export const DICTS: Record<string, Partial18n> = {
     "cosmetics.sourceSaved": "饰品来源已更新，重启 CS2 后生效",
     "cosmetics.sourceLocalMissing": "还没有有效的 inventories.json：请先运行 scripts/migrate-cosmetics-to-inventory.ps1",
     "cosmetics.sourceFileValid": "JSON 有效", "cosmetics.sourceFileInvalid": "JSON 无法解析，插件会回退到网站",
+    "cosmetics.steamIdLabel": "SteamID64", "cosmetics.steamIdHint": "17 位数字，可在 CS2 控制台用 status 命令查看", "cosmetics.steamIdSaved": "已保存",
   } satisfies Record<I18nKey, string>,
   tchinese: {
     "pre.aimUnavailable": "未安裝託管瞄準外掛，上游 BotAI 仍可正常運作",

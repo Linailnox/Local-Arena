@@ -2962,6 +2962,26 @@ fn import_cosmetics_inventory(
     ))
 }
 
+#[tauri::command]
+fn set_cosmetics_steam_id(app: AppHandle, steam_id: String) -> Result<String> {
+    let trimmed = steam_id.trim();
+    if trimmed.is_empty() {
+        let mut config = read_config(&app)?;
+        config.cosmetics_steam_id = None;
+        write_config(&app, &config)?;
+        return Ok(String::new());
+    }
+    if trimmed.len() != 17 || !trimmed.chars().all(|c| c.is_ascii_digit()) {
+        return Err(AppError::invalid(
+            "SteamID64 must be 17 digits (copy it from the CS2 console `status` command)",
+        ));
+    }
+    let mut config = read_config(&app)?;
+    config.cosmetics_steam_id = Some(trimmed.to_string());
+    write_config(&app, &config)?;
+    Ok(trimmed.to_string())
+}
+
 fn set_knife_customizer_enabled(root: &Path, enabled: bool) -> Result<Option<bool>> {
     let path = knife_config_path(root);
     if path.is_file() {
@@ -4469,7 +4489,7 @@ pub fn run() {
             get_presets, set_aim, set_nades, set_team_lineup, get_team_lineup, set_timescale_toggle, get_timescale_toggle, set_infinite_ammo, get_infinite_ammo, get_drop_knives, set_drop_knives,
             get_knife_customizer, save_knife_customizer, export_cosmetics_preset,
             import_cosmetics_preset, get_cosmetics_source, set_cosmetics_source,
-            import_cosmetics_inventory, get_runtime_snapshot, get_cs2_process,
+            import_cosmetics_inventory, set_cosmetics_steam_id, get_runtime_snapshot, get_cs2_process,
             inspect_installation, get_install_plan, install_payload, repair_payload,
             restore_payload, restore_pristine_cs2, export_diagnostics, get_panel_memory, save_panel_memory,
             appearance::get_appearance, appearance::save_appearance,

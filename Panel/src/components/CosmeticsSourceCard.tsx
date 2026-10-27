@@ -16,6 +16,8 @@ export default function CosmeticsSourceCard({ csgoPath, onError }: Props) {
   const toast = useToast();
   const [state, setState] = useState<CosmeticsSourceState | null>(null);
   const [busy, setBusy] = useState(false);
+  const [steamId, setSteamId] = useState("");
+  const [steamIdSaved, setSteamIdSaved] = useState(false);
 
   useEffect(() => {
     if (!csgoPath) { setState(null); return; }
@@ -26,8 +28,17 @@ export default function CosmeticsSourceCard({ csgoPath, onError }: Props) {
   const pluginMissing = state ? !state.plugin_installed : false;
   const hasLocalFile = state?.files.some((file) => file.valid_json) ?? false;
 
-  const changeSource = async (next: CosmeticsSource) => {
-    if (!csgoPath || busy || next === active) return;
+  const saveSteamId = async () => {
+    if (!csgoPath || busy) return;
+    const trimmed = steamId.trim();
+    if (!trimmed) return;
+    try {
+      setSteamId(await api.setCosmeticsSteamId(trimmed));
+      setSteamIdSaved(true);
+    } catch (error) { onError(error); }
+  };
+
+  const changeSource = async (next: CosmeticsSource) => {    if (!csgoPath || busy || next === active) return;
     setBusy(true);
     try {
       setState(await api.setCosmeticsSource(csgoPath, next));
@@ -36,8 +47,7 @@ export default function CosmeticsSourceCard({ csgoPath, onError }: Props) {
     finally { setBusy(false); }
   };
 
-  return <section className="cos-card cos-source">
-    <header className="cos-card__head">
+  return <section className="cos-card cos-source">    <header className="cos-card__head">
       <span className="cos-card__icon" aria-hidden="true"><FolderCog size={18} /></span>
       <span className="cos-card__title">
         <strong>{t("cosmetics.sourceTitle")}</strong>
@@ -64,6 +74,23 @@ export default function CosmeticsSourceCard({ csgoPath, onError }: Props) {
           {file.path} · {file.bytes} B · {file.valid_json ? t("cosmetics.sourceFileValid") : t("cosmetics.sourceFileInvalid")}
         </p>
       ))}
+
+      <div className="cos-source__row">
+        <label className="cos-source__field">
+          <span>{t("cosmetics.steamIdLabel")}</span>
+          <input
+            value={steamId}
+            onChange={(event) => { setSteamId(event.target.value); setSteamIdSaved(false); }}
+            onBlur={() => void saveSteamId()}
+            placeholder="7656119..."
+            inputMode="numeric"
+            spellCheck={false}
+            disabled={!csgoPath || busy}
+          />
+        </label>
+        {steamIdSaved && <span className="cos-source__note">{t("cosmetics.steamIdSaved")}</span>}
+      </div>
+      <p className="cos-source__note">{t("cosmetics.steamIdHint")}</p>
     </div>
   </section>;
 }
