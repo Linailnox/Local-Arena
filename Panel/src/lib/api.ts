@@ -760,6 +760,8 @@ export const api = {
     invoke<CosmeticsSourceState>("get_cosmetics_source", { csgo }),
   setCosmeticsSource: (csgo: string, source: CosmeticsSource) =>
     invoke<CosmeticsSourceState>("set_cosmetics_source", { csgo, source }),
+  setCosmeticsSteamId: (steamId: string) =>
+    invoke<string>("set_cosmetics_steam_id", { steamId }),
   inspectInstallation: (csgo: string) =>
     invoke<InstallationInspection>("inspect_installation", { csgo }),
   getInstallPlan: (csgo: string) => invoke<InstallPlan>("get_install_plan", { csgo }),
