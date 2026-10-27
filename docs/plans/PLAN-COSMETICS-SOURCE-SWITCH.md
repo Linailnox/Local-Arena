@@ -1,6 +1,6 @@
 # 计划：饰品插件（InventorySimulator）直连/本地双模式 + Panel 下载更新服务
 
-状态：**计划稿，未实施**。决策来源：用户 2026-10-27 口头拍板（见 §2）。事实基线取证于 2026-10-27，含本机实机验证。配套文档：`docs/COSMETICS-PROVIDER-EVALUATION.md`（可行性）。
+状态：**计划稿，未实施**。决策来源：用户 2026-10-27 口头拍板（见 §2）。事实基线取证于 2026-10-27，含本机实机验证。配套文档：`docs/COSMETICS-PROVIDER-EVALUATION.md`（可行性评估）、`docs/PLAYER-COSMETICS.md`（现有饰品语义）。
 
 ---
 
