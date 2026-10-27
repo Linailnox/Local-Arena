@@ -268,6 +268,67 @@ export type GlovePreset = {
 
 export type CosmeticsTeam = "ct" | "t";
 
+export type InventorySticker = {
+  def: number;
+  slot: number;
+  schema: number;
+  x: number;
+  y: number;
+  wear: number;
+  rotation: number;
+};
+
+export type InventoryKeychain = {
+  def: number;
+  slot: number;
+  seed: number;
+  x: number;
+  y: number;
+  z: number;
+};
+
+export type InventoryItem = {
+  def?: number;
+  paint?: number;
+  seed?: number;
+  wear?: number;
+  stattrak?: number;
+  nametag?: string;
+  uid?: number;
+  stickers?: InventorySticker[];
+  keychains?: InventoryKeychain[];
+  musicId?: number;
+};
+
+export type PlayerInventory = {
+  knives?: Record<string, InventoryItem>;
+  gloves?: Record<string, InventoryItem>;
+  ctWeapons?: Record<string, InventoryItem>;
+  tWeapons?: Record<string, InventoryItem>;
+  agents?: Record<string, InventoryItem>;
+  musicKit?: InventoryItem;
+};
+
+export type PanelCosmeticsSettings = {
+  enabled: boolean;
+  apply_to_human_players: boolean;
+  apply_on_pickup: boolean;
+  stickers_enabled: boolean;
+  charms_enabled: boolean;
+  agents_enabled: boolean;
+  shared_weapon_links: Record<string, boolean>;
+  default_knife: Record<string, number>;
+};
+
+export type CosmeticsInventoryState = {
+  plugin_present: boolean;
+  config_present: boolean;
+  cs2_running: boolean;
+  steam_id: string;
+  inventory: PlayerInventory;
+  panel: PanelCosmeticsSettings;
+};
+
 export type TeamCosmeticLoadout = {
   agent_model: string;
   default_knife_defindex: number;
@@ -762,6 +823,14 @@ export const api = {
     invoke<CosmeticsSourceState>("set_cosmetics_source", { csgo, source }),
   setCosmeticsSteamId: (steamId: string) =>
     invoke<string>("set_cosmetics_steam_id", { steamId }),
+  getCosmeticsInventory: (csgo: string) =>
+    invoke<CosmeticsInventoryState>("get_cosmetics_inventory", { csgo }),
+  saveCosmeticsInventory: (csgo: string, steamId: string, inventory: PlayerInventory, panel: PanelCosmeticsSettings) =>
+    invoke<CosmeticsInventoryState>("save_cosmetics_inventory", { csgo, steamId, inventory, panel }),
+  exportCosmeticsInventory: (csgo: string, destination: string) =>
+    invoke<CosmeticsPresetExportResult>("export_cosmetics_inventory", { csgo, destination }),
+  importCosmeticsInventoryFile: (csgo: string, source: string) =>
+    invoke<CosmeticsInventoryState>("import_cosmetics_inventory_file", { csgo, source }),
   inspectInstallation: (csgo: string) =>
     invoke<InstallationInspection>("inspect_installation", { csgo }),
   getInstallPlan: (csgo: string) => invoke<InstallPlan>("get_install_plan", { csgo }),

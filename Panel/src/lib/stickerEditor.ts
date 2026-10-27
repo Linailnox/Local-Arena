@@ -1,13 +1,17 @@
-import type { AppConfig, CharmPreset, CosmeticsTeam, KnifeCustomizerConfig, KnifePreset, StickerPreset } from "./api";
+import type { AppConfig, CosmeticsTeam, InventoryItem, InventoryKeychain, InventorySticker, PlayerInventory } from "./api";
+
+function teamWeaponsKey(team: CosmeticsTeam): "ctWeapons" | "tWeapons" {
+  return team === "ct" ? "ctWeapons" : "tWeapons";
+}
 
 export const STICKER_SLOT_COUNT = 5;
 export const STICKER_RELEASE_ENABLED = true;
 
 const STICKER_OVERFLOW_OFFSETS = [
-  { offset_x: 0.45, offset_y: 0.45 },
-  { offset_x: -0.45, offset_y: 0.45 },
-  { offset_x: 0.45, offset_y: -0.45 },
-  { offset_x: -0.45, offset_y: -0.45 },
+  { x: 0.45, y: 0.45 },
+  { x: -0.45, y: 0.45 },
+  { x: 0.45, y: -0.45 },
+  { x: -0.45, y: -0.45 },
 ] as const;
 
 export function stickerFeatureEnabled(config: AppConfig | null | undefined): boolean {
@@ -20,19 +24,8 @@ export function clampStickerValue(value: number, min: number, max: number): numb
   return Math.min(max, Math.max(min, Number.isFinite(value) ? value : min));
 }
 
-export function normalizeStickerSlots(stickers: StickerPreset[]): StickerPreset[] {
+export function normalizeStickerSlots(stickers: InventorySticker[]): InventorySticker[] {
   return [...stickers].sort((left, right) => left.slot - right.slot);
-}
-
-export function withPreservedGunPresetDecorations(
-  base: KnifePreset,
-  existing: KnifePreset | undefined,
-): KnifePreset {
-  return {
-    ...base,
-    stickers: (existing?.stickers ?? []).map((sticker) => ({ ...sticker })),
-    charm: existing?.charm ? { ...existing.charm } : null,
-  };
 }
 
 export function availableStickerSlotCount(schemaCount: number): number {
@@ -43,7 +36,7 @@ export function availableStickerSlotCount(schemaCount: number): number {
 export function defaultStickerPlacement(
   slot: number,
   schemaCount: number,
-): Pick<StickerPreset, "schema" | "offset_x" | "offset_y" | "custom_position"> | null {
+): Pick<InventorySticker, "schema" | "x" | "y"> | null {
   const normalizedSlot = Math.trunc(slot);
   const normalizedSchemaCount = Math.trunc(schemaCount);
   if (!Number.isFinite(slot) || !Number.isFinite(schemaCount)
@@ -51,29 +44,24 @@ export function defaultStickerPlacement(
     return null;
 
   if (normalizedSlot < normalizedSchemaCount) {
-    return { schema: normalizedSlot, offset_x: 0, offset_y: 0, custom_position: false };
+    return { schema: normalizedSlot, x: 0, y: 0 };
   }
 
   const offset = STICKER_OVERFLOW_OFFSETS[
     Math.min(STICKER_OVERFLOW_OFFSETS.length - 1, normalizedSlot - normalizedSchemaCount)
   ];
-  return {
-    schema: normalizedSchemaCount - 1,
-    offset_x: offset.offset_x,
-    offset_y: offset.offset_y,
-    custom_position: true,
-  };
+  return { schema: normalizedSchemaCount - 1, x: offset.x, y: offset.y };
 }
 
-export function replaceSticker(stickers: StickerPreset[], sticker: StickerPreset): StickerPreset[] {
+export function replaceSticker(stickers: InventorySticker[], sticker: InventorySticker): InventorySticker[] {
   return normalizeStickerSlots([...stickers.filter((entry) => entry.slot !== sticker.slot), sticker]);
 }
 
-export function removeSticker(stickers: StickerPreset[], slot: number): StickerPreset[] {
+export function removeSticker(stickers: InventorySticker[], slot: number): InventorySticker[] {
   return normalizeStickerSlots(stickers.filter((entry) => entry.slot !== slot));
 }
 
-export function swapStickerSlots(stickers: StickerPreset[], slot: number, target: number): StickerPreset[] {
+export function swapStickerSlots(stickers: InventorySticker[], slot: number, target: number): InventorySticker[] {
   if (slot < 0 || slot >= STICKER_SLOT_COUNT || target < 0 || target >= STICKER_SLOT_COUNT)
     return normalizeStickerSlots(stickers);
   return normalizeStickerSlots(stickers.map((entry) => entry.slot === slot
@@ -98,44 +86,38 @@ export function paginateStickerCatalog<T>(entries: T[], requestedPage: number, p
 }
 
 export function updateGunPresetStickers(
-  config: KnifeCustomizerConfig,
+  inventory: PlayerInventory,
   team: CosmeticsTeam,
   weaponId: number,
-  preset: KnifePreset,
-  stickers: StickerPreset[],
-): KnifeCustomizerConfig {
-  return updateGunPresetDecorations(config, team, weaponId, preset, {
-    stickers: normalizeStickerSlots(stickers),
-  });
+  item: InventoryItem,
+  stickers: InventorySticker[],
+): PlayerInventory {
+  const next: InventoryItem = { ...item };
+  if (stickers.length === 0) delete next.stickers;
+  else next.stickers = normalizeStickerSlots(stickers);
+  return withWeapon(inventory, team, weaponId, next);
 }
 
 export function updateGunPresetCharm(
-  config: KnifeCustomizerConfig,
+  inventory: PlayerInventory,
   team: CosmeticsTeam,
   weaponId: number,
-  preset: KnifePreset,
-  charm: CharmPreset | null,
-): KnifeCustomizerConfig {
-  return updateGunPresetDecorations(config, team, weaponId, preset, { charm });
+  item: InventoryItem,
+  keychain: InventoryKeychain | null,
+): PlayerInventory {
+  const next: InventoryItem = { ...item };
+  if (keychain) next.keychains = [keychain];
+  else delete next.keychains;
+  return withWeapon(inventory, team, weaponId, next);
 }
 
-function updateGunPresetDecorations(
-  config: KnifeCustomizerConfig,
+function withWeapon(
+  inventory: PlayerInventory,
   team: CosmeticsTeam,
   weaponId: number,
-  preset: KnifePreset,
-  patch: Pick<KnifePreset, "stickers"> | Pick<KnifePreset, "charm">,
-): KnifeCustomizerConfig {
-  const key = String(weaponId);
-  const nextPreset: KnifePreset = { ...preset, ...patch };
-  return {
-    ...config,
-    loadouts: {
-      ...config.loadouts,
-      [team]: {
-        ...config.loadouts[team],
-        gun_presets: { ...config.loadouts[team].gun_presets, [key]: nextPreset },
-      },
-    },
-  };
+  item: InventoryItem,
+): PlayerInventory {
+  const key = teamWeaponsKey(team);
+  const weapons = { ...(inventory[key] ?? {}), [String(weaponId)]: item };
+  return { ...inventory, [key]: weapons };
 }

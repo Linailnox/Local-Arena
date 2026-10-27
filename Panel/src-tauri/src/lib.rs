@@ -2375,105 +2375,9 @@ fn normalize_charm(defindex: u16, charm: &mut Option<CharmPreset>) -> Result<()>
     Ok(())
 }
 
-fn sanitize_preset_decorations(
-    preset: &mut serde_json::Value,
-    allow_decorations: bool,
-    defindex: Option<u16>,
-    migrate_schema: bool,
-) -> bool {
-    let Some(object) = preset.as_object_mut() else {
-        return false;
-    };
-    let mut changed = false;
-    if let Some(value) = object.get_mut("stickers") {
-        if migrate_schema && allow_decorations {
-            if let (Some(_), Some(stickers), Some(capability)) = (
-                defindex,
-                value.as_array_mut(),
-                defindex.and_then(|id| cosmetic_placements().get(&id)),
-            ) {
-                for sticker in stickers {
-                    let Some(sticker) = sticker.as_object_mut() else { continue };
-                    if sticker.contains_key("schema") { continue; }
-                    let slot = sticker.get("slot").and_then(serde_json::Value::as_u64).unwrap_or(0);
-                    let schema = slot.min(capability.sticker_schema_count.saturating_sub(1) as u64);
-                    sticker.insert("schema".into(), serde_json::Value::from(schema));
-                    changed = true;
-                }
-            }
-        }
-        let valid = allow_decorations
-            && defindex.is_some()
-            && serde_json::from_value::<Vec<StickerPreset>>(value.clone())
-                .ok()
-                .is_some_and(|mut stickers| normalize_stickers(defindex.unwrap(), &mut stickers).is_ok());
-        if !valid && !value.as_array().is_some_and(|entries| entries.is_empty() && !allow_decorations) {
-            *value = serde_json::Value::Array(Vec::new());
-            changed = true;
-        }
-    }
-    if let Some(value) = object.get_mut("charm") {
-        let valid = allow_decorations
-            && defindex.is_some()
-            && (value.is_null()
-                || serde_json::from_value::<CharmPreset>(value.clone())
-                    .ok()
-                    .is_some_and(|charm| normalize_charm(defindex.unwrap(), &mut Some(charm)).is_ok()));
-        if !valid && !value.is_null() {
-            *value = serde_json::Value::Null;
-            changed = true;
-        }
-    }
-    changed
-}
 
-fn sanitize_preset_map(value: Option<&mut serde_json::Value>, allow_decorations: bool, migrate_schema: bool) -> bool {
-    let Some(map) = value.and_then(serde_json::Value::as_object_mut) else {
-        return false;
-    };
-    map.iter_mut().fold(false, |changed, (defindex, preset)| {
-        sanitize_preset_decorations(preset, allow_decorations, defindex.parse().ok(), migrate_schema) || changed
-    })
-}
 
-fn sanitize_knife_config_decorations(value: &mut serde_json::Value, schema: Option<u64>) -> bool {
-    let Some(root) = value.as_object_mut() else {
-        return false;
-    };
-    let migrate_schema = schema.is_none_or(|version| version < COSMETICS_SCHEMA_VERSION as u64);
-    let mut changed = sanitize_preset_map(root.get_mut("presets"), false, migrate_schema)
-        | sanitize_preset_map(root.get_mut("gun_presets"), true, migrate_schema);
-    let Some(loadouts) = root
-        .get_mut("loadouts")
-        .and_then(serde_json::Value::as_object_mut)
-    else {
-        return changed;
-    };
-    for side in ["ct", "t"] {
-        let Some(team) = loadouts
-            .get_mut(side)
-            .and_then(serde_json::Value::as_object_mut)
-        else {
-            continue;
-        };
-        changed |= sanitize_preset_map(team.get_mut("knife_presets"), false, migrate_schema);
-        changed |= sanitize_preset_map(team.get_mut("gun_presets"), true, migrate_schema);
-    }
-    changed
-}
 
-fn sanitize_team_gun_decorations(value: &mut serde_json::Value, schema: Option<u64>) -> bool {
-    let migrate_schema = schema.is_none_or(|version| version < COSMETICS_SCHEMA_VERSION as u64);
-    if matches!(schema, Some(2) | Some(3) | Some(4) | Some(5)) {
-        let Some(root) = value.as_object_mut() else {
-            return false;
-        };
-        sanitize_preset_map(root.get_mut("ct"), true, migrate_schema)
-            | sanitize_preset_map(root.get_mut("t"), true, migrate_schema)
-    } else {
-        sanitize_preset_map(Some(value), true, migrate_schema)
-    }
-}
 
 fn normalize_team_loadout(team: WeaponSide, loadout: &mut TeamLoadout) -> Result<()> {
     if !loadout.agent_model.is_empty() && !valid_agent_models(team).contains(&loadout.agent_model) {
@@ -2980,6 +2884,126 @@ fn set_cosmetics_steam_id(app: AppHandle, steam_id: String) -> Result<String> {
     config.cosmetics_steam_id = Some(trimmed.to_string());
     write_config(&app, &config)?;
     Ok(trimmed.to_string())
+}
+
+#[derive(Serialize)]
+struct CosmeticsInventoryState {
+    plugin_present: bool,
+    config_present: bool,
+    cs2_running: bool,
+    steam_id: String,
+    inventory: serde_json::Value,
+    panel: serde_json::Value,
+}
+
+fn empty_panel_settings() -> serde_json::Value {
+    serde_json::json!({
+        "enabled": false,
+        "apply_to_human_players": true,
+        "apply_on_pickup": true,
+        "stickers_enabled": false,
+        "charms_enabled": false,
+        "agents_enabled": false,
+        "shared_weapon_links": {},
+        "default_knife": {},
+    })
+}
+
+#[tauri::command]
+fn get_cosmetics_inventory(app: AppHandle, csgo: String) -> Result<CosmeticsInventoryState> {
+    let root = csgo_path(&csgo)?;
+    let path = cosmetics_source::inventory_path(&root);
+    let loaded = cosmetics_inventory::read_document(&root)?;
+    let steam_id = loaded
+        .as_ref()
+        .map(|(steam_id, _, _)| steam_id.clone())
+        .or_else(|| read_config(&app).ok().and_then(|config| config.cosmetics_steam_id))
+        .unwrap_or_default();
+    let (inventory, panel) = match loaded {
+        Some((_, inventory, panel)) => (inventory, panel),
+        None => (serde_json::json!({}), empty_panel_settings()),
+    };
+    Ok(CosmeticsInventoryState {
+        plugin_present: cosmetics_source::plugin_installed(&root),
+        config_present: path.is_file(),
+        cs2_running: cs2_running(),
+        steam_id,
+        inventory,
+        panel,
+    })
+}
+
+#[tauri::command]
+fn save_cosmetics_inventory(
+    app: AppHandle,
+    csgo: String,
+    steam_id: String,
+    inventory: serde_json::Value,
+    panel: serde_json::Value,
+) -> Result<CosmeticsInventoryState> {
+    let root = csgo_path(&csgo)?;
+    if blocks_target_write(&inspect_cs2_process(Some(&root))) {
+        return Err(AppError::process("Close CS2 before changing cosmetics"));
+    }
+    cosmetics_inventory::write_document(&root, &steam_id, inventory, panel)?;
+
+    let mut config = read_config(&app)?;
+    config.cosmetics_steam_id = Some(steam_id);
+    write_config(&app, &config)?;
+    app_storage::mirror_cosmetics(&root)?;
+    get_cosmetics_inventory(app, csgo)
+}
+
+#[tauri::command]
+fn export_cosmetics_inventory(csgo: String, destination: String) -> Result<CosmeticsPresetExportResult> {
+    let root = csgo_path(&csgo)?;
+    let source = cosmetics_source::inventory_path(&root);
+    if !source.is_file() {
+        return Err(AppError::invalid("No inventories.json to export yet"));
+    }
+    let destination = explicit_json_path(&destination, "Export")?;
+    let parent = destination
+        .parent()
+        .ok_or_else(|| AppError::invalid("Export path has no parent directory"))?;
+    if !parent.is_dir() {
+        return Err(AppError::invalid("Export destination directory does not exist"));
+    }
+    let bytes = fs::read(&source)?;
+    atomic_fs::write_replace(&destination, &bytes)?;
+    Ok(CosmeticsPresetExportResult {
+        path: destination.to_string_lossy().into_owned(),
+        size_bytes: bytes.len() as u64,
+    })
+}
+
+#[tauri::command]
+fn import_cosmetics_inventory_file(
+    app: AppHandle,
+    csgo: String,
+    source: String,
+) -> Result<CosmeticsInventoryState> {
+    let root = csgo_path(&csgo)?;
+    let source = explicit_json_path(&source, "Import")?;
+    let metadata = fs::metadata(&source)?;
+    if !metadata.is_file() || metadata.len() == 0 || metadata.len() > MAX_COSMETICS_IMPORT_BYTES {
+        return Err(AppError::invalid(
+            "Inventory must be a non-empty JSON file no larger than 4 MiB",
+        ));
+    }
+    let document = cosmetics_inventory::parse_document(&fs::read_to_string(&source)?)?;
+    let Some((steam_id, inventory)) = cosmetics_inventory::first_entry(&document) else {
+        return Err(AppError::invalid("Inventory file has no player entry"));
+    };
+    let panel = inventory
+        .get(cosmetics_inventory::PANEL_NAMESPACE)
+        .cloned()
+        .unwrap_or_else(empty_panel_settings);
+    cosmetics_inventory::write_document(&root, &steam_id, inventory.clone(), panel)?;
+
+    let mut config = read_config(&app)?;
+    config.cosmetics_steam_id = Some(steam_id);
+    write_config(&app, &config)?;
+    get_cosmetics_inventory(app, csgo)
 }
 
 fn set_knife_customizer_enabled(root: &Path, enabled: bool) -> Result<Option<bool>> {
@@ -4489,7 +4513,9 @@ pub fn run() {
             get_presets, set_aim, set_nades, set_team_lineup, get_team_lineup, set_timescale_toggle, get_timescale_toggle, set_infinite_ammo, get_infinite_ammo, get_drop_knives, set_drop_knives,
             get_knife_customizer, save_knife_customizer, export_cosmetics_preset,
             import_cosmetics_preset, get_cosmetics_source, set_cosmetics_source,
-            import_cosmetics_inventory, set_cosmetics_steam_id, get_runtime_snapshot, get_cs2_process,
+            import_cosmetics_inventory, set_cosmetics_steam_id,
+            get_cosmetics_inventory, save_cosmetics_inventory,
+            export_cosmetics_inventory, import_cosmetics_inventory_file, get_runtime_snapshot, get_cs2_process,
             inspect_installation, get_install_plan, install_payload, repair_payload,
             restore_payload, restore_pristine_cs2, export_diagnostics, get_panel_memory, save_panel_memory,
             appearance::get_appearance, appearance::save_appearance,

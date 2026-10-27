@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Download, Upload } from "lucide-react";
-import { api, type KnifeCustomizerConfig } from "../lib/api";
+import { api, type CosmeticsInventoryState } from "../lib/api";
 import { openDialog, saveDialog } from "../lib/platform";
 import { useT } from "../i18n";
 import { useToast } from "./Toast";
@@ -8,7 +8,7 @@ import "./CosmeticsPresetActions.css";
 
 type Props = {
   csgoPath: string | null;
-  onImported: (config: KnifeCustomizerConfig) => void;
+  onImported: (state: CosmeticsInventoryState) => void;
   onError: (error: unknown) => void;
 };
 
@@ -19,11 +19,11 @@ export default function CosmeticsPresetActions({ csgoPath, onImported, onError }
 
   const exportPreset = async () => {
     if (!csgoPath || busy) return;
-    const destination = await saveDialog({ defaultPath: "cs2bip-cosmetics-preset.json", filters: [{ name: "JSON", extensions: ["json"] }] });
+    const destination = await saveDialog({ defaultPath: "inventories.json", filters: [{ name: "JSON", extensions: ["json"] }] });
     if (!destination) return;
     setBusy("export");
     try {
-      await api.exportCosmeticsPreset(csgoPath, destination);
+      await api.exportCosmeticsInventory(csgoPath, destination);
       toast.show(t("cosmetics.exported"), "green");
     } catch (error) { onError(error); }
     finally { setBusy(null); }
@@ -35,8 +35,7 @@ export default function CosmeticsPresetActions({ csgoPath, onImported, onError }
     if (!source) return;
     setBusy("import");
     try {
-      const result = await api.importCosmeticsPreset(csgoPath, source);
-      onImported(result.state.config);
+      onImported(await api.importCosmeticsInventoryFile(csgoPath, source));
       toast.show(t("cosmetics.imported"), "green");
     } catch (error) { onError(error); }
     finally { setBusy(null); }
