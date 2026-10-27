@@ -1,6 +1,6 @@
 # 计划：饰品插件（InventorySimulator）直连/本地双模式 + Panel 下载更新服务
 
-状态：**计划稿，实施中**。决策来源：用户 2026-10-27 口头拍板（见 §2）。事实基线取证于 2026-10-27，含本机实机验证。配套文档：`docs/PLAYER-COSMETICS.md`（现有饰品语义，PKC 部分已弃用）。交付物：`scripts/inventory-simulator.ps1`（单脚本，见 §5）。
+状态：**计划稿，实施中**。决策来源：用户 2026-10-27 口头拍板（见 §2）。事实基线取证于 2026-10-27，含本机实机验证。配套文档：`docs/PLAYER-COSMETICS.md`（现有饰品语义，PKC 部分已弃用）。交付物：`scripts/migrate-cosmetics-to-inventory.ps1`（单脚本，见 §5）。
 
 ---
 
@@ -11,7 +11,9 @@
 3. 本地模式下，Panel 读写 `inventories.json`，按 SteamID64 键控。
 4. Panel 提供该插件的**下载、校验、安装、更新**服务；插件**不随包发布**。
 
-**交付形态（用户 2026-10-27 追加）**：只提供一个脚本，语言由实施方选定 → **PowerShell 7**（`scripts/inventory-simulator.ps1`）。理由：本仓流水线已经是 pwsh（`build.ps1`/`package.ps1`/`verify-workspace.ps1`），Windows 与 Linux 一致，无需引入第三种语言；且它只做"文件操作 + 一次 HTTP 下载"，不进入 Panel 运行时。
+**交付形态（用户 2026-10-27 追加）**：只提供一个脚本，语言由实施方选定 → **PowerShell 7**（`scripts/migrate-cosmetics-to-inventory.ps1`）。职责单一：**把 Panel 导出的 `cs2bip-cosmetics-preset.json` 迁移成 `inventories.json`**。理由：本仓流水线已经是 pwsh（`build.ps1`/`package.ps1`/`verify-workspace.ps1`），Windows 与 Linux 一致，无需引入第三种语言；且它只做纯数据转换，不进入 Panel 运行时。
+
+**不在脚本职责内**：插件的下载/更新（用户已明确本次只要迁移脚本），以及 `autoexec.cfg` 写入。
 
 ---
 
@@ -93,39 +95,38 @@ invsim_file "<mode-dependent>"
 
 ## 5. 分阶段落地
 
-**交付形态：单一脚本 `scripts/inventory-simulator.ps1`（PowerShell 7）。** 不进入 Panel 运行时，不改 `AppConfig`、不改 `generate_handler!`、不改前端。
+**交付形态：单一脚本 `scripts/migrate-cosmetics-to-inventory.ps1`（PowerShell 7）。** 不进入 Panel 运行时，不改 `AppConfig`、不改 `generate_handler!`、不改前端。
 
 | 阶段 | 内容 | 验收 |
 | --- | --- | --- |
 | **P0 收口现状**（已完成 2026-10-27） | `cfg/autoexec.cfg` 已删除；直连路径由用户实机确认可用 | 游戏内看到官网配置的饰品 |
-| **P1 脚本骨架**（已完成） | `status` / `install` / `update` / `remote` / `local` 五个动作 + `-DryRun` | `status` 在真实安装上正确报出"已装 + remote"（实测） |
-| **P2 安装与更新**（已完成） | 从 GitHub release 取资产、校验 `assets[].digest` 的 sha256、解压、只替换 `plugins/InventorySimulator/**` 与 `gamedata/inventory-simulator.json`、写 `.installed.json` 标记 | `-Action install -DryRun` 解析出正确资产（83,624 B）与 digest（与钉版一致，实测） |
-| **P3 模式切换**（已完成） | `remote`：把默认路径上的 `inventories.json` 改名为 `.bak`；`local`：原子写入（temp→rename）+ 拒绝空文件 + 校验清单含该 SteamID | 干跑与三个负例均按预期报错（实测） |
-| **P4 门禁接入**（待办） | 把脚本加进 `scripts/AGENTS.md`；若需进发布包再补 `verify-workspace.ps1` 白名单 | `scripts/linux/build.sh --only verify` PASS |
+| **P1 迁移脚本**（已完成） | `scripts/migrate-cosmetics-to-inventory.ps1`：读 Panel 导出包 → 映射为 `inventories.json`，含贴纸/挂件坐标解析、souvenir 丢弃提示、空 paint 跳过 | 干跑与真实写出均验证；`keychains` 为数组、`uid` 连续唯一（实测） |
+| **P2 落地验证**（待办） | 用真实导出文件跑一次，把结果放进插件默认路径，进游戏确认刀/手套/枪/贴纸/挂件生效 | 游戏内可见 + 日志无加载错误 |
+| **P3 后续**（非本期） | 若需把迁移搬进 Panel（按钮/命令），再按 §9 的"后续"表改动 | — |
 
 脚本不依赖 Panel，因此不触发 `cargo test` / `bun run build` 的变化。
 
 ---
 
-## 6. 脚本接口
+## 6. 迁移脚本接口
 
 ```
-pwsh scripts/inventory-simulator.ps1 -Action status
-pwsh scripts/inventory-simulator.ps1 -Action install   [-ReleaseTag 3.7.0]
-pwsh scripts/inventory-simulator.ps1 -Action update
-pwsh scripts/inventory-simulator.ps1 -Action remote
-pwsh scripts/inventory-simulator.ps1 -Action local -SteamId <7656119...> [-InventoryFile path.json]
-         [-CsgoRoot path] [-DryRun] [-SkipHashCheck]
+pwsh scripts/migrate-cosmetics-to-inventory.ps1 -Source <cs2bip-cosmetics-preset.json> \
+     -SteamId <7656119...> [-Out inventories.json] [-CsgoRoot path] \
+     [-AgentDefindex N] [-UidBase 900000] [-DryRun]
 ```
 
 行为要点：
 
-- **CS2 根目录自动发现**：`$env:STEAM_DIR` → `~/.steam/steam` / `~/.local/share/Steam` / Flatpak → `libraryfolders.vdf` 里的其他库；并用 `gameinfo.gi` 存在性确认候选（与 `PlusManagedPaths.CandidateCsgoRoots` 同思路）。
-- **安装/更新**：从 `api.github.com` 取 release，用 `assets[].digest` 比对 sha256，不符即删除压缩包并报错；解压后只替换插件目录与 gamedata，**永不触碰 `configs/`**（用户 convar 在那里）。
-- **模式切换**：`remote` 把默认路径上的 `inventories.json` 改名 `.bak`（文件不存在 = 插件走官网）；`local` 写入清单（拒绝空文件、校验含该 SteamID、temp→rename 原子落地）。
-- **`-DryRun`**：打印全部计划动作，不写文件、不下载。
-
-**`dependencies.json` 不参与**：钉版值直接写在脚本的 `-ReleaseTag` 默认参数里（`3.7.0`），避免为一个独立脚本引入第二份钉版源；`update` 动作显式绕过钉版去取最新版，属于用户主动行为。
+- **只做数据转换**：不联网、不装插件、不改 cfg。`-Out` 缺省时落到插件默认路径 `<csgo>/addons/counterstrikesharp/configs/plugins/InventorySimulator/inventories.json`。
+- **校验输入**：必须是 `kind = cs2bip-cosmetics-preset` 且 `schema_version ∈ {1,2}` 的 Panel 导出包；`-SteamId` 强制 17 位数字。
+- **映射**：`knife_presets[def] → knives[team]`、`glove → gloves[team]`、`gun_presets[def] → ctWeapons/tWeapons`、`stickers[] → stickers[]`、`charm{id,placement_id} → keychains[{x,y,z}]`、`music_kit_id → musicKit`。队伍键：CT=3、T=2。
+- **贴纸坐标**：Panel 存的是相对偏移；当偏移为 `(0,0)` 且目录里有该槽位坐标时，用 `cosmeticPlacements.json` 的 `stickerPositions[schema]` 填充；自定义偏移则原样保留。
+- **挂件坐标**：按 `charm.placement_id` 在 `cosmeticPlacements.json[defindex].charmPositions` 里查 `x/y`，`z` 固定 0。
+- **明确丢弃**：`souvenir_enabled`（上游无字段，会在报告里计数提示）；`paint <= 0` 的预设（无皮肤可应用）；刀不输出挂件（`cosmeticPlacements.json` 只覆盖 defindex 1–64）。
+- **探员**：Panel 目录只存模型路径，没有探员 defindex → 默认跳过并提示；需要时用 `-AgentDefindex` 显式指定。
+- **原子写入**：temp → rename，拒绝写出 0 字节文件（空文件会让插件在加载期抛异常）。
+- **`-DryRun`**：只打印映射报告，不写文件。
 
 ---
 
@@ -135,14 +136,16 @@ pwsh scripts/inventory-simulator.ps1 -Action local -SteamId <7656119...> [-Inven
 
 | 场景 | 脚本行为 |
 | --- | --- |
-| 插件未装时 `status` | 报 "not installed"，不报错 |
-| `install` 时 sha256 不符 | 删除压缩包并报错，不落地 |
-| `local` 清单为空 | 拒绝写入（实测：`inventory file is empty`） |
-| `local` 清单缺该 SteamID | 拒绝写入并列出实际顶层键（实测） |
-| `local` 未传 `-SteamId` | 报错（实测） |
-| `remote` 无残留清单 | 提示 "nothing to do"（实测） |
-| 二级路径也有清单 | 自动改名 `.bak`，保证主路径优先 |
-| `-DryRun` | 打印全部动作，不下载、不写盘（实测） |
+| 输入不是 Panel 导出包 | 报错并回显实际 `kind`（实测） |
+| `-SteamId` 不是 17 位 | 参数校验直接拒绝（实测） |
+| `paint <= 0` 的预设 | 跳过并计数提示（实测） |
+| `souvenir_enabled` | 丢弃并计数提示（实测：2 条） |
+| 贴纸偏移为 (0,0) | 用 `cosmeticPlacements.json` 的槽位坐标填充（实测：0.25/0.48） |
+| 贴纸自定义偏移 | 原样保留（实测：0.4/0.6） |
+| 挂件 `placement_id` | 解析成 `x/y/z` 并输出为**数组**（实测：`[{...}]`） |
+| `uid` 分配 | 从 `-UidBase` 起连续且唯一（实测：900000…900004） |
+| 探员缺 defindex | 跳过并提示可传 `-AgentDefindex`（实测） |
+| `-DryRun` | 只打印映射报告，不写盘（实测） |
 
 运行期（需实机验证，脚本不负责）：
 
@@ -156,7 +159,7 @@ pwsh scripts/inventory-simulator.ps1 -Action local -SteamId <7656119...> [-Inven
 
 ## 8. 风险
 
-1. **上游契约漂移**：`invsim_file` 语义、候选路径、`EquippedV5Response` 字段都可能在 v4 变化 → 脚本默认钉 `3.7.0`；`update` 属用户主动行为，升级后需人工确认清单格式仍兼容。
+1. **上游契约漂移**：`invsim_file` 语义、候选路径、`EquippedV5Response` 字段都可能在 v4 变化 → 迁移脚本的输出需在升级插件后重新验证一次（字段集固定，升级后跑一遍 dry-run 即可对比）。
 2. **`Server.GameDirectory` 语义**：本机是 `.../game`，Windows/Proton 可能不同 → 脚本用"探测 + 多候选 + `gameinfo.gi` 确认"，不硬编码。
 3. **SteamID64 手填错误**：**不做诊断**（D7）。脚本只做最小格式检查与"清单里是否真的有这个键"；写错的表现是"本地模式不生效"，由 `status` 的 mode 段落可看出。
 4. **直连仍依赖官网可用性**：`Api.cs` 有 50 容量/3.6 秒补给的令牌桶，离线时 GET 会重试 3 次（30 秒超时）→ 断网即无饰品，不做重试放大。
@@ -175,7 +178,7 @@ pwsh scripts/inventory-simulator.ps1 -Action local -SteamId <7656119...> [-Inven
 
 | 位置 | 改动 |
 | --- | --- |
-| `scripts/inventory-simulator.ps1` | 新增（已交付） |
+| `scripts/migrate-cosmetics-to-inventory.ps1` | 新增（已交付） |
 | `scripts/AGENTS.md` | 补一行说明（待办） |
 
 **后续若要把脚本能力搬进 Panel（非本期）**
@@ -199,7 +202,6 @@ pwsh scripts/inventory-simulator.ps1 -Action local -SteamId <7656119...> [-Inven
 - 本地模式写入后，插件在"清单合法但 SteamID 未命中"时的回退行为（代码上会走 HTTP，实机未验）。
 - Windows/Proton 下 `Server.GameDirectory` 的叶子是否为 `game`（本机 Linux 已确认）。
 - `update` 拉到的新版本是否仍兼容当前 `EquippedV5Response` 字段（只能升级后实机确认）。
-
 ---
 
 ## 11. 上游事实基线（InventorySimulator v3.7.0）
@@ -273,4 +275,4 @@ pwsh scripts/inventory-simulator.ps1 -Action local -SteamId <7656119...> [-Inven
 - `addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/AGENTS.md`（历史实现，已弃用）
 - `Panel/src/data/*`（饰品目录：`skinNames.json`、`stickerCatalog.json`、`gloveSkins.json`、`musicKits.json`、`charmCatalog.json`、`agentCatalog.json`、`cosmeticPlacements.json`）
 - 实机：`PlusMatchCoordinator` 日志中的 `game directory=.../Counter-Strike Global Offensive/game`（§4 路径结论的依据）
-- 脚本实测（2026-10-27）：`-Action status` 正确识别 `.../game/csgo` 与 remote 模式；`-Action install -DryRun` 解析出 83,624 B 资产与 digest；三个负例（空清单/缺 SteamID/缺参数）均按预期报错
+- 脚本实测（2026-10-27）：用合成导出包（schema 2，含 CT 刀/手套/AK + 两张贴纸 + 一个挂件 + T 刀 + 音乐盒）跑通；输出经 `ConvertFrom-Json` 回读校验（`keychains` 为数组、`uid` 连续唯一）；两个负例（错误 kind、SteamID 非 17 位）均拒绝
