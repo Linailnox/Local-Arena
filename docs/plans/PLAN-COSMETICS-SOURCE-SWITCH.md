@@ -1,6 +1,6 @@
 # 计划：饰品插件（InventorySimulator）直连/本地双模式 + Panel 下载更新服务
 
-状态：**计划稿，未实施**。决策来源：用户 2026-10-27 口头拍板（见 §2）。事实基线取证于 2026-10-27，含本机实机验证。配套文档：`docs/COSMETICS-PROVIDER-EVALUATION.md`（可行性评估）、`docs/PLAYER-COSMETICS.md`（现有饰品语义）。
+状态：**计划稿，未实施**。决策来源：用户 2026-10-27 口头拍板（见 §2）。事实基线取证于 2026-10-27，含本机实机验证。配套文档：`docs/PLAYER-COSMETICS.md`（现有饰品语义）。原可行性评估 `docs/COSMETICS-PROVIDER-EVALUATION.md` 的有用内容已并入 §11–§14，该文件已删除。
 
 ---
 
@@ -140,6 +140,12 @@ P0 今天可做且零代码；P1–P4 每阶段独立提交。
 3. **SteamID64 手填错误**：17 位、以 `7656119` 开头、校验位无法验证 → 写入后做"是否等于当前登录账号"的软校验（可用 Steam Web API 或本地 `loginusers.vdf` 只读比对，仅提示不阻断）。
 4. **直连模式仍依赖官网可用性**：`Api.cs` 有 50 容量/3.6 秒补给的本地令牌桶，且离线时 GET 会重试 3 次（30 秒超时）→ UI 需明确"断网 = 无饰品"，不做自动重试放大。
 5. **`-insecure` 边界**：文案不得暗示"直连官网 = 安全对局"。
+6. **功能回退：纪念品（Souvenir）**：上游 `InventoryItem` 无该字段，PKC 的 `souvenir_enabled` 无处落地 → 要么放弃，要么给上游提 PR/本地补丁（后者与 D3 的"不 fork"取向冲突）。
+7. **探员语义差异**：PKC 存模型路径白名单，上游要探员 defindex → P2 需 model-path → defindex 映射表，并定义"目录里没有该探员"的降级行为。
+8. **签名面更大**：上游 gamedata 有 26 条记录（约 20 个函数签名 + 6 个结构体偏移），跨 `server` 与 `engine2` 两个库，比 PKC 的单一 `SetAttrByName` 宽得多；好处是走 CSS 标准 gamedata 机制、可热修，且 v3.7.0 与 10-15 更新同日发布，维护响应有证据。
+9. **单维护者 + 无测试**：上游无任何测试工程，质量靠作者与 CI 构建 → 依赖"钉版 sha256 + 安装后自检"兜底，不直接把上游 zip 透传给用户。
+10. **CSS 版本差**：本仓 1.0.371 vs 上游编译用 1.0.375 → P3 需在安装前校验 CSS 版本，不匹配时给可读提示而不是运行期崩。
+11. **许可**：MIT 与本仓 AGPLv3 兼容，分发需保留上游版权声明与许可文本（`License.txt`）。
 
 ---
 
@@ -167,3 +173,76 @@ P0 今天可做且零代码；P1–P4 每阶段独立提交。
 - 直连模式在**真实对局**中的稳定性（用户已确认能拉到数据，但长对局/换图/重连的表现未记录）。
 - 本地模式写入后，插件在"清单合法但 SteamID 未命中"时的回退行为（代码上会走 HTTP，实机未验）。
 - Windows/Proton 下 `Server.GameDirectory` 的叶子是否为 `game`（本机 Linux 已确认）。
+
+---
+
+## 11. 上游事实基线（InventorySimulator v3.7.0）
+
+| 维度 | 事实 |
+| --- | --- |
+| 许可 / 活跃度 | MIT（`License.txt`，"(c) 2024 - present Ian Lucas"）；C#；130 stars / 28 forks / 0 open issues；`pushed_at` 2026-10-15T17:01:20Z；v3.7.0 与 CS2 10-15 更新同日发布 |
+| 发布资产 | `InventorySimulator-v3.7.0.zip`，83,624 B，`sha256:a19705a7825ca68379cd09e2b25afdc2364d6947db3f3121311954224f573933` |
+| 目标框架 | `net10.0`；`CounterStrikeSharp.API 1.0.375`（本仓现用 1.0.371） |
+| 包内布局 | `addons/counterstrikesharp/plugins/InventorySimulator/{InventorySimulator.dll,.deps.json,.pdb,lang/{en,zh-Hans,pt-BR}.json}` + `addons/counterstrikesharp/gamedata/inventory-simulator.json` |
+| 应用机制 | **不逐武器写属性**：注入式 inventory —— Hook `Natives.CCSPlayerInventory::GetItemInLoadout`（Post）+ 改 `CCSPlayerController.InventoryServices`，配合 `VirtualFunctions.GiveNamedItemFunc`（Pre）与 `OnEntityCreated/Spawned/Deleted` 处理实体侧，最后 `SendInventoryUpdateEvent()` 推送 |
+| 触发点 | `player_connect`、`player_connect_full`、`player_spawn`（Post）、`player_death`（StatTrak）、`round_mvp`（音乐盒 StatTrak）、`player_disconnect` |
+| 本地清单 | `{"<steamid64>": EquippedV5Response}`，查找路径见 §4 |
+| 远程清单 | `GET {invsim_url}/api/equipped/v5/{steamid}.json`，默认 `https://inventory.cstrike.app`，30 s 超时 × 3 次重试 |
+| 额外能力 | 涂鸦喷漆（`!spray`）、挂件、宠物、武器购买菜单 loadout、`!ws` 热刷新、Steam 登录（默认关闭） |
+| 测试 | **无任何测试工程**；质量依赖作者与 `.github/workflows/ci.yml` 构建 |
+
+---
+
+## 12. 契约映射（PKC schema 5 → `EquippedV5Response`）
+
+本地模式（P2）生成 `inventories.json` 时按下表转换；直连模式不涉及。
+
+| PKC 字段 | 上游字段 | 结论 |
+| --- | --- | --- |
+| `loadouts.<ct\|t>.knife_presets[defindex]`（paint/seed/wear/name_tag/stattrak_*/stickers[]） | `knives: {team: InventoryItem}`（`def/paint/seed/wear/nametag/stattrak/stickers[]`） | 可直接映射 |
+| `loadouts.<ct\|t>.glove` | `gloves: {team: InventoryItem}` | 可直接映射 |
+| 枪械预设 + `shared_weapon_links` | `ctWeapons / tWeapons: {defindex: InventoryItem}` | 可直接映射（Panel 先解析 shared links） |
+| 贴纸（`id/schema/offset x/offset y/wear/rotation`） | `stickers[]: {def, schema, slot, x, y, wear, rotation}` | 一一对应 |
+| 挂件（Panel 只存 `placement_id`） | `keychains[]: {def, seed, slot, sticker, x, y, z}` | 兼容：Panel 先把 placement 解析成 XYZ |
+| `music_kit_id` | `musicKit: {musicId}` | 可直接映射 |
+| `loadouts.<ct\|t>.agent_model`（模型路径） | `agents: {team: InventoryItem{def}}` | **语义不同**，需 model-path → defindex 映射 |
+| `souvenir_enabled` | 无字段 | **能力缺失** |
+| `apply_to_human_players` | 无（按 SteamID） | 由 D1 已决定为单机语义 |
+
+上游 `InventoryItem` 额外提供 `style`（Doppler 相位）、`tint`、`charges`、`upgradeLevel`、`uid`、`hash`、`petId` —— 对 Panel UI 是纯增量。
+
+---
+
+## 13. 能力对账
+
+| 能力 | PKC | InventorySimulator | 备注 |
+| --- | --- | --- | --- |
+| 刀 / 手套 / 枪皮 / 磨损 / 种子 | 有 | 有 | |
+| 贴纸（槽/偏移/磨损/旋转） | 有 | 有 | 契约相同 |
+| 挂件（含 XYZ / seed） | 有 | 有 | Panel 需先解析 placement |
+| 名称标签 | 有 | 有 | |
+| StatTrak | 有（写初值/计数） | 有（原生计数 + 可选上报） | 上报默认开启，见 §8.3 |
+| 纪念品（Souvenir） | 有 | **无** | 功能回退 |
+| 探员 | 有（模型路径白名单） | 有（探员定义） | 语义不同 |
+| 音乐盒 | 有（MVP 时应用） | 有（原生 music kit） | 上游更原生 |
+| 武器购买菜单 loadout | 无 | 有（`invsim_loadout_enabled`） | 上游增量 |
+| 涂鸦喷漆 / 宠物 | 无 | 有 | 上游增量 |
+| 真人/机器人隔离 | 真人专属 | 真人专属（所有 handler 均 `!IsBot`） | `BotRandomizer` 不受影响 |
+| 在线模式门控 | Panel 关闭并复原 | 同样需 Panel 管 | 不因替换而放宽 |
+
+---
+
+## 14. 取证索引
+
+**上游（`ianlucas/cs2-css-inventory-simulator@main`，v3.7.0）**
+
+- 元数据：`GET /repos/...` → MIT、C#、130 stars、`pushed_at 2026-10-15T17:01:20Z`
+- 已读源码：`InventorySimulator.cs`（钩子注册）、`InventorySimulator.GameEvents.cs`、`Services/Api.cs`（`FetchEquippedAsync`、`CanSendPublicApiRequest`、令牌桶）、`Services/ConVars.cs`（全部 convar 与默认值）、`Services/Inventories.cs`（加载与候选路径）、`Models/CCSPlayerControllerState.cs`（`Inventory = Inventories.Get(steamId)` 初值）、`Models/EquippedV5Response.cs`、`Models/InventoryItem.cs`、`Models/StickerItem.cs`、`Models/KeychainItem.cs`、`Extensions/CCSPlayerControllerExtensions.cs`（`HandleConnect`/`RefreshInventory`/`FetchInventory`）、`InventorySimulator.csproj`、`License.txt`、`Readme.txt`、`gamedata/inventory-simulator.json`（26 条记录）
+- 实机产物：`InventorySimulator-v3.7.0.zip` 解包布局已核对（见 §11）
+
+**本仓**
+
+- `docs/PLAYER-COSMETICS.md`（现有饰品语义）、`docs/Local-Arena-v1.4.3.2-richer-cosmetics-compatibility.md`（Skin Forge 结论）
+- `addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/AGENTS.md` 与其 `player_knife_presets.json`
+- `Panel/src-tauri/src/{app_storage.rs,installer.rs}`、`Panel/src/data/*`
+- 实机：`PlusMatchCoordinator` 日志中的 `game directory=.../Counter-Strike Global Offensive/game`（§4 路径结论的依据）
