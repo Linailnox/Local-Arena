@@ -20,9 +20,9 @@ const SUPERSEDED_PAYLOAD_PATHS: &[(&str, &str)] = &[
 ];
 
 const PLUS_MARKERS: &[&str] = &[
-    "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/PlayerKnifeCustomizer.dll",
-    "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/player_knife_presets.json",
-    "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/player_gun_presets.json",
+    "addons/counterstrikesharp/plugins/InventorySimulator/InventorySimulator.dll",
+    "addons/counterstrikesharp/gamedata/inventory-simulator.json",
+    "addons/counterstrikesharp/configs/plugins/InventorySimulator/inventories.json",
 ];
 
 const UPSTREAM_MARKERS: &[&str] = &[
@@ -54,7 +54,7 @@ const SUITE_OWNED_ROOTS: &[&str] = &[
     "addons/counterstrikesharp/plugins/BotRandomizer",
     "addons/counterstrikesharp/plugins/BotState",
     "addons/counterstrikesharp/plugins/NadeSystem",
-    "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer",
+    "addons/counterstrikesharp/plugins/InventorySimulator",
     "addons/counterstrikesharp/plugins/RayTraceImpl",
     "addons/counterstrikesharp/plugins/RoundDamageRecap",
     "addons/counterstrikesharp/plugins/TeamLineupInjector",
@@ -1257,7 +1257,7 @@ pub fn install(
 }
 
 fn preserve_cosmetics(state_root: &Path, target: &Path, timestamp: u64) -> Result<Option<PathBuf>> {
-    let source = target.join("addons/counterstrikesharp/plugins/PlayerKnifeCustomizer");
+    let source = target.join("addons/counterstrikesharp/plugins/InventorySimulator");
     let files = ["player_knife_presets.json", "player_gun_presets.json"];
     if !files.iter().any(|name| source.join(name).is_file()) {
         return Ok(None);
@@ -1667,17 +1667,14 @@ mod tests {
 
     fn cosmetics_fixture(payload: &Path, target: &Path) {
         fixture(payload, target);
-        let directory = payload.join("addons/counterstrikesharp/plugins/PlayerKnifeCustomizer");
+        let directory = payload.join("addons/counterstrikesharp/configs/plugins/InventorySimulator");
         fs::create_dir_all(&directory).unwrap();
         let mut manifest = read_manifest_document(payload).unwrap();
-        for (name, bytes) in [
-            ("player_knife_presets.json", b"packaged-knives".as_slice()),
-            ("player_gun_presets.json", b"packaged-guns".as_slice()),
-        ] {
+        for (name, bytes) in [("inventories.json", b"packaged-inventory".as_slice())] {
             let source = directory.join(name);
             fs::write(&source, bytes).unwrap();
             manifest.entries.push(PayloadEntry {
-                path: format!("addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/{name}"),
+                path: format!("addons/counterstrikesharp/configs/plugins/InventorySimulator/{name}"),
                 size: bytes.len() as u64,
                 sha256: sha256(&source).unwrap(),
                 component: "player-cosmetics".to_string(),
@@ -1704,7 +1701,7 @@ mod tests {
         cfg.sha256 = sha256(&target.join("cfg/test.cfg")).unwrap();
         write_json_atomic(&target.join(MANIFEST_FILE), &manifest).unwrap();
         let gun_presets = target.join(
-            "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/player_gun_presets.json",
+            "addons/counterstrikesharp/configs/plugins/InventorySimulator/inventories.json",
         );
         fs::write(&gun_presets, b"player-modified-guns").unwrap();
 
@@ -1910,7 +1907,7 @@ mod tests {
         let state = base.join("state");
         cosmetics_fixture(&payload, &target);
         install(&payload, &state, &target, false).unwrap();
-        let cosmetics = target.join("addons/counterstrikesharp/plugins/PlayerKnifeCustomizer");
+        let cosmetics = target.join("addons/counterstrikesharp/plugins/InventorySimulator");
         fs::write(
             cosmetics.join("player_knife_presets.json"),
             b"player-knives",
@@ -1970,11 +1967,9 @@ mod tests {
         cosmetics_fixture(&payload, &target);
         install(&payload, &state, &target, false).unwrap();
 
-        let directory = target.join("addons/counterstrikesharp/plugins/PlayerKnifeCustomizer");
-        let knife = directory.join("player_knife_presets.json");
-        let guns = directory.join("player_gun_presets.json");
-        fs::write(&knife, b"player-knives").unwrap();
-        fs::write(&guns, b"player-guns").unwrap();
+        let directory = target.join("addons/counterstrikesharp/configs/plugins/InventorySimulator");
+        let inventory = directory.join("inventories.json");
+        fs::write(&inventory, b"player-inventory").unwrap();
 
         let inspection = inspect(&payload, &state, &target).unwrap();
         assert!(inspection.missing.is_empty());
@@ -1986,8 +1981,7 @@ mod tests {
                 .installed_files,
             0
         );
-        assert_eq!(fs::read(&knife).unwrap(), b"player-knives");
-        assert_eq!(fs::read(&guns).unwrap(), b"player-guns");
+        assert_eq!(fs::read(&inventory).unwrap(), b"player-inventory");
         fs::remove_dir_all(base).unwrap();
     }
 
@@ -1998,7 +1992,7 @@ mod tests {
         let target = base.join("target");
         let state = base.join("state");
         cosmetics_fixture(&payload, &target);
-        let directory = target.join("addons/counterstrikesharp/plugins/PlayerKnifeCustomizer");
+        let directory = target.join("addons/counterstrikesharp/plugins/InventorySimulator");
         fs::create_dir_all(&directory).unwrap();
         let knife = directory.join("player_knife_presets.json");
         let guns = directory.join("player_gun_presets.json");
@@ -2024,14 +2018,14 @@ mod tests {
         install(&payload, &state, &target, false).unwrap();
 
         let relative = safe_relative(
-            "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/player_knife_presets.json",
+            "addons/counterstrikesharp/configs/plugins/InventorySimulator/inventories.json",
         )
         .unwrap();
         let destination = target.join(&relative);
         fs::create_dir_all(state.join("presets/current")).unwrap();
         fs::write(
-            state.join("presets/current/player_knife_presets.json"),
-            b"mirrored-player-knives",
+            state.join("presets/current/inventories.json"),
+            b"mirrored-inventory",
         )
         .unwrap();
         fs::remove_file(&destination).unwrap();
@@ -2047,7 +2041,7 @@ mod tests {
                 .installed_files,
             1
         );
-        assert_eq!(fs::read(&destination).unwrap(), b"mirrored-player-knives");
+        assert_eq!(fs::read(&destination).unwrap(), b"mirrored-inventory");
         fs::remove_dir_all(base).unwrap();
     }
 

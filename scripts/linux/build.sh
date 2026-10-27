@@ -112,16 +112,13 @@ run_dotnet() {
   need "$DOTNET_BIN" || return 1
   local proj
   for proj in \
-    addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/PlayerKnifeCustomizer.csproj \
     addons/counterstrikesharp/plugins/PlusMatchCoordinator/PlusMatchCoordinator.csproj \
     addons/counterstrikesharp/plugins/TeamLineupInjector/TeamLineupInjector.csproj \
-    addons/counterstrikesharp/plugins/OfflineMatchTelemetry/OfflineMatchTelemetry.csproj \
-    addons/counterstrikesharp/plugins/PlayerKnifeCustomizer.Tests/PlayerKnifeCustomizer.Tests.csproj
+    addons/counterstrikesharp/plugins/OfflineMatchTelemetry/OfflineMatchTelemetry.csproj
   do
     "$DOTNET_BIN" build -c Release "$proj" || return 1
   done
   "$DOTNET_BIN" run --project addons/counterstrikesharp/shared/MatchCore.Tests -c Release || return 1
-  "$DOTNET_BIN" run --project addons/counterstrikesharp/plugins/PlayerKnifeCustomizer.Tests/PlayerKnifeCustomizer.Tests.csproj -c Release || return 1
 }
 
 run_cargo() {

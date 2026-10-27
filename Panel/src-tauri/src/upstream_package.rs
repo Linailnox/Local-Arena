@@ -1548,7 +1548,7 @@ mod tests {
     }
 
     fn build_la_payload(dir: &Path) -> installer::PayloadManifest {
-        let knife = dir.join("addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/PlayerKnifeCustomizer.dll");
+        let knife = dir.join("addons/counterstrikesharp/plugins/InventorySimulator/InventorySimulator.dll");
         fs::create_dir_all(knife.parent().unwrap()).unwrap();
         fs::write(&knife, b"la-plugin").unwrap();
         let cfg = dir.join("cfg/my_bot_normal_config.cfg");
@@ -1559,9 +1559,9 @@ mod tests {
             package_version: "1.4.3.3".into(),
             entries: vec![
                 payload_entry(
-                    "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/PlayerKnifeCustomizer.dll",
+                    "addons/counterstrikesharp/plugins/InventorySimulator/InventorySimulator.dll",
                     &knife,
-                    "PlayerKnifeCustomizer",
+                    "InventorySimulator",
                     "plus",
                     "restore",
                 ),

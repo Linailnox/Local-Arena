@@ -181,9 +181,6 @@ $requiredSources = @(
     "scripts/generate-sticker-catalog.mjs",
     "scripts/generate-player-cosmetic-placements.mjs",
     "scripts/test-sticker-editor.mjs",
-    "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/PlayerKnifeCustomizer.cs",
-    "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/sticker_weapon_ids.json",
-    "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/player_cosmetic_catalog.json",
     "addons/BotHider/csharp/BotHiderImpl/BotHiderImplPlugin.cs",
     "addons/counterstrikesharp/plugins/TeamLineupInjector/TeamLineupInjector.cs",
     "addons/counterstrikesharp/plugins/TeamLineupInjector/TeamLineupInjector.csproj",
@@ -192,52 +189,6 @@ $requiredSources = @(
 )
 foreach ($relative in $requiredSources) {
     Assert-File (Join-Path $repo $relative) $relative
-}
-
-$playerCosmetics = Get-Content -LiteralPath (Join-Path $repo "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/PlayerKnifeCustomizer.cs") -Raw
-if ($playerCosmetics -notmatch 'IsBot: false, IsHLTV: false' -or
-    $playerCosmetics -notmatch 'DecorationReleaseEnabled = true' -or
-    $playerCosmetics -notmatch 'CharmAttributePlanner' -or
-    -not $playerCosmetics.Contains('CosmeticApplyPhase.Agent') -or
-    -not $playerCosmetics.Contains('pawn.SetModel(model)') -or
-    $playerCosmetics -notmatch 'player_cosmetic_catalog.json') {
-    Add-Failure "Player cosmetics must remain human-only with catalog-validated sticker, charm, and agent planning."
-}
-$giveHookStart = $playerCosmetics.IndexOf("private HookResult OnGiveNamedItemPost", [StringComparison]::Ordinal)
-$nextMethodStart = $playerCosmetics.IndexOf("private static CCSPlayerController? GetPlayerFromItemServices", [StringComparison]::Ordinal)
-if ($giveHookStart -lt 0 -or $nextMethodStart -le $giveHookStart) {
-    Add-Failure "PlayerCosmetics purchased-weapon lifecycle guard is missing."
-}
-else {
-    $giveHook = $playerCosmetics.Substring($giveHookStart, $nextMethodStart - $giveHookStart)
-    if ($giveHook -notmatch "_applyTracker\.Begin\(playerHandle, CosmeticApplyPhase\.Guns\)" -or
-        $giveHook -notmatch "ScheduleApplyCallbacks\(playerHandle, generation\)" -or
-        $giveHook -match "ApplyPreset\(" -or
-        $giveHook -match "_setAttrByName.*Invoke") {
-        Add-Failure "PlayerCosmetics GiveNamedItem hook must defer native writes into the bounded generation pipeline."
-    }
-}
-if ($playerCosmetics -notmatch "Server\.NextFrame\(\(\) => RunApplyPipeline\(playerHandle, generation, false\)\)" -or
-    $playerCosmetics -notmatch "RetryDelays = \[0\.10f, 0\.25f, 0\.50f, 0\.90f\]" -or
-    $playerCosmetics -notmatch "finalAttempt = index == ApplyPipelineContext\.RetryDelays\.Length - 1" -or
-    $playerCosmetics -notmatch "player\.PawnIsAlive" -or
-    $playerCosmetics -notmatch "TryBindContext\(playerHandle, generation, readyPawn\.Handle, \(int\)readyTeam\)") {
-    Add-Failure "PlayerCosmetics generation pipeline no longer has bounded retries and Pawn/team context validation."
-}
-if ($playerCosmetics -notmatch "private static bool HasReadyAttributeLists\(CEconItemView item\)" -or
-    ([regex]::Matches($playerCosmetics, "HasReadyAttributeLists\(item\)").Count -lt 3)) {
-    Add-Failure "PlayerCosmetics native attribute handles are not validated at every write entry point."
-}
-if ($playerCosmetics -notmatch '"sticker slot \{sticker\.Slot\}"' -or
-    $playerCosmetics -notmatch "BitConverter\.Int32BitsToSingle" -or
-    $playerCosmetics -notmatch "TryMarkReequip\(player\.Handle, generation\)" -or
-    ([regex]::Matches($playerCosmetics, 'ExecuteClientCommand\("lastinv"\)').Count -ne 2)) {
-    Add-Failure "PlayerCosmetics sticker attributes or single-generation re-equip fallback are incomplete."
-}
-if ($playerCosmetics -match "RegisterListener<Listeners\.OnEntitySpawned>" -or
-    $playerCosmetics -match "TryApplyDroppedKnife" -or
-    $playerCosmetics -match "Server\.NextWorldUpdate") {
-    Add-Failure "PlayerCosmetics must not retain raw entity pointers across world updates for dropped knives."
 }
 
 $jsonFiles = @(
@@ -252,26 +203,13 @@ $jsonFiles = @(
     "Panel/src/data/stickerWeaponIds.json",
     "Panel/src/data/cosmeticPlacements.json",
     "Panel/src/data/charmCatalog.json",
-    "Panel/src/data/agentCatalog.json",
-    "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/sticker_ids.json",
-    "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/sticker_weapon_ids.json",
-    "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/player_cosmetic_catalog.json",
-    "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/player_gun_presets.json",
-    "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/player_knife_presets.json",
-    "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/skins_en.json",
-    "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/weapon_skins.json"
+    "Panel/src/data/agentCatalog.json"
 )
 $counts = @{}
 foreach ($relative in $jsonFiles) {
     $counts[$relative] = Get-JsonCount $relative
 }
 
-$catalogA = Join-Path $repo "Panel/src/data/weaponSkins.json"
-$catalogB = Join-Path $repo "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/weapon_skins.json"
-if ((Get-FileHash -LiteralPath $catalogA -Algorithm SHA256).Hash -ne
-    (Get-FileHash -LiteralPath $catalogB -Algorithm SHA256).Hash) {
-    Add-Failure "Panel and plugin weapon catalogs are not identical."
-}
 
 $panelApi = Get-Content -LiteralPath (Join-Path $repo "Panel/src/lib/api.ts") -Raw
 $panelPresets = Get-Content -LiteralPath (Join-Path $repo "Panel/src/panels/PresetsPanel.tsx") -Raw
@@ -286,23 +224,15 @@ $stickerSourcePath = Join-Path $repo "Panel/src/data/stickerCatalog.source.json"
 try {
     $stickerSource = Get-Content -LiteralPath $stickerSourcePath -Raw | ConvertFrom-Json
     $stickerPanel = Join-Path $repo "Panel/src/data/stickerCatalog.json"
-    $stickerPlugin = Join-Path $repo "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/sticker_ids.json"
     $stickerWeaponPanel = Join-Path $repo "Panel/src/data/stickerWeaponIds.json"
-    $stickerWeaponPlugin = Join-Path $repo "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/sticker_weapon_ids.json"
     $stickerGenerator = Get-Content -LiteralPath (Join-Path $repo "scripts/generate-sticker-catalog.mjs") -Raw
     $panelHash = (Get-FileHash -LiteralPath $stickerPanel -Algorithm SHA256).Hash.ToLowerInvariant()
-    $pluginHash = (Get-FileHash -LiteralPath $stickerPlugin -Algorithm SHA256).Hash.ToLowerInvariant()
     $weaponPanelHash = (Get-FileHash -LiteralPath $stickerWeaponPanel -Algorithm SHA256).Hash.ToLowerInvariant()
-    $weaponPluginHash = (Get-FileHash -LiteralPath $stickerWeaponPlugin -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($stickerSource.schema_version -ne 1 -or
         $stickerSource.outputs.count -ne $counts["Panel/src/data/stickerCatalog.json"] -or
-        $counts["Panel/src/data/stickerCatalog.json"] -ne $counts["addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/sticker_ids.json"] -or
         $panelHash -ne [string]$stickerSource.outputs.panel_sha256 -or
-        $pluginHash -ne [string]$stickerSource.outputs.plugin_ids_sha256 -or
         $counts["Panel/src/data/stickerWeaponIds.json"] -ne $stickerSource.capabilities.supported_weapon_count -or
-        $counts["Panel/src/data/stickerWeaponIds.json"] -ne $counts["addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/sticker_weapon_ids.json"] -or
         $weaponPanelHash -ne [string]$stickerSource.outputs.weapon_ids_sha256 -or
-        $weaponPluginHash -ne [string]$stickerSource.outputs.weapon_ids_sha256 -or
         $stickerGenerator -notmatch [regex]::Escape([string]$stickerSource.commit) -or
         $stickerGenerator -notmatch [regex]::Escape([string]$stickerSource.capabilities.commit)) {
         Add-Failure "Sticker catalog source commits, counts, capabilities, or deterministic hashes do not match generated outputs."
@@ -316,23 +246,16 @@ try {
     $panelPlacements = Get-Content -LiteralPath (Join-Path $repo "Panel/src/data/cosmeticPlacements.json") -Raw | ConvertFrom-Json
     $panelCharms = @(Get-Content -LiteralPath (Join-Path $repo "Panel/src/data/charmCatalog.json") -Raw | ConvertFrom-Json)
     $panelAgents = @(Get-Content -LiteralPath (Join-Path $repo "Panel/src/data/agentCatalog.json") -Raw | ConvertFrom-Json)
-    $pluginCosmetics = Get-Content -LiteralPath (Join-Path $repo "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/player_cosmetic_catalog.json") -Raw | ConvertFrom-Json
     $placementGenerator = Get-Content -LiteralPath (Join-Path $repo "scripts/generate-player-cosmetic-placements.mjs") -Raw
-    if ($pluginCosmetics.schema_version -ne 1 -or
+    if (
         $counts["Panel/src/data/cosmeticPlacements.json"] -ne 35 -or
         $panelCharms.Count -ne 81 -or
         @($panelAgents | Where-Object team -eq "ct").Count -ne 35 -or
         @($panelAgents | Where-Object team -eq "t").Count -ne 44 -or
-        @($pluginCosmetics.charm_ids).Count -ne $panelCharms.Count -or
-        @($pluginCosmetics.agent_models.ct).Count -ne 35 -or
-        @($pluginCosmetics.agent_models.t).Count -ne 44 -or
         @($panelCharms | Where-Object { -not [string]::IsNullOrWhiteSpace($_.image) }).Count -ne 78 -or
         @($panelAgents | Where-Object { -not [string]::IsNullOrWhiteSpace($_.image) }).Count -ne 63 -or
-        [string]::IsNullOrWhiteSpace($pluginCosmetics.inventory_images.commit) -or
-        @($pluginCosmetics.weapons.PSObject.Properties).Count -ne 35 -or
         $placementGenerator -notmatch "charmAnchors" -or
-        $placementGenerator -notmatch "source_sha256" -or
-        $placementGenerator -notmatch [regex]::Escape([string]$pluginCosmetics.inventory_images.commit)) {
+        $placementGenerator -notmatch "source_sha256") {
         Add-Failure "Player cosmetic placement, charm, or agent outputs have unexpected counts."
     }
 }
@@ -402,12 +325,6 @@ if ($trackedGenerated.Count -gt 0) {
 if ($PackageRoot) {
     $package = [IO.Path]::GetFullPath($PackageRoot)
     $requiredPackageFiles = @(
-        "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/PlayerKnifeCustomizer.dll",
-        "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/sticker_ids.json",
-        "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/sticker_weapon_ids.json",
-        "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/player_cosmetic_catalog.json",
-        "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/player_gun_presets.json",
-        "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/player_knife_presets.json",
         "addons/counterstrikesharp/plugins/PlusMatchCoordinator/PlusMatchCoordinator.dll",
         "addons/counterstrikesharp/plugins/PlusMatchCoordinator/MatchCore.dll",
         "addons/counterstrikesharp/plugins/PlusMatchCoordinator/match_catalog.json",
@@ -442,12 +359,6 @@ if ($PackageRoot) {
             "addons/BotHider/bin/linuxsteamrt64/BotHider.so",
             "addons/BotController/bin/linuxsteamrt64/BotController.so",
             "addons/BotVision/bin/linuxsteamrt64/BotVision.so",
-            "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/PlayerKnifeCustomizer.dll",
-            "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/sticker_ids.json",
-            "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/sticker_weapon_ids.json",
-            "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/player_cosmetic_catalog.json",
-            "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/player_gun_presets.json",
-            "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/player_knife_presets.json",
             "addons/counterstrikesharp/plugins/PlusMatchCoordinator/PlusMatchCoordinator.dll",
             "addons/counterstrikesharp/plugins/PlusMatchCoordinator/MatchCore.dll",
             "addons/counterstrikesharp/plugins/PlusMatchCoordinator/match_catalog.json",
@@ -661,8 +572,6 @@ if ($PackageRoot) {
                 }
             }
             $expectedPreserveConfigs = @(
-                "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/player_knife_presets.json",
-                "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/player_gun_presets.json",
                 "cfg/my_bot_ffa_config.cfg",
                 "cfg/my_bot_normal_config.cfg"
             )
@@ -692,13 +601,6 @@ if ($PackageRoot) {
                     Add-Failure "OfflineMatchTelemetry payload is not Plus-owned: $relative"
                 }
             }
-            foreach ($relative in $manifestPaths.Keys | Where-Object {
-                $_ -like "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/*"
-            }) {
-                if ($manifestOwnership[$relative] -ne "plus") {
-                    Add-Failure "PlayerKnifeCustomizer payload is not Plus-owned: $relative"
-                }
-            }
         }
         catch {
             Add-Failure "Package payload manifest is invalid: $($_.Exception.Message)"
@@ -706,7 +608,6 @@ if ($PackageRoot) {
     }
 
     $builtPlugins = @(
-        @{ Name = "PlayerKnifeCustomizer"; Framework = "net10.0" },
         @{ Name = "PlusMatchCoordinator"; Framework = "net10.0" },
         @{ Name = "TeamLineupInjector"; Framework = "net10.0" }
     )

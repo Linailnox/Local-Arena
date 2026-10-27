@@ -12,6 +12,8 @@ mod app_storage;
 mod app_version;
 mod appearance;
 mod atomic_fs;
+mod cosmetics_inventory;
+mod cosmetics_source;
 mod cs2ss_bridge;
 mod diagnostics;
 mod install_checks;
@@ -141,6 +143,10 @@ struct AppConfig {
     nades_infinite_ammo: bool,
     #[serde(default)]
     timescale_toggle_enabled: bool,
+    #[serde(default)]
+    cosmetics_source: Option<String>,
+    #[serde(default)]
+    cosmetics_steam_id: Option<String>,
 }
 
 impl Default for AppConfig {
@@ -171,6 +177,8 @@ impl Default for AppConfig {
             team_lineup_duel: false,
             nades_infinite_ammo: false,
             timescale_toggle_enabled: false,
+            cosmetics_source: None,
+            cosmetics_steam_id: None,
         }
     }
 }
@@ -1047,7 +1055,7 @@ fn validate_files_at(
         "cfg/my_bot_ffa_config.cfg",
         "addons/counterstrikesharp/plugins/BotAI/BotAI.dll",
         "addons/counterstrikesharp/plugins/BotRandomizer/BotRandomizer.dll",
-        "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/PlayerKnifeCustomizer.dll",
+        "addons/counterstrikesharp/plugins/InventorySimulator/InventorySimulator.dll",
         "addons/MetaMod/bin/win64/server.dll",
         "addons/counterstrikesharp/bin/win64/counterstrikesharp.dll",
     ];
@@ -1159,7 +1167,7 @@ fn mode_at(root: &Path, config: &AppConfig, running: bool) -> ModeInfo {
         && root.join("addons/metamod/counterstrikesharp.vdf").is_file()
         && root.join("overrides/botprofile.vpk").is_file();
     let preview_present = root
-        .join("addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/PlayerKnifeCustomizer.dll")
+        .join("addons/counterstrikesharp/plugins/InventorySimulator/InventorySimulator.dll")
         .is_file();
     let state = app_storage::root().ok();
     let current = fs::read(&gameinfo).ok().map(|bytes| {
@@ -2289,11 +2297,11 @@ fn set_drop_knives(
 }
 
 fn knife_config_path(root: &Path) -> PathBuf {
-    root.join("addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/player_knife_presets.json")
+    cosmetics_source::inventory_path(root)
 }
 
 fn gun_config_path(root: &Path) -> PathBuf {
-    root.join("addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/player_gun_presets.json")
+    cosmetics_source::secondary_inventory_path(root)
 }
 
 fn normalize_preset(preset: &mut KnifePreset) {
@@ -2594,44 +2602,26 @@ fn migrate_legacy_config(config: &mut KnifeCustomizerConfig) {
 
 fn read_knife_config(root: &Path) -> Result<KnifeCustomizerConfig> {
     let path = knife_config_path(root);
-    let mut needs_migration = false;
-    let mut config = if path.is_file() {
-        let text = fs::read_to_string(&path)?;
-        let mut value: serde_json::Value = serde_json::from_str(&text)?;
-        let source_schema = value
-            .get("schema_version")
-            .and_then(serde_json::Value::as_u64);
-        needs_migration = source_schema != Some(COSMETICS_SCHEMA_VERSION as u64);
-        needs_migration |= sanitize_knife_config_decorations(&mut value, source_schema);
-        serde_json::from_value(value)?
-    } else {
-        KnifeCustomizerConfig::default()
-    };
-    migrate_legacy_config(&mut config);
+    if !path.is_file() {
+        return Ok(KnifeCustomizerConfig::default());
+    }
 
-    let gun_path = gun_config_path(root);
-    if gun_path.is_file() {
-        let text = fs::read_to_string(&gun_path)?;
-        let mut value: serde_json::Value = serde_json::from_str(&text)?;
-        let gun_schema = value
-            .get("schema_version")
-            .and_then(serde_json::Value::as_u64);
-        needs_migration |= sanitize_team_gun_decorations(&mut value, gun_schema);
-        if matches!(gun_schema, Some(2) | Some(3) | Some(4) | Some(5)) {
-            let guns: TeamGunConfig = serde_json::from_value(value)?;
-            config.loadouts.ct.gun_presets = guns.ct;
-            config.loadouts.t.gun_presets = guns.t;
-            config.shared_weapon_links = guns.shared_weapon_links;
-            needs_migration |= gun_schema != Some(COSMETICS_SCHEMA_VERSION as u64);
-        } else {
-            apply_legacy_guns(&mut config, serde_json::from_value(value)?);
-            needs_migration = true;
-        }
-    }
+    let document = cosmetics_inventory::parse_document(&fs::read_to_string(&path)?)?;
+    let Some((_steam_id, inventory)) = cosmetics_inventory::first_entry(&document) else {
+        return Ok(KnifeCustomizerConfig::default());
+    };
+
+    let placements = serde_json::from_str::<serde_json::Value>(include_str!(
+        "../../src/data/cosmeticPlacements.json"
+    ))
+    .unwrap_or(serde_json::Value::Null);
+
+    let mut config = cosmetics_inventory::read_config(
+        inventory,
+        KnifeCustomizerConfig::default(),
+        &placements,
+    );
     ensure_shared_link_defaults(&mut config);
-    if needs_migration {
-        save_knife_config(root, &mut config)?;
-    }
     Ok(config)
 }
 
@@ -2712,19 +2702,44 @@ fn backup_legacy_file(path: &Path) -> Result<()> {
 }
 
 fn save_knife_config(root: &Path, config: &mut KnifeCustomizerConfig) -> Result<()> {
+    save_knife_config_for(root, config, None)
+}
+
+fn save_knife_config_for(
+    root: &Path,
+    config: &mut KnifeCustomizerConfig,
+    fallback_steam_id: Option<&str>,
+) -> Result<()> {
     normalize_knife_config(config)?;
-    let knife_path = knife_config_path(root);
-    let gun_path = gun_config_path(root);
-    backup_legacy_file(&knife_path)?;
-    backup_legacy_file(&gun_path)?;
-    write_json_atomic(&knife_path, config)?;
-    let guns = TeamGunConfig {
-        schema_version: COSMETICS_SCHEMA_VERSION,
-        ct: config.loadouts.ct.gun_presets.clone(),
-        t: config.loadouts.t.gun_presets.clone(),
-        shared_weapon_links: config.shared_weapon_links.clone(),
+    let path = knife_config_path(root);
+    backup_legacy_file(&path)?;
+
+    let placements = serde_json::from_str::<serde_json::Value>(include_str!(
+        "../../src/data/cosmeticPlacements.json"
+    ))
+    .unwrap_or(serde_json::Value::Null);
+
+    let existing = if path.is_file() {
+        cosmetics_inventory::parse_document(&fs::read_to_string(&path)?).ok()
+    } else {
+        None
     };
-    write_json_atomic(&gun_path, &guns)
+    let steam_id = existing
+        .as_ref()
+        .and_then(cosmetics_inventory::first_entry)
+        .map(|(steam_id, _)| steam_id)
+        .or_else(|| fallback_steam_id.map(str::to_string));
+
+    let Some(steam_id) = steam_id else {
+        return Err(AppError::invalid(
+            "No SteamID64 recorded yet: set it in the cosmetics source card first",
+        ));
+    };
+
+    let mut uid = 900_000u32;
+    let inventory = cosmetics_inventory::write_config(config, &placements, &mut uid);
+    let document = cosmetics_inventory::document_for(&steam_id, inventory);
+    write_json_atomic(&path, &document)
 }
 
 fn sticker_configuration(config: &KnifeCustomizerConfig) -> BTreeMap<String, Vec<StickerPreset>> {
@@ -2886,6 +2901,67 @@ fn import_cosmetics_preset(csgo: String, source: String) -> Result<CosmeticsPres
     })
 }
 
+#[tauri::command]
+fn get_cosmetics_source(app: AppHandle, csgo: String) -> Result<cosmetics_source::CosmeticsSourceState> {
+    let root = csgo_path(&csgo)?;
+    let selected = read_config(&app)?
+        .cosmetics_source
+        .as_deref()
+        .and_then(cosmetics_source::CosmeticsSource::parse);
+    Ok(cosmetics_source::inspect(&root, selected))
+}
+
+#[tauri::command]
+fn set_cosmetics_source(
+    app: AppHandle,
+    csgo: String,
+    source: String,
+) -> Result<cosmetics_source::CosmeticsSourceState> {
+    let root = csgo_path(&csgo)?;
+    let requested = cosmetics_source::CosmeticsSource::parse(&source)
+        .ok_or_else(|| AppError::invalid("Cosmetics source must be 'remote' or 'local'"))?;
+    match requested {
+        cosmetics_source::CosmeticsSource::Remote => {
+            cosmetics_source::switch_to_remote(&root)?;
+        }
+        cosmetics_source::CosmeticsSource::Local => {
+            if !cosmetics_source::inspect(&root, None)
+                .files
+                .iter()
+                .any(|file| file.valid_json)
+            {
+                return Err(AppError::invalid(
+                    "Run scripts/migrate-cosmetics-to-inventory.ps1 first: no valid inventories.json exists",
+                ));
+            }
+        }
+    }
+
+    let mut config = read_config(&app)?;
+    config.cosmetics_source = Some(requested.as_str().into());
+    write_config(&app, &config)?;
+    Ok(cosmetics_source::inspect(&root, Some(requested)))
+}
+
+#[tauri::command]
+fn import_cosmetics_inventory(
+    app: AppHandle,
+    csgo: String,
+    steam_id: String,
+    document: String,
+) -> Result<cosmetics_source::CosmeticsSourceState> {
+    let root = csgo_path(&csgo)?;
+    cosmetics_source::write_local(&root, &steam_id, &document)?;
+
+    let mut config = read_config(&app)?;
+    config.cosmetics_source = Some(cosmetics_source::CosmeticsSource::Local.as_str().into());
+    write_config(&app, &config)?;
+    Ok(cosmetics_source::inspect(
+        &root,
+        Some(cosmetics_source::CosmeticsSource::Local),
+    ))
+}
+
 fn set_knife_customizer_enabled(root: &Path, enabled: bool) -> Result<Option<bool>> {
     let path = knife_config_path(root);
     if path.is_file() {
@@ -2957,7 +3033,7 @@ fn get_knife_customizer(csgo: String) -> Result<KnifeCustomizerState> {
         app_storage::mirror_cosmetics(&root)?;
     }
     Ok(KnifeCustomizerState {
-        plugin_present: path.with_file_name("PlayerKnifeCustomizer.dll").is_file(),
+        plugin_present: path.with_file_name("InventorySimulator.dll").is_file(),
         config_present: present,
         cs2_running: cs2_running(),
         config,
@@ -2966,6 +3042,7 @@ fn get_knife_customizer(csgo: String) -> Result<KnifeCustomizerState> {
 
 #[tauri::command]
 fn save_knife_customizer(
+    app: AppHandle,
     csgo: String,
     mut config: KnifeCustomizerConfig,
 ) -> Result<KnifeCustomizerState> {
@@ -2978,7 +3055,8 @@ fn save_knife_customizer(
             ));
         }
     }
-    save_knife_config(&root, &mut config)?;
+    let steam_id = read_config(&app)?.cosmetics_steam_id;
+    save_knife_config_for(&root, &mut config, steam_id.as_deref())?;
     app_storage::mirror_cosmetics(&root)?;
     get_knife_customizer(csgo)
 }
@@ -3701,7 +3779,7 @@ mod tests {
             },
         );
 
-        save_knife_config(&root, &mut config).unwrap();
+        save_knife_config_for(&root, &mut config, Some("76561199145436841")).unwrap();
 
         let saved = read_knife_config(&root).unwrap();
         let preset = &saved.loadouts.ct.knife_presets["515"];
@@ -3811,9 +3889,8 @@ mod tests {
         let root = test_root();
         let mut original = KnifeCustomizerConfig::default();
         original.enabled = false;
-        save_knife_config(&root, &mut original).unwrap();
-        let original_knife = fs::read(knife_config_path(&root)).unwrap();
-        let original_guns = fs::read(gun_config_path(&root)).unwrap();
+        save_knife_config_for(&root, &mut original, Some("76561199145436841")).unwrap();
+        let original_inventory = fs::read(knife_config_path(&root)).unwrap();
 
         let export = root.join("preset.json");
         fs::write(&export, b"stale").unwrap();
@@ -3831,17 +3908,9 @@ mod tests {
 
         assert!(read_knife_config(&root).unwrap().enabled);
         assert_eq!(
-            fs::read(backup.join("player_knife_presets.json")).unwrap(),
-            original_knife
+            fs::read(backup.join("inventories.json")).unwrap(),
+            original_inventory
         );
-        assert_eq!(
-            fs::read(backup.join("player_gun_presets.json")).unwrap(),
-            original_guns
-        );
-        assert!(fs::read_dir(knife_config_path(&root).parent().unwrap())
-            .unwrap()
-            .flatten()
-            .all(|entry| !entry.file_name().to_string_lossy().contains(".cs2bi-")));
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -3850,9 +3919,8 @@ mod tests {
         let root = test_root();
         let mut original = KnifeCustomizerConfig::default();
         original.enabled = false;
-        save_knife_config(&root, &mut original).unwrap();
-        let original_knife = fs::read(knife_config_path(&root)).unwrap();
-        let original_guns = fs::read(gun_config_path(&root)).unwrap();
+        save_knife_config_for(&root, &mut original, Some("76561199145436841")).unwrap();
+        let original_inventory = fs::read(knife_config_path(&root)).unwrap();
 
         let source = root.join("preset.json");
         let mut replacement = original;
@@ -3871,8 +3939,7 @@ mod tests {
         .unwrap_err();
 
         assert!(error.detail.contains("simulated mirror failure"));
-        assert_eq!(fs::read(knife_config_path(&root)).unwrap(), original_knife);
-        assert_eq!(fs::read(gun_config_path(&root)).unwrap(), original_guns);
+        assert_eq!(fs::read(knife_config_path(&root)).unwrap(), original_inventory);
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -3944,7 +4011,7 @@ mod tests {
                 charm: None,
             },
         );
-        save_knife_config(&root, &mut config).unwrap();
+        save_knife_config_for(&root, &mut config, Some("76561199145436841")).unwrap();
 
         let mut app_config = AppConfig::default();
         enter_online_safety(&root, &mut app_config).unwrap();
@@ -3966,7 +4033,7 @@ mod tests {
         let root = test_root();
         let mut config = KnifeCustomizerConfig::default();
         config.enabled = false;
-        save_knife_config(&root, &mut config).unwrap();
+        save_knife_config_for(&root, &mut config, Some("76561199145436841")).unwrap();
 
         let mut app_config = AppConfig::default();
         enter_preview_safety(&root, &mut app_config).unwrap();
@@ -4085,7 +4152,7 @@ mod tests {
         let root = test_root();
         let active_required = [
             "gameinfo.gi",
-            "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/PlayerKnifeCustomizer.dll",
+            "addons/counterstrikesharp/plugins/InventorySimulator/InventorySimulator.dll",
             "addons/MetaMod/bin/win64/server.dll",
             "addons/counterstrikesharp/bin/win64/counterstrikesharp.dll",
         ];
@@ -4161,93 +4228,20 @@ mod tests {
             },
         );
 
-        save_knife_config(&root, &mut config).unwrap();
+        save_knife_config_for(&root, &mut config, Some("76561199145436841")).unwrap();
         let saved = read_knife_config(&root).unwrap();
         assert_eq!(saved.music_kit_id, 36);
         let ak = &saved.loadouts.t.gun_presets["7"];
         assert_eq!(ak.paint, 661);
         assert_eq!(ak.seed, 321);
-        assert!(ak.souvenir_enabled);
+        // D8: the inventory document has no souvenir field, so the flag cannot round-trip.
+        assert!(!ak.souvenir_enabled);
         assert!(!ak.stattrak_enabled);
         fs::remove_dir_all(root).unwrap();
     }
 
-    #[test]
-    fn v2_configs_migrate_with_empty_stickers_and_versioned_backups() {
-        let root = test_root();
-        let knife_path = knife_config_path(&root);
-        let gun_path = gun_config_path(&root);
-        fs::create_dir_all(knife_path.parent().unwrap()).unwrap();
-        fs::write(&knife_path, r#"{
-            "schema_version":2,"enabled":true,"apply_to_human_players":true,"apply_on_pickup":true,
-            "music_kit_id":36,"loadouts":{"ct":{"default_knife_defindex":0,"knife_presets":{},"glove":{"enabled":false,"defindex":5030,"paint":10048,"seed":0,"wear":0.01},"gun_presets":{}},"t":{"default_knife_defindex":0,"knife_presets":{},"glove":{"enabled":false,"defindex":5030,"paint":10048,"seed":0,"wear":0.01},"gun_presets":{}}},
-            "shared_weapon_links":{}
-        }"#).unwrap();
-        fs::write(&gun_path, r#"{
-            "schema_version":2,"ct":{},"t":{"7":{"paint":661,"seed":123,"wear":0.08,"name_tag":"AK","stattrak_enabled":false,"stattrak_count":0,"souvenir_enabled":false}},"shared_weapon_links":{}
-        }"#).unwrap();
 
-        let config = read_knife_config(&root).unwrap();
 
-        assert_eq!(config.schema_version, COSMETICS_SCHEMA_VERSION);
-        assert!(!config.stickers_enabled);
-        assert_eq!(config.music_kit_id, 36);
-        assert_eq!(config.loadouts.t.gun_presets["7"].paint, 661);
-        assert!(config.loadouts.t.gun_presets["7"].stickers.is_empty());
-        assert!(versioned_backup_path(&knife_path, 2).is_file());
-        assert!(versioned_backup_path(&gun_path, 2).is_file());
-        assert!(fs::read_to_string(versioned_backup_path(&gun_path, 2)).unwrap().contains("\"schema_version\":2"));
-        fs::remove_dir_all(root).unwrap();
-    }
-
-    #[test]
-    fn v3_stickers_gain_weapon_schema_without_losing_the_base_skin() {
-        let root = test_root();
-        let knife_path = knife_config_path(&root);
-        let gun_path = gun_config_path(&root);
-        fs::create_dir_all(knife_path.parent().unwrap()).unwrap();
-        fs::write(&knife_path, r#"{
-            "schema_version":3,"enabled":true,"apply_to_human_players":true,"apply_on_pickup":true,
-            "music_kit_id":0,"stickers_enabled":true,"loadouts":{"ct":{"default_knife_defindex":0,"knife_presets":{},"glove":{"enabled":false,"defindex":5030,"paint":10048,"seed":0,"wear":0.01},"gun_presets":{}},"t":{"default_knife_defindex":0,"knife_presets":{},"glove":{"enabled":false,"defindex":5030,"paint":10048,"seed":0,"wear":0.01},"gun_presets":{}}},"shared_weapon_links":{}
-        }"#).unwrap();
-        fs::write(&gun_path, r#"{
-            "schema_version":3,"ct":{},"t":{"7":{"paint":661,"seed":321,"wear":0.08,"name_tag":"AK","stattrak_enabled":false,"stattrak_count":0,"souvenir_enabled":false,"stickers":[{"slot":3,"id":1,"wear":0,"scale":1,"rotation":0,"offset_x":0,"offset_y":0,"custom_position":false}]}},"shared_weapon_links":{}
-        }"#).unwrap();
-
-        let config = read_knife_config(&root).unwrap();
-
-        assert_eq!(config.schema_version, COSMETICS_SCHEMA_VERSION);
-        assert!(config.stickers_enabled);
-        assert!(!config.charms_enabled);
-        assert_eq!(config.loadouts.t.gun_presets["7"].paint, 661);
-        assert_eq!(config.loadouts.t.gun_presets["7"].stickers[0].schema, 3);
-        assert!(versioned_backup_path(&gun_path, 3).is_file());
-        fs::remove_dir_all(root).unwrap();
-    }
-
-    #[test]
-    fn malformed_sticker_fields_are_dropped_without_losing_base_skins() {
-        let root = test_root();
-        let knife_path = knife_config_path(&root);
-        let gun_path = gun_config_path(&root);
-        fs::create_dir_all(knife_path.parent().unwrap()).unwrap();
-        fs::write(&knife_path, r#"{
-            "schema_version":3,"enabled":true,"apply_to_human_players":true,"apply_on_pickup":true,"music_kit_id":0,"stickers_enabled":true,
-            "loadouts":{"ct":{"default_knife_defindex":515,"knife_presets":{"515":{"paint":568,"seed":0,"wear":0.01,"name_tag":"","stattrak_enabled":false,"stattrak_count":0,"stickers":[{"slot":0,"id":1,"wear":0,"scale":1,"rotation":0,"offset_x":0,"offset_y":0,"custom_position":false}]}},"glove":{"enabled":false,"defindex":5030,"paint":10048,"seed":0,"wear":0.01},"gun_presets":{}},"t":{"default_knife_defindex":0,"knife_presets":{},"glove":{"enabled":false,"defindex":5030,"paint":10048,"seed":0,"wear":0.01},"gun_presets":{}}},"shared_weapon_links":{}
-        }"#).unwrap();
-        fs::write(&gun_path, r#"{
-            "schema_version":3,"ct":{},"t":{"7":{"paint":661,"seed":321,"wear":0.08,"name_tag":"AK","stattrak_enabled":false,"stattrak_count":0,"souvenir_enabled":false,"stickers":[{"slot":0,"id":4294967295,"wear":0,"scale":1,"rotation":0,"offset_x":0,"offset_y":0,"custom_position":false}]}},"shared_weapon_links":{}
-        }"#).unwrap();
-
-        let config = read_knife_config(&root).unwrap();
-
-        assert_eq!(config.loadouts.ct.knife_presets["515"].paint, 568);
-        assert!(config.loadouts.ct.knife_presets["515"].stickers.is_empty());
-        assert_eq!(config.loadouts.t.gun_presets["7"].paint, 661);
-        assert_eq!(config.loadouts.t.gun_presets["7"].seed, 321);
-        assert!(config.loadouts.t.gun_presets["7"].stickers.is_empty());
-        fs::remove_dir_all(root).unwrap();
-    }
 
     #[test]
     fn sticker_validation_rejects_duplicates_unknown_ids_non_finite_values_and_knives() {
@@ -4388,45 +4382,6 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
 
-    #[test]
-    fn legacy_configs_migrate_by_weapon_side_and_are_backed_up_once() {
-        let root = test_root();
-        let knife_path = knife_config_path(&root);
-        let gun_path = gun_config_path(&root);
-        fs::create_dir_all(knife_path.parent().unwrap()).unwrap();
-        fs::write(&knife_path, r#"{
-            "enabled": true,
-            "apply_to_human_players": true,
-            "apply_on_pickup": true,
-            "default_knife_defindex": 515,
-            "presets": {"515":{"paint":568,"seed":0,"wear":0.01,"name_tag":"","stattrak_enabled":false,"stattrak_count":0}},
-            "glove":{"enabled":false,"defindex":5030,"paint":10048,"seed":0,"wear":0.01}
-        }"#).unwrap();
-        fs::write(&gun_path, r#"{
-            "7":{"paint":661,"seed":0,"wear":0.01,"name_tag":"","stattrak_enabled":false,"stattrak_count":0},
-            "9":{"paint":344,"seed":0,"wear":0.01,"name_tag":"","stattrak_enabled":false,"stattrak_count":0},
-            "16":{"paint":309,"seed":0,"wear":0.01,"name_tag":"","stattrak_enabled":false,"stattrak_count":0}
-        }"#).unwrap();
-
-        let mut config = read_knife_config(&root).unwrap();
-        assert_eq!(config.loadouts.ct.default_knife_defindex, 515);
-        assert_eq!(config.loadouts.t.default_knife_defindex, 515);
-        assert!(config.loadouts.t.gun_presets.contains_key("7"));
-        assert!(!config.loadouts.ct.gun_presets.contains_key("7"));
-        assert!(config.loadouts.ct.gun_presets.contains_key("16"));
-        assert!(!config.loadouts.t.gun_presets.contains_key("16"));
-        assert_eq!(
-            config.loadouts.ct.gun_presets["9"],
-            config.loadouts.t.gun_presets["9"]
-        );
-        assert_eq!(config.shared_weapon_links["9"], true);
-        assert!(legacy_backup_path(&knife_path).exists());
-        assert!(legacy_backup_path(&gun_path).exists());
-        let backup = fs::read(&legacy_backup_path(&knife_path)).unwrap();
-        save_knife_config(&root, &mut config).unwrap();
-        assert_eq!(fs::read(legacy_backup_path(&knife_path)).unwrap(), backup);
-        fs::remove_dir_all(root).unwrap();
-    }
 
     #[test]
     fn linked_shared_weapon_base_presets_must_match_but_decorations_may_differ() {
@@ -4513,7 +4468,8 @@ pub fn run() {
             reconcile_launch_options, launch_cs2, reconcile_core_json, get_bot_items, set_bot_item,
             get_presets, set_aim, set_nades, set_team_lineup, get_team_lineup, set_timescale_toggle, get_timescale_toggle, set_infinite_ammo, get_infinite_ammo, get_drop_knives, set_drop_knives,
             get_knife_customizer, save_knife_customizer, export_cosmetics_preset,
-            import_cosmetics_preset, get_runtime_snapshot, get_cs2_process,
+            import_cosmetics_preset, get_cosmetics_source, set_cosmetics_source,
+            import_cosmetics_inventory, get_runtime_snapshot, get_cs2_process,
             inspect_installation, get_install_plan, install_payload, repair_payload,
             restore_payload, restore_pristine_cs2, export_diagnostics, get_panel_memory, save_panel_memory,
             appearance::get_appearance, appearance::save_appearance,

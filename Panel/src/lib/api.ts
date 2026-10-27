@@ -299,6 +299,16 @@ export type KnifeCustomizerState = {
 export type CosmeticsPresetExportResult = { path: string; size_bytes: number };
 export type CosmeticsPresetImportResult = { state: KnifeCustomizerState; backup_path: string | null };
 
+export type CosmeticsSource = "remote" | "local";
+export type CosmeticsSourceFile = { path: string; bytes: number; valid_json: boolean };
+export type CosmeticsSourceState = {
+  effective: CosmeticsSource;
+  selected: CosmeticsSource | null;
+  plugin_installed: boolean;
+  files: CosmeticsSourceFile[];
+  mismatch: boolean;
+};
+
 export type GameMode = "online" | "preview" | "bots";
 
 export type ModeInfo = {
@@ -746,6 +756,10 @@ export const api = {
     invoke<CosmeticsPresetExportResult>("export_cosmetics_preset", { csgo, destination }),
   importCosmeticsPreset: (csgo: string, source: string) =>
     invoke<CosmeticsPresetImportResult>("import_cosmetics_preset", { csgo, source }),
+  getCosmeticsSource: (csgo: string) =>
+    invoke<CosmeticsSourceState>("get_cosmetics_source", { csgo }),
+  setCosmeticsSource: (csgo: string, source: CosmeticsSource) =>
+    invoke<CosmeticsSourceState>("set_cosmetics_source", { csgo, source }),
   inspectInstallation: (csgo: string) =>
     invoke<InstallationInspection>("inspect_installation", { csgo }),
   getInstallPlan: (csgo: string) => invoke<InstallPlan>("get_install_plan", { csgo }),
