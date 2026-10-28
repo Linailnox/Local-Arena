@@ -20,9 +20,9 @@ const SUPERSEDED_PAYLOAD_PATHS: &[(&str, &str)] = &[
 ];
 
 const PLUS_MARKERS: &[&str] = &[
-    "addons/counterstrikesharp/plugins/InventorySimulator/InventorySimulator.dll",
-    "addons/counterstrikesharp/gamedata/inventory-simulator.json",
-    "addons/counterstrikesharp/configs/plugins/InventorySimulator/inventories.json",
+    "addons/counterstrikesharp/plugins/PlusMatchCoordinator/PlusMatchCoordinator.dll",
+    "addons/counterstrikesharp/plugins/TeamLineupInjector/TeamLineupInjector.dll",
+    "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/OfflineMatchTelemetry.dll",
 ];
 
 const UPSTREAM_MARKERS: &[&str] = &[
@@ -1256,18 +1256,21 @@ pub fn install(
     })
 }
 
+fn cosmetics_inventory_relative() -> String {
+    format!(
+        "{}/{}",
+        crate::cosmetics_source::CONFIG_DIR,
+        crate::cosmetics_source::INVENTORY_FILE
+    )
+}
+
 fn preserve_cosmetics(state_root: &Path, target: &Path, timestamp: u64) -> Result<Option<PathBuf>> {
-    let source = target.join("addons/counterstrikesharp/plugins/InventorySimulator");
-    let files = ["player_knife_presets.json", "player_gun_presets.json"];
-    if !files.iter().any(|name| source.join(name).is_file()) {
+    let source = crate::cosmetics_source::inventory_path(target);
+    if !source.is_file() {
         return Ok(None);
     }
     let destination = state_root.join("presets").join(timestamp.to_string());
-    for name in files {
-        if source.join(name).is_file() {
-            copy_file(&source.join(name), &destination.join(name))?;
-        }
-    }
+    copy_file(&source, &destination.join("inventories.json"))?;
     Ok(Some(destination))
 }
 
@@ -1561,10 +1564,7 @@ pub fn restore_pristine(
                     .map(|actual| actual.eq_ignore_ascii_case(hash))
                     .unwrap_or(false)
             });
-            if !known_unchanged
-                && !raw.ends_with("player_knife_presets.json")
-                && !raw.ends_with("player_gun_presets.json")
-            {
+            if !known_unchanged && raw.as_str() != cosmetics_inventory_relative() {
                 copy_file(destination, &preserved_root.join(&relative))?;
                 preserved_files += 1;
             }
@@ -1907,12 +1907,9 @@ mod tests {
         let state = base.join("state");
         cosmetics_fixture(&payload, &target);
         install(&payload, &state, &target, false).unwrap();
-        let cosmetics = target.join("addons/counterstrikesharp/plugins/InventorySimulator");
-        fs::write(
-            cosmetics.join("player_knife_presets.json"),
-            b"player-knives",
-        )
-        .unwrap();
+        let cosmetics = target.join(cosmetics_inventory_relative());
+        fs::create_dir_all(cosmetics.parent().unwrap()).unwrap();
+        fs::write(&cosmetics, b"player-inventory").unwrap();
         let third_party = target.join("addons/counterstrikesharp/plugins/ThirdParty/keep.dll");
         fs::create_dir_all(third_party.parent().unwrap()).unwrap();
         fs::write(&third_party, b"third-party").unwrap();
@@ -1926,8 +1923,8 @@ mod tests {
         assert_eq!(fs::read(&third_party).unwrap(), b"third-party");
         let presets = PathBuf::from(result.presets_backup.unwrap());
         assert_eq!(
-            fs::read(presets.join("player_knife_presets.json")).unwrap(),
-            b"player-knives"
+            fs::read(presets.join("inventories.json")).unwrap(),
+            b"player-inventory"
         );
         assert!(!inspect(&payload, &state, &target).unwrap().installed);
         fs::remove_dir_all(base).unwrap();
@@ -1992,16 +1989,12 @@ mod tests {
         let target = base.join("target");
         let state = base.join("state");
         cosmetics_fixture(&payload, &target);
-        let directory = target.join("addons/counterstrikesharp/plugins/InventorySimulator");
-        fs::create_dir_all(&directory).unwrap();
-        let knife = directory.join("player_knife_presets.json");
-        let guns = directory.join("player_gun_presets.json");
-        fs::write(&knife, b"legacy-player-knives").unwrap();
-        fs::write(&guns, b"legacy-player-guns").unwrap();
+        let inventory = target.join(cosmetics_inventory_relative());
+        fs::create_dir_all(inventory.parent().unwrap()).unwrap();
+        fs::write(&inventory, b"legacy-player-inventory").unwrap();
 
         install(&payload, &state, &target, false).unwrap();
-        assert_eq!(fs::read(&knife).unwrap(), b"legacy-player-knives");
-        assert_eq!(fs::read(&guns).unwrap(), b"legacy-player-guns");
+        assert_eq!(fs::read(&inventory).unwrap(), b"legacy-player-inventory");
         let inspection = inspect(&payload, &state, &target).unwrap();
         assert!(inspection.corrupt.is_empty());
         assert_eq!(inspection.healthy, inspection.total);
@@ -2060,10 +2053,7 @@ mod tests {
         let original = manifest
             .entries
             .iter()
-            .find(|entry| {
-                !entry.path.ends_with("player_knife_presets.json")
-                    && !entry.path.ends_with("player_gun_presets.json")
-            })
+            .find(|entry| entry.path != cosmetics_inventory_relative())
             .expect("payload needs a restorable file");
         let original_path = target.join(safe_relative(&original.path).unwrap());
         fs::create_dir_all(original_path.parent().unwrap()).unwrap();
@@ -2079,20 +2069,13 @@ mod tests {
         let installed = inspect(&payload, &state, &target).unwrap();
         assert_eq!(installed.healthy, installed.total);
 
-        let knife = manifest
+        let inventory = manifest
             .entries
             .iter()
-            .find(|entry| entry.path.ends_with("player_knife_presets.json"))
-            .expect("packaged knife preset is missing");
-        let guns = manifest
-            .entries
-            .iter()
-            .find(|entry| entry.path.ends_with("player_gun_presets.json"))
-            .expect("packaged gun preset is missing");
-        let knife_path = target.join(safe_relative(&knife.path).unwrap());
-        let gun_path = target.join(safe_relative(&guns.path).unwrap());
-        fs::write(&knife_path, b"player-modified-knives").unwrap();
-        fs::write(&gun_path, b"player-modified-guns").unwrap();
+            .find(|entry| entry.path == cosmetics_inventory_relative())
+            .expect("packaged inventory is missing");
+        let inventory_path = target.join(safe_relative(&inventory.path).unwrap());
+        fs::write(&inventory_path, b"player-modified-inventory").unwrap();
         let customized = inspect(&payload, &state, &target).unwrap();
         assert!(customized.corrupt.is_empty());
         assert_eq!(customized.healthy, customized.total);
@@ -2114,22 +2097,17 @@ mod tests {
                 .installed_files,
             1
         );
-        assert_eq!(fs::read(&knife_path).unwrap(), b"player-modified-knives");
-        assert_eq!(fs::read(&gun_path).unwrap(), b"player-modified-guns");
+        assert_eq!(fs::read(&inventory_path).unwrap(), b"player-modified-inventory");
 
         let restored = restore(&payload, &state, &target).unwrap();
         assert_eq!(fs::read(&original_path).unwrap(), b"steam-original");
         assert_eq!(fs::read(&foreign).unwrap(), b"foreign");
-        assert!(!knife_path.exists());
+        assert!(!inventory_path.exists());
         let preset_backup =
             PathBuf::from(restored.presets_backup.expect("preset backup is required"));
         assert_eq!(
-            fs::read(preset_backup.join("player_knife_presets.json")).unwrap(),
-            b"player-modified-knives"
-        );
-        assert_eq!(
-            fs::read(preset_backup.join("player_gun_presets.json")).unwrap(),
-            b"player-modified-guns"
+            fs::read(preset_backup.join("inventories.json")).unwrap(),
+            b"player-modified-inventory"
         );
         assert!(!inspect(&payload, &state, &target).unwrap().installed);
         fs::remove_dir_all(base).unwrap();
