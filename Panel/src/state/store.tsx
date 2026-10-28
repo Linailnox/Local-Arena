@@ -66,6 +66,10 @@ export type Store = {
   error: AppError | null;
   clearError: () => void;
   reportError: (e: unknown) => void;
+  /** Bumped when a panel asks to open the player-stats SteamID dialog. */
+  statsConfigRequest: number;
+  requestStatsConfig: () => void;
+  consumeStatsConfigRequest: () => void;
   refreshDirectory: () => Promise<DirectoryInfo | null>;
   refreshFiles: () => Promise<void>;
   refreshDifficulty: () => Promise<void>;
@@ -210,6 +214,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     void api.recordPanelError(normalized, window.location.pathname).catch(() => {});
   }, []);
   const clearError = useCallback(() => setError(null), []);
+  const [statsConfigRequest, setStatsConfigRequest] = useState(0);
+  const requestStatsConfig = useCallback(() => setStatsConfigRequest((value) => value + 1), []);
+  const consumeStatsConfigRequest = useCallback(() => setStatsConfigRequest(0), []);
 
   const refreshFiles = useCallback(async () => {
     const csgo = directory?.valid ? directory.selected : null;
@@ -712,6 +719,9 @@ nadesPending,
     error,
     clearError,
     reportError,
+    statsConfigRequest,
+    requestStatsConfig,
+    consumeStatsConfigRequest,
     refreshDirectory,
     refreshFiles,
     refreshDifficulty,

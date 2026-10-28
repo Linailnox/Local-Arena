@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { FolderCog } from "lucide-react";
+import { FolderCog, Settings2 } from "lucide-react";
 import { api, type CosmeticsSource, type CosmeticsSourceState } from "../lib/api";
 import { useT } from "../i18n";
+import { useStore } from "../state/store";
 import { useToast } from "./Toast";
 import Segmented from "./Segmented";
 import "./CosmeticsSourceCard.css";
@@ -14,29 +15,20 @@ type Props = {
 export default function CosmeticsSourceCard({ csgoPath, onError }: Props) {
   const t = useT();
   const toast = useToast();
+  const { requestStatsConfig } = useStore();
   const [state, setState] = useState<CosmeticsSourceState | null>(null);
   const [busy, setBusy] = useState(false);
   const [steamId, setSteamId] = useState("");
-  const [steamIdSaved, setSteamIdSaved] = useState(false);
 
   useEffect(() => {
-    if (!csgoPath) { setState(null); return; }
+    if (!csgoPath) { setState(null); setSteamId(""); return; }
     api.getCosmeticsSource(csgoPath).then(setState).catch(onError);
+    api.getCs2ssConfig(csgoPath).then((config) => setSteamId(config.steamId ?? "")).catch(() => setSteamId(""));
   }, [csgoPath, onError]);
 
   const active: CosmeticsSource = state?.selected ?? state?.effective ?? "remote";
   const pluginMissing = state ? !state.plugin_installed : false;
   const hasLocalFile = state?.files.some((file) => file.valid_json) ?? false;
-
-  const saveSteamId = async () => {
-    if (!csgoPath || busy) return;
-    const trimmed = steamId.trim();
-    if (!trimmed) return;
-    try {
-      setSteamId(await api.setCosmeticsSteamId(trimmed));
-      setSteamIdSaved(true);
-    } catch (error) { onError(error); }
-  };
 
   const changeSource = async (next: CosmeticsSource) => {    if (!csgoPath || busy || next === active) return;
     setBusy(true);
@@ -76,19 +68,10 @@ export default function CosmeticsSourceCard({ csgoPath, onError }: Props) {
       ))}
 
       <div className="cos-source__row">
-        <label className="cos-source__field">
-          <span>{t("cosmetics.steamIdLabel")}</span>
-          <input
-            value={steamId}
-            onChange={(event) => { setSteamId(event.target.value); setSteamIdSaved(false); }}
-            onBlur={() => void saveSteamId()}
-            placeholder="7656119..."
-            inputMode="numeric"
-            spellCheck={false}
-            disabled={!csgoPath || busy}
-          />
-        </label>
-        {steamIdSaved && <span className="cos-source__note">{t("cosmetics.steamIdSaved")}</span>}
+        <button className="cos-source__steam" onClick={() => requestStatsConfig()} title={t("cosmetics.steamIdOpen")}>
+          <Settings2 size={14} />
+          <span>{steamId || t("cosmetics.steamIdUnset")}</span>
+        </button>
       </div>
       <p className="cos-source__note">{t("cosmetics.steamIdHint")}</p>
     </div>
