@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,7 +9,6 @@ const botAssetsPath = resolve(root, "addons/counterstrikesharp/plugins/BotRandom
 const panelPlacementsPath = resolve(root, "Panel/src/data/cosmeticPlacements.json");
 const panelCharmsPath = resolve(root, "Panel/src/data/charmCatalog.json");
 const panelAgentsPath = resolve(root, "Panel/src/data/agentCatalog.json");
-const pluginCatalogPath = resolve(root, "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/player_cosmetic_catalog.json");
 const cosmeticApiCommit = "c3953dffc6b939b6df770c613741cc4e0f4cb2d0";
 const cosmeticApiBase = `https://raw.githubusercontent.com/ByMykel/CSGO-API/${cosmeticApiCommit}/public/api/en`;
 const cosmeticApiMirrorBase = `https://cdn.jsdelivr.net/gh/ByMykel/CSGO-API@${cosmeticApiCommit}/public/api/en`;
@@ -54,22 +52,12 @@ function charmAnchors(positions) {
 }
 
 const panel = {};
-const pluginWeapons = {};
 for (const weapon of [...catalog.weapons].sort((left, right) => left.defIndex - right.defIndex)) {
   const positions = nativePlacements[String(weapon.defIndex)] ?? [];
   panel[String(weapon.defIndex)] = {
     stickerSchemaCount: weapon.stickerSchemaCount,
     stickerPositions: stickerAnchors(weapon.stickerSchemaCount),
     charmPositions: charmAnchors(positions),
-  };
-  pluginWeapons[String(weapon.defIndex)] = {
-    sticker_schema_count: weapon.stickerSchemaCount,
-    charm_positions: positions.map((position, placementId) => ({
-      placement_id: placementId,
-      x: position[0],
-      y: position[1],
-      z: position[2],
-    })),
   };
 }
 
@@ -98,32 +86,10 @@ const agents = Object.entries(agentModels).flatMap(([team, models]) =>
     const row = agentsByModel.get(model);
     return { team, model, name: row?.name || agentName(model), image: inventoryImage(row) };
   }));
-const sourceHash = createHash("sha256")
-  .update(await readFile(botCatalogPath))
-  .update(await readFile(botPlacementsPath))
-  .update(botAssets)
-  .update(keychainSource.bytes)
-  .update(agentSource.bytes)
-  .digest("hex");
-const plugin = {
-  schema_version: 1,
-  source_sha256: sourceHash,
-  inventory_images: {
-    repository: "ByMykel/CSGO-API",
-    commit: cosmeticApiCommit,
-    keychains_sha256: sha256(keychainSource.bytes),
-    agents_sha256: sha256(agentSource.bytes),
-  },
-  charm_ids: charmIds,
-  agent_models: agentModels,
-  weapons: pluginWeapons,
-};
-
 await Promise.all([
   writeJson(panelPlacementsPath, panel),
   writeJson(panelCharmsPath, charms),
   writeJson(panelAgentsPath, agents),
-  writeJson(pluginCatalogPath, plugin),
 ]);
 
 console.log(`Generated ${Object.keys(panel).length} weapon capabilities, ${charms.length} charms, and ${agents.length} agents.`);
@@ -155,10 +121,6 @@ function inventoryImage(row) {
 
 function normalizeModel(model) {
   return typeof model === "string" ? model.replaceAll("/", "\\") : "";
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 function extractModels(source, arrayName) {

@@ -447,7 +447,7 @@ export const EN = {
   "cosmetics.sourceMismatch": "The file on disk does not match the selected source; switch again to fix it",
   "cosmetics.sourcePluginMissing": "Install the InventorySimulator plugin to use this switch",
   "cosmetics.sourceSaved": "Cosmetics source updated; restart CS2 to apply",
-  "cosmetics.sourceLocalMissing": "No valid inventories.json yet: run scripts/migrate-cosmetics-to-inventory.ps1 to create one",
+  "cosmetics.sourceLocalMissing": "No inventories.json yet: save a cosmetic preset to create one",
   "cosmetics.sourceFileValid": "valid JSON",
   "cosmetics.sourceFileInvalid": "unreadable JSON, the plugin falls back to the website",
   "cosmetics.steamIdLabel": "SteamID64",

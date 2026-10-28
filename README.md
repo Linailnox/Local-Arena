@@ -145,7 +145,9 @@ The Linux package `LocalArena-vX.Y.Z.W-linux.zip` is self-contained and follows 
 3. Copy every file from the extracted package into `game/csgo` — the package ships a prepared `gameinfo.gi` plus the `backup/Online` and `backup/WithBots` mode variants, so no manual gameinfo editing is needed
 4. Add `-insecure` to the CS2 launch options in Steam
 
-The four Local Arena plugins (PlusMatchCoordinator, TeamLineupInjector, PlayerKnifeCustomizer, OfflineMatchTelemetry) and their configuration are included; updates and repair are performed by re-extracting a newer package over the existing install
+The three Local Arena plugins (PlusMatchCoordinator, TeamLineupInjector, OfflineMatchTelemetry) and their configuration are included; updates and repair are performed by re-extracting a newer package over the existing install
+
+Player cosmetics use [InventorySimulator](https://github.com/ianlucas/cs2-css-inventory-simulator), which is **not** bundled. Download `InventorySimulator-v<latest>.zip` from its releases page and extract it into `game/csgo` (it adds `addons/counterstrikesharp/plugins/InventorySimulator/` and `addons/counterstrikesharp/gamedata/inventory-simulator.json`). The Panel then edits that plugin's `inventories.json` under `addons/counterstrikesharp/configs/plugins/InventorySimulator/`
 
 ## Updating an Existing Installation
 

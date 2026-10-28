@@ -145,7 +145,9 @@ Linux 包 `LocalArena-vX.Y.Z.W-linux.zip` 为自包含完整包，采用与上�
 3. 把解压出的全部文件拷入 `game/csgo`——包内已带预处理好的 `gameinfo.gi` 与 `backup/Online`、`backup/WithBots` 两份模式变体，无需手动修改 gameinfo
 4. 在 Steam 的 CS2 启动选项中添加 `-insecure`
 
-四个 Local Arena 独占插件（PlusMatchCoordinator、TeamLineupInjector、PlayerKnifeCustomizer、OfflineMatchTelemetry）及其配置均已包含；更新与修复通过解压新包覆盖旧安装完成
+三个 Local Arena 独占插件（PlusMatchCoordinator、TeamLineupInjector、OfflineMatchTelemetry）及其配置均已包含；更新与修复通过解压新包覆盖旧安装完成
+
+玩家饰品使用 [InventorySimulator](https://github.com/ianlucas/cs2-css-inventory-simulator)，它**不随包发布**。请从其 Releases 下载 `InventorySimulator-v<版本>.zip` 并解压到 `game/csgo`（会得到 `addons/counterstrikesharp/plugins/InventorySimulator/` 与 `addons/counterstrikesharp/gamedata/inventory-simulator.json`）。之后由面板编辑该插件的 `addons/counterstrikesharp/configs/plugins/InventorySimulator/inventories.json`
 
 ## 更新已有安装
 

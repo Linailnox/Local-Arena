@@ -512,7 +512,7 @@ export const DICTS: Record<string, Partial18n> = {
     "cosmetics.sourceRemoteHint": "插件为每位玩家从网站拉取库存", "cosmetics.sourceLocalHint": "插件读取已导入的文件，仅覆盖其中列出的 SteamID64",
     "cosmetics.sourceMismatch": "磁盘上的文件与所选来源不一致，请再切换一次", "cosmetics.sourcePluginMissing": "请先安装 InventorySimulator 插件再使用此开关",
     "cosmetics.sourceSaved": "饰品来源已更新，重启 CS2 后生效",
-    "cosmetics.sourceLocalMissing": "还没有有效的 inventories.json：请先运行 scripts/migrate-cosmetics-to-inventory.ps1",
+    "cosmetics.sourceLocalMissing": "还没有 inventories.json：保存一次饰品预设即可生成",
     "cosmetics.sourceFileValid": "JSON 有效", "cosmetics.sourceFileInvalid": "JSON 无法解析，插件会回退到网站",
     "cosmetics.steamIdLabel": "SteamID64", "cosmetics.steamIdHint": "17 位数字，可在 CS2 控制台用 status 命令查看", "cosmetics.steamIdSaved": "已保存",
   } satisfies Record<I18nKey, string>,
