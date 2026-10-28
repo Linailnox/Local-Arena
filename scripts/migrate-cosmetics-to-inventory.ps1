@@ -112,7 +112,7 @@ function Get-Catalogs {
         # [{ team, model, name }]
         Agents = Read-JsonFile (Join-Path $dataDir "agentCatalog.json")
         # [{ weapon_defindex, paint, name, stattrak, souvenir, ... }]
-        Skins = Read-JsonFile (Join-Path $repo "addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/weapon_skins.json")
+        Skins = Read-JsonFile (Join-Path $dataDir "weaponSkins.json")
     }
 }
 
@@ -251,12 +251,42 @@ function Convert-Preset {
     if ($Preset.souvenir_enabled) { $Stats.SouvenirsDropped++ }
 
     $stickers = Convert-Stickers -Stickers $Preset.stickers -Placements $Catalogs.Placements -Defindex $Defindex -Stats $Stats
-    if ($stickers) { $item.stickers = $stickers }
+    if ($stickers) { $item.stickers = @($stickers) }
 
     $keychain = Convert-Keychain -Charm $Preset.charm -Placements $Catalogs.Placements -Defindex $Defindex -Stats $Stats
     if ($keychain) { $item.keychains = @($keychain) }
 
     return $item
+}
+
+function Assert-InventoryShapes {
+    param([string]$Json, [string]$SteamId)
+
+    $document = $Json | ConvertFrom-Json
+    $root = @($document.PSObject.Properties)
+    if ($root.Count -ne 1 -or $root[0].Name -ne $SteamId) {
+        throw "Generated document must contain exactly one player entry ($SteamId)"
+    }
+
+    $inventory = $root[0].Value
+    $items = [System.Collections.Generic.List[object]]::new()
+    foreach ($name in @("knives", "gloves", "ctWeapons", "tWeapons", "agents")) {
+        $group = $inventory.PSObject.Properties[$name]
+        if (-not $group) { continue }
+        foreach ($entry in $group.Value.PSObject.Properties) { $items.Add($entry.Value) }
+    }
+    $music = $inventory.PSObject.Properties["musicKit"]
+    if ($music) { $items.Add($music.Value) }
+
+    foreach ($item in $items) {
+        foreach ($arrayName in @("stickers", "keychains")) {
+            $field = $item.PSObject.Properties[$arrayName]
+            if (-not $field) { continue }
+            if ($field.Value -isnot [System.Array]) {
+                throw "Item def=$($item.def): '$arrayName' must be a JSON array; PowerShell would otherwise emit a single-element object"
+            }
+        }
+    }
 }
 
 # ---- main -----------------------------------------------------------------
@@ -347,6 +377,7 @@ $musicCount = if ($inventory.Contains("musicKit")) { 1 } else { 0 }
 
 $document = [ordered]@{ $SteamId = $inventory }
 $json = $document | ConvertTo-Json -Depth 12
+Assert-InventoryShapes -Json $json -SteamId $SteamId
 
 if (-not $Out) {
     $root = Resolve-CsgoRoot -Hint $CsgoRoot
