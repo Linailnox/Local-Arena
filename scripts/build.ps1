@@ -228,10 +228,24 @@ try {
         Invoke-Checked $test.FullName @("--nocapture") $tauriSource
     }
 
-    Invoke-Checked $cargo @(
-        "xwin", "build", "--target", $rustTarget, "--release", "--locked",
-        "--features", "tauri/custom-protocol", "--target-dir", $targetDirectory
-    ) $tauriSource
+    # Build through the Tauri CLI so `beforeBuildCommand` (bun run build) and the
+    # production `custom-protocol` feature come from tauri.conf.json instead of being
+    # re-derived here. `--no-bundle` keeps packaging in package.ps1.
+    $tauriBuildArguments = @("tauri", "build", "--no-bundle", "--target", $rustTarget)
+    if ($onWindowsHost) {
+        $tauriBuildArguments += @("--features", "tauri/custom-protocol")
+    }
+    else {
+        $tauriBuildArguments += @("--runner", $cargoXwin, "--features", "tauri/custom-protocol")
+    }
+    $previousTargetDir = $env:CARGO_TARGET_DIR
+    try {
+        $env:CARGO_TARGET_DIR = $targetDirectory
+        Invoke-Checked $bun $tauriBuildArguments $panel
+    }
+    finally {
+        $env:CARGO_TARGET_DIR = $previousTargetDir
+    }
 
     $builtExe = Join-Path $targetDirectory "$rustTarget\release\cs2-bot-improver-plus-panel.exe"
     if (-not (Test-Path -LiteralPath $builtExe)) {

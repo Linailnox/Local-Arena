@@ -347,7 +347,7 @@ if ($Linux) {
         break
     }
     if (-not $panelLinuxBinary) {
-        Write-Host "Panel Linux binary skipped (not built): cargo build --release --features custom-protocol --manifest-path Panel/src-tauri/Cargo.toml"
+        Write-Host "Panel Linux binary skipped (not built): bun tauri build --no-bundle --features tauri/custom-protocol (run inside Panel/)"
     }
 }
 
@@ -359,7 +359,7 @@ if ($Explode) {
         throw "-Explode requires -Linux (the Windows package already embeds the Panel executable)."
     }
     if (-not $panelLinuxBinary) {
-        throw "-Explode needs the native Panel binary; build it first: cargo build --release --features custom-protocol --manifest-path Panel/src-tauri/Cargo.toml"
+        throw "-Explode needs the native Panel binary; build it first: bun tauri build --no-bundle --features tauri/custom-protocol (run inside Panel/)"
     }
     $bundleDir = Join-Path $OutputDirectory "LocalArena-$releaseTag-linux"
     # The exploded folder doubles as the Panel's portable home: its .csbip holds
