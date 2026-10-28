@@ -6,6 +6,7 @@ import { useToast } from "../../components/Toast";
 import { api, toAppError, type InstallCheckReport, type InstallationSource, type MigrationKind, type UpstreamCacheInfo, type UpstreamInstalledState, type UpstreamProgress, type UpstreamReleaseInfo } from "../../lib/api";
 import { installAttemptDisabled, installBlockedByUpstream } from "../../lib/installGate";
 import Segmented from "../../components/Segmented";
+import InventoryPluginCard from "../../components/InventoryPluginCard";
 import { OnlineUpdateSection } from "./OnlineUpdatePage";
 import { localizeInstallCheck } from "../../lib/installCheckLocalization";
 import Modal from "../../components/Modal";
@@ -409,6 +410,8 @@ export default function InstallationPage() {
           {downloading && <p className="inst-diagnostics-scope">{t("upstream.resume")}</p>}
           {upstreamError && <div className="update-error">{upstreamError}</div>}
         </section>
+
+        <InventoryPluginCard csgoPath={csgoPath} onError={reportError} />
       </OnlineUpdateSection>
 
       <div className="inst-groups">

@@ -320,6 +320,23 @@ export type PanelCosmeticsSettings = {
   default_knife: Record<string, number>;
 };
 
+export type InventoryPluginSnapshot = {
+  plugin_present: boolean;
+  installed_version: string | null;
+  latest_version: string | null;
+  latest_size: number;
+  needs_install: boolean;
+  needs_update: boolean;
+};
+
+export type InventoryPluginRelease = {
+  tag: string;
+  asset_name: string;
+  url: string;
+  size: number;
+  sha256: string;
+};
+
 export type CosmeticsInventoryState = {
   plugin_present: boolean;
   config_present: boolean;
@@ -831,6 +848,12 @@ export const api = {
     invoke<CosmeticsPresetExportResult>("export_cosmetics_inventory", { csgo, destination }),
   importCosmeticsInventoryFile: (csgo: string, source: string) =>
     invoke<CosmeticsInventoryState>("import_cosmetics_inventory_file", { csgo, source }),
+  inventoryPluginStatus: (csgo: string) =>
+    invoke<InventoryPluginSnapshot>("inventory_plugin_status", { csgo }),
+  inventoryPluginCheck: () =>
+    invoke<InventoryPluginRelease>("inventory_plugin_check"),
+  inventoryPluginInstall: (csgo: string, tag: string | null) =>
+    invoke<InventoryPluginSnapshot>("inventory_plugin_install", { csgo, tag }),
   inspectInstallation: (csgo: string) =>
     invoke<InstallationInspection>("inspect_installation", { csgo }),
   getInstallPlan: (csgo: string) => invoke<InstallPlan>("get_install_plan", { csgo }),
