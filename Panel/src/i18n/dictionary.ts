@@ -514,7 +514,11 @@ export const DICTS: Record<string, Partial18n> = {
     "cosmetics.sourceSaved": "饰品来源已更新，重启 CS2 后生效",
     "cosmetics.sourceLocalMissing": "还没有 inventories.json：保存一次饰品预设即可生成",
     "cosmetics.sourceFileValid": "JSON 有效", "cosmetics.sourceFileInvalid": "JSON 无法解析，插件会回退到网站",
-    "cosmetics.steamIdLabel": "SteamID64", "cosmetics.steamIdHint": "17 位数字，可在 CS2 控制台用 status 命令查看", "cosmetics.steamIdSaved": "已保存",
+    "cosmetics.steamIdHint": "与「玩家统计设置」共用；在那里粘贴 17 位 SteamID64", "cosmetics.steamIdOpen": "打开玩家统计设置", "cosmetics.steamIdUnset": "未设置 SteamID64",
+    "inventoryPlugin.title": "InventorySimulator", "inventoryPlugin.desc": "玩家饰品插件，与 Local Arena 分开安装",
+    "inventoryPlugin.check": "检查", "inventoryPlugin.checking": "检查中...", "inventoryPlugin.install": "下载并安装", "inventoryPlugin.update": "更新", "inventoryPlugin.installing": "安装中...",
+    "inventoryPlugin.installedVersion": "已安装", "inventoryPlugin.latestVersion": "最新", "inventoryPlugin.unknownVersion": "版本未知", "inventoryPlugin.notInstalled": "未安装", "inventoryPlugin.notChecked": "尚未检查",
+    "inventoryPlugin.installed": "InventorySimulator 已安装", "inventoryPlugin.hint": "从 GitHub Releases 下载并用 sha256 校验；只写入插件文件与 gamedata，不会改动 inventories.json。",
   } satisfies Record<I18nKey, string>,
   tchinese: {
     "pre.aimUnavailable": "未安裝託管瞄準外掛，上游 BotAI 仍可正常運作",

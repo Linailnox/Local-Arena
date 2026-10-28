@@ -19,7 +19,7 @@ function fmtD(iso: string) { try { const d = new Date(iso); return `${d.getMonth
 function validSteamId64(value: string) { return /^7656119\d{10}$/.test(value.trim()); }
 
 export default function StatsDashboard() {
-  const { reportError, directory } = useStore();
+  const { reportError, directory, statsConfigRequest, consumeStatsConfigRequest } = useStore();
   const t = useT();
   const csgo = directory?.valid ? directory.selected ?? "" : "";
   const [sub, setSub] = useState<SubView>("dashboard");
@@ -38,6 +38,13 @@ export default function StatsDashboard() {
   const comp = matches.filter(m => m.modeFamily === "competitive");
   const dms = matches.filter(m => m.modeFamily === "deathmatch");
   const cfgValid = validSteamId64(cfgInput);
+
+  useEffect(() => {
+    if (statsConfigRequest <= 0) return;
+    setCfgInput(pid);
+    setCfgOpen(true);
+    consumeStatsConfigRequest();
+  }, [statsConfigRequest, pid, consumeStatsConfigRequest]);
 
   useEffect(() => {
     if (!csgo) return;

@@ -18,6 +18,7 @@ mod cs2ss_bridge;
 mod diagnostics;
 mod install_checks;
 mod installer;
+mod inventory_plugin;
 mod logging;
 mod match_system;
 mod mode_files;
@@ -2914,9 +2915,12 @@ fn get_cosmetics_inventory(app: AppHandle, csgo: String) -> Result<CosmeticsInve
     let root = csgo_path(&csgo)?;
     let path = cosmetics_source::inventory_path(&root);
     let loaded = cosmetics_inventory::read_document(&root)?;
-    let steam_id = loaded
-        .as_ref()
-        .map(|(steam_id, _, _)| steam_id.clone())
+    let stats_steam_id = cs2ss_bridge::get_cs2ss_config(csgo.clone())
+        .ok()
+        .map(|config| config.steam_id)
+        .filter(|value| !value.is_empty());
+    let steam_id = stats_steam_id
+        .or_else(|| loaded.as_ref().map(|(steam_id, _, _)| steam_id.clone()))
         .or_else(|| read_config(&app).ok().and_then(|config| config.cosmetics_steam_id))
         .unwrap_or_default();
     let (inventory, panel) = match loaded {
@@ -2945,6 +2949,19 @@ fn save_cosmetics_inventory(
     if blocks_target_write(&inspect_cs2_process(Some(&root))) {
         return Err(AppError::process("Close CS2 before changing cosmetics"));
     }
+    let steam_id = if steam_id.trim().is_empty() {
+        cs2ss_bridge::get_cs2ss_config(csgo.clone())
+            .ok()
+            .map(|config| config.steam_id)
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| {
+                AppError::invalid(
+                    "Set the SteamID64 in Player Stats settings before saving cosmetics",
+                )
+            })?
+    } else {
+        steam_id
+    };
     cosmetics_inventory::write_document(&root, &steam_id, inventory, panel)?;
 
     let mut config = read_config(&app)?;
@@ -3004,6 +3021,26 @@ fn import_cosmetics_inventory_file(
     config.cosmetics_steam_id = Some(steam_id);
     write_config(&app, &config)?;
     get_cosmetics_inventory(app, csgo)
+}
+
+#[tauri::command]
+fn inventory_plugin_status(csgo: String) -> Result<inventory_plugin::InventoryPluginSnapshot> {
+    let root = csgo_path(&csgo)?;
+    Ok(inventory_plugin::snapshot(&root))
+}
+
+#[tauri::command]
+fn inventory_plugin_check() -> Result<inventory_plugin::Release> {
+    inventory_plugin::resolve_release(None)
+}
+
+#[tauri::command]
+fn inventory_plugin_install(
+    csgo: String,
+    tag: Option<String>,
+) -> Result<inventory_plugin::InventoryPluginSnapshot> {
+    let root = csgo_path(&csgo)?;
+    inventory_plugin::install(&root, tag.as_deref())
 }
 
 fn set_knife_customizer_enabled(root: &Path, enabled: bool) -> Result<Option<bool>> {
@@ -4515,6 +4552,7 @@ pub fn run() {
             import_cosmetics_preset, get_cosmetics_source, set_cosmetics_source,
             import_cosmetics_inventory, set_cosmetics_steam_id,
             get_cosmetics_inventory, save_cosmetics_inventory,
+            inventory_plugin_status, inventory_plugin_check, inventory_plugin_install,
             export_cosmetics_inventory, import_cosmetics_inventory_file, get_runtime_snapshot, get_cs2_process,
             inspect_installation, get_install_plan, install_payload, repair_payload,
             restore_payload, restore_pristine_cs2, export_diagnostics, get_panel_memory, save_panel_memory,
