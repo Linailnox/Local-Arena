@@ -254,8 +254,7 @@ try {
         @($panelAgents | Where-Object team -eq "t").Count -ne 44 -or
         @($panelCharms | Where-Object { -not [string]::IsNullOrWhiteSpace($_.image) }).Count -ne 78 -or
         @($panelAgents | Where-Object { -not [string]::IsNullOrWhiteSpace($_.image) }).Count -ne 63 -or
-        $placementGenerator -notmatch "charmAnchors" -or
-        $placementGenerator -notmatch "source_sha256") {
+        $placementGenerator -notmatch "charmAnchors") {
         Add-Failure "Player cosmetic placement, charm, or agent outputs have unexpected counts."
     }
 }

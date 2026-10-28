@@ -22,7 +22,6 @@ Local Arena or compatibility with a current CS2 release, and preserve source att
 ```powershell
 bun install --frozen-lockfile --cwd Panel
 bun run --cwd Panel build
-D:\dotnet-sdk-10\dotnet.exe build addons\counterstrikesharp\plugins\PlayerKnifeCustomizer\PlayerKnifeCustomizer.csproj -c Release
 D:\dotnet-sdk-10\dotnet.exe build addons\counterstrikesharp\plugins\BotHiderImpl\BotHiderImpl.csproj -c Release
 .\scripts\build.ps1 -DotNet D:\dotnet-sdk-10\dotnet.exe
 .\scripts\verify-workspace.ps1

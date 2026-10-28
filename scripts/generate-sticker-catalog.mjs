@@ -103,9 +103,7 @@ const source = {
 
 await Promise.all([
   writeFile(resolve("Panel/src/data/stickerCatalog.json"), panelBytes),
-  writeFile(resolve("addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/sticker_ids.json"), idsBytes),
   writeFile(resolve("Panel/src/data/stickerWeaponIds.json"), weaponIdsBytes),
-  writeFile(resolve("addons/counterstrikesharp/plugins/PlayerKnifeCustomizer/sticker_weapon_ids.json"), weaponIdsBytes),
   writeFile(resolve("Panel/src/data/stickerCatalog.source.json"), `${JSON.stringify(source, null, 2)}\n`, "utf8"),
 ]);
 

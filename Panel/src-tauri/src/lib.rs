@@ -2835,7 +2835,7 @@ fn set_cosmetics_source(
                 .any(|file| file.valid_json)
             {
                 return Err(AppError::invalid(
-                    "Run scripts/migrate-cosmetics-to-inventory.ps1 first: no valid inventories.json exists",
+                    "Save a cosmetic preset first: no inventories.json exists yet",
                 ));
             }
         }

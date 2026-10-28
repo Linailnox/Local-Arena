@@ -16,8 +16,10 @@ separate paint-kit entries, so phase-specific variants are not collapsed into a 
 
 ## Runtime Model
 
-The Panel writes JSON under the installed `PlayerKnifeCustomizer` plugin directory. The assembly/folder name is kept
-for copy-over upgrade compatibility; the module is displayed as `PlayerCosmetics` in CounterStrikeSharp.
+The Panel writes `inventories.json` under the installed `InventorySimulator` plugin's config directory
+(`addons/counterstrikesharp/configs/plugins/InventorySimulator/`). That file is keyed by SteamID64 and holds
+knives, gloves, per-team gun skins, stickers, keychains and the music kit. Panel-only settings travel in the
+`_panel` member, which the plugin ignores.
 
 The plugin applies presets at bounded game events:
 
