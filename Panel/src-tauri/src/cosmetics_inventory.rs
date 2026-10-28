@@ -308,6 +308,8 @@ pub fn write_config(
     uid: &mut u32,
 ) -> Value {
     let mut inventory = Map::new();
+    let mut knives_by_team = Map::new();
+    let mut gloves_by_team = Map::new();
 
     for (side, key) in [("ct", CT_TEAM_KEY), ("t", T_TEAM_KEY)] {
         let loadout = if side == "ct" {
@@ -316,19 +318,17 @@ pub fn write_config(
             &config.loadouts.t
         };
 
-        let knives: Map<String, Value> = loadout
-            .knife_presets
-            .iter()
-            .filter_map(|(defindex, preset)| {
-                let defindex = defindex.parse::<u16>().ok()?;
-                if preset.paint <= 0 {
-                    return None;
-                }
-                Some((key.to_string(), write_item(preset, defindex, uid, placements)))
-            })
-            .collect();
-        if !knives.is_empty() {
-            inventory.insert("knives".into(), Value::Object(knives));
+        for (defindex, preset) in &loadout.knife_presets {
+            let Ok(parsed) = defindex.parse::<u16>() else {
+                continue;
+            };
+            if preset.paint <= 0 {
+                continue;
+            }
+            knives_by_team.insert(
+                key.to_string(),
+                write_item(preset, parsed, uid, placements),
+            );
         }
 
         if loadout.glove.enabled && loadout.glove.defindex > 0 {
@@ -340,9 +340,7 @@ pub fn write_config(
                 "uid": *uid,
             });
             *uid += 1;
-            let mut gloves = Map::new();
-            gloves.insert(key.to_string(), glove);
-            inventory.insert("gloves".into(), Value::Object(gloves));
+            gloves_by_team.insert(key.to_string(), glove);
         }
 
         let weapons_key = if side == "ct" { "ctWeapons" } else { "tWeapons" };
@@ -360,6 +358,13 @@ pub fn write_config(
         if !weapons.is_empty() {
             inventory.insert(weapons_key.into(), Value::Object(weapons));
         }
+    }
+
+    if !knives_by_team.is_empty() {
+        inventory.insert("knives".into(), Value::Object(knives_by_team));
+    }
+    if !gloves_by_team.is_empty() {
+        inventory.insert("gloves".into(), Value::Object(gloves_by_team));
     }
 
     if config.music_kit_id > 0 {
@@ -604,5 +609,44 @@ mod tests {
         let document = document_for("76561199145436841", json!({"knives": {}}));
         let (steam_id, _) = first_entry(&document).unwrap();
         assert_eq!(steam_id, "76561199145436841");
+    }
+
+    #[test]
+    fn both_teams_knives_and_gloves_survive_write_config() {
+        let mut config = KnifeCustomizerConfig::default();
+        config
+            .loadouts
+            .ct
+            .knife_presets
+            .insert("515".into(), KnifePreset { paint: 12, ..empty_preset() });
+        config
+            .loadouts
+            .t
+            .knife_presets
+            .insert("507".into(), KnifePreset { paint: 5, ..empty_preset() });
+        config.loadouts.ct.glove = GlovePreset {
+            enabled: true,
+            defindex: 5030,
+            paint: 10048,
+            seed: 0,
+            wear: 0.01,
+        };
+        config.loadouts.t.glove = GlovePreset {
+            enabled: true,
+            defindex: 5032,
+            paint: 10010,
+            seed: 0,
+            wear: 0.01,
+        };
+
+        let mut uid = 900_000u32;
+        let inventory = write_config(&config, &placements(), &mut uid);
+
+        let knives = inventory["knives"].as_object().unwrap();
+        assert_eq!(knives.len(), 2, "both teams' knives must survive");
+        assert_eq!(knives[CT_TEAM_KEY]["paint"], 12);
+        assert_eq!(knives[T_TEAM_KEY]["paint"], 5);
+        let gloves = inventory["gloves"].as_object().unwrap();
+        assert_eq!(gloves.len(), 2, "both teams' gloves must survive");
     }
 }
