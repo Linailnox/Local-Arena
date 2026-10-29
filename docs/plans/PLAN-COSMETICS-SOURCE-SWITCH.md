@@ -33,44 +33,51 @@
 
 ---
 
-## 3. 开关怎么实现（已实现）
+## 3. 开关怎么实现（已实现，2026-10-29 修订）
 
-插件没有运行期开关，行为由 `invsim_file` 指向的文件是否存在决定：
+插件在 `Load()` 里就读取 `invsim_file`，而该调用会走到 `Utilities.GetPlayers()`——此时 CounterStrikeSharp 的 natives 尚未初始化，**默认路径上只要有一份合法清单，整个插件加载就会失败**（3.7.0 与 3.7.2 该段代码相同）。
+
+因此清单不能放在默认路径。当前设计：
+
+| 模式 | 磁盘状态 | 代码 |
+| --- | --- | --- |
+| 本地 | 清单在 `.csbip/cosmetics/inventories.json`；`cfg/autoexec.cfg` 的托管块把 `invsim_file` 指向它；默认路径清空 | `cosmetics_source::write_local` |
+| 直连 | 删除托管块，默认路径同样清空 | `cosmetics_source::switch_to_remote` |
+
+托管块追加在文件末尾，块外字节原样保留：
+
+```
+// local-arena-cosmetics:start
+invsim_file "<绝对路径>/.csbip/cosmetics/inventories.json"
+// local-arena-cosmetics:end
+```
+
+之所以可行：autoexec 在插件加载之后执行，此时 `invsim_file` 被赋值触发 `ValueChanged` -> `OnFileChanged`，走的是运行期路径，natives 已就绪。
+
+危险路径（两种模式都必须清空，存在即改名 `.bak`）：
 
 ```
 <csgo>/addons/counterstrikesharp/configs/plugins/InventorySimulator/inventories.json
 <csgo>/inventories.json
-  文件都不存在   → 插件按 SteamID 调 https://inventory.cstrike.app
-  任一存在且合法  → 插件读它，不再联网拉取
-  存在但为空/非法 → 插件记 EROR 后仍退回远端（D4）
 ```
 
-因此开关 = **文件存在性**，不写 cfg：
+`inspect()` 返回 `effective` / `selected` / `mismatch` / `autoexec_linked`：只有"清单合法 **且** 托管块指向它"才算本地模式生效。
 
-| 模式 | 磁盘状态 | 代码 |
-| --- | --- | --- |
-| 直连 | 两个路径都没有 `inventories.json`（切换时旧的改名为 `.bak`） | `cosmetics_source::switch_to_remote` |
-| 本地 | 主路径写入合法文档 | `cosmetics_source::write_local` / `cosmetics_inventory::write_document` |
+### 3.1 已知限制
 
-持久化意图用 `AppConfig.cosmetics_source`（`"remote"` / `"local"`）与 `cosmetics_steam_id`；实际生效状态以磁盘为准，`inspect()` 返回 `effective` 与 `mismatch`，UI 在两者不一致时提示。
-
-### 3.1 备选：写 cfg（未实现）
-
-若将来必须把清单放在非默认路径，才需要写 `autoexec.cfg`，届时用 managed block（参照 `lib.rs` 的 `managed_team_lineup_start`），块外字节保留。**不写 `invsim_url`**：插件默认值已是官网。
+该方案依赖"autoexec 晚于 CSS 插件加载"这一时序。本机（listen server）成立；若某环境的 cfg 早于插件加载执行，仍会崩。彻底修复仍需上游把第 47 行的初次调用延后到 `Server.NextWorldUpdate` / `OnMapStart`，或给第 84 行加 `try/catch`。
 
 ---
 
-## 4. `inventories.json` 的绝对路径（已实机确认）
+## 4. 路径对照
 
-`Server.GameDirectory` 在本机是 `.../Counter-Strike Global Offensive/game`（叶子 `game`；证据：PlusMatchCoordinator 实机日志）。
-
-| 优先级 | 绝对路径 |
+| 用途 | 路径 |
 | --- | --- |
-| 1（Panel 写入点） | `<game>/csgo/addons/counterstrikesharp/configs/plugins/InventorySimulator/inventories.json` |
-| 2（插件也接受） | `<game>/csgo/inventories.json` |
-| 3（兜底） | `invsim_file` 写成绝对路径时 |
+| Panel 写入的清单 | `<csgo>/.csbip/cosmetics/inventories.json` |
+| 托管块所在文件 | `<csgo>/cfg/autoexec.cfg`（仅 `local-arena-cosmetics` 块） |
+| 必须保持为空的默认路径 | `<csgo>/addons/counterstrikesharp/configs/plugins/InventorySimulator/inventories.json`、`<csgo>/inventories.json` |
 
-`cosmetics_source::inventory_path()` 对应第 1 条，`secondary_inventory_path()` 对应第 2 条；写入主路径时会把第 2 条改名 `.bak`，避免它日后"复活"本地模式。
+`Server.GameDirectory` 本机为 `.../Counter-Strike Global Offensive/game`（证据：PlusMatchCoordinator 实机日志）。
 
 ---
 

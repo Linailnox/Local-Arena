@@ -147,7 +147,7 @@ The Linux package `LocalArena-vX.Y.Z.W-linux.zip` is self-contained and follows 
 
 The three Local Arena plugins (PlusMatchCoordinator, TeamLineupInjector, OfflineMatchTelemetry) and their configuration are included; updates and repair are performed by re-extracting a newer package over the existing install
 
-Player cosmetics use [InventorySimulator](https://github.com/ianlucas/cs2-css-inventory-simulator), which is **not** bundled. Download `InventorySimulator-v<latest>.zip` from its releases page and extract it into `game/csgo` (it adds `addons/counterstrikesharp/plugins/InventorySimulator/` and `addons/counterstrikesharp/gamedata/inventory-simulator.json`). The Panel then edits that plugin's `inventories.json` under `addons/counterstrikesharp/configs/plugins/InventorySimulator/`
+Player cosmetics use [InventorySimulator](https://github.com/ianlucas/cs2-css-inventory-simulator), which is **not** bundled. Download `InventorySimulator-v<latest>.zip` from its releases page and extract it into `game/csgo` (it adds `addons/counterstrikesharp/plugins/InventorySimulator/` and `addons/counterstrikesharp/gamedata/inventory-simulator.json`). The Panel keeps the inventory in `.csbip/cosmetics/inventories.json` and points `invsim_file` at it from a managed block in `cfg/autoexec.cfg`: a valid file at the plugin's default path aborts plugin load at startup
 
 ## Updating an Existing Installation
 

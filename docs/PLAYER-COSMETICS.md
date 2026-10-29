@@ -16,10 +16,11 @@ separate paint-kit entries, so phase-specific variants are not collapsed into a 
 
 ## Runtime Model
 
-The Panel writes `inventories.json` under the installed `InventorySimulator` plugin's config directory
-(`addons/counterstrikesharp/configs/plugins/InventorySimulator/`). That file is keyed by SteamID64 and holds
-knives, gloves, per-team gun skins, stickers, keychains and the music kit. Panel-only settings travel in the
-`_panel` member, which the plugin ignores.
+The Panel keeps the inventory in `.csbip/cosmetics/inventories.json` and points `invsim_file` at it from a
+managed block in `cfg/autoexec.cfg`. The file cannot live at the plugin's default path: a valid file there
+is read during plugin startup, before CounterStrikeSharp natives exist, and aborts the whole plugin load.
+The document is keyed by SteamID64 and holds knives, gloves, per-team gun skins, stickers, keychains and the
+music kit. Panel-only settings travel in the `_panel` member, which the plugin ignores.
 
 The plugin applies presets at bounded game events:
 
