@@ -216,9 +216,9 @@ mod tests {
         assert_eq!(read_ui_memory().unwrap().entries, entries);
 
         let csgo = base.join("fake-csgo");
-        let cosmetics = csgo.join(crate::cosmetics_source::CONFIG_DIR);
-        fs::create_dir_all(&cosmetics).unwrap();
-        fs::write(cosmetics.join("inventories.json"), b"{}").unwrap();
+        let cosmetics = csgo.join(crate::cosmetics_source::INVENTORY_RELATIVE);
+        fs::create_dir_all(cosmetics.parent().unwrap()).unwrap();
+        fs::write(&cosmetics, b"{}").unwrap();
         assert_eq!(mirror_cosmetics(&csgo).unwrap(), 1);
         assert!(base.join("presets/current/inventories.json").is_file());
         fs::remove_dir_all(&base).unwrap();

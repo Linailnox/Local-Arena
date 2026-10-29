@@ -1257,11 +1257,7 @@ pub fn install(
 }
 
 fn cosmetics_inventory_relative() -> String {
-    format!(
-        "{}/{}",
-        crate::cosmetics_source::CONFIG_DIR,
-        crate::cosmetics_source::INVENTORY_FILE
-    )
+    crate::cosmetics_source::INVENTORY_RELATIVE.to_string()
 }
 
 fn preserve_cosmetics(state_root: &Path, target: &Path, timestamp: u64) -> Result<Option<PathBuf>> {
@@ -1667,21 +1663,20 @@ mod tests {
 
     fn cosmetics_fixture(payload: &Path, target: &Path) {
         fixture(payload, target);
-        let directory = payload.join("addons/counterstrikesharp/configs/plugins/InventorySimulator");
-        fs::create_dir_all(&directory).unwrap();
+        let relative = cosmetics_inventory_relative();
+        let source = payload.join(&relative);
+        fs::create_dir_all(source.parent().unwrap()).unwrap();
+        let bytes = b"packaged-inventory";
+        fs::write(&source, bytes).unwrap();
         let mut manifest = read_manifest_document(payload).unwrap();
-        for (name, bytes) in [("inventories.json", b"packaged-inventory".as_slice())] {
-            let source = directory.join(name);
-            fs::write(&source, bytes).unwrap();
-            manifest.entries.push(PayloadEntry {
-                path: format!("addons/counterstrikesharp/configs/plugins/InventorySimulator/{name}"),
-                size: bytes.len() as u64,
-                sha256: sha256(&source).unwrap(),
-                component: "player-cosmetics".to_string(),
-                ownership: "plus".to_string(),
-                restore_policy: "preserve-config".to_string(),
-            });
-        }
+        manifest.entries.push(PayloadEntry {
+            path: relative,
+            size: bytes.len() as u64,
+            sha256: sha256(&source).unwrap(),
+            component: "player-cosmetics".to_string(),
+            ownership: "plus".to_string(),
+            restore_policy: "preserve-config".to_string(),
+        });
         write_json_atomic(&payload.join(MANIFEST_FILE), &manifest).unwrap();
     }
 
@@ -1700,9 +1695,8 @@ mod tests {
         cfg.size = fs::metadata(target.join("cfg/test.cfg")).unwrap().len();
         cfg.sha256 = sha256(&target.join("cfg/test.cfg")).unwrap();
         write_json_atomic(&target.join(MANIFEST_FILE), &manifest).unwrap();
-        let gun_presets = target.join(
-            "addons/counterstrikesharp/configs/plugins/InventorySimulator/inventories.json",
-        );
+        let gun_presets = target.join(cosmetics_inventory_relative());
+        fs::create_dir_all(gun_presets.parent().unwrap()).unwrap();
         fs::write(&gun_presets, b"player-modified-guns").unwrap();
 
         assert!(verify_payload(&target).is_err());
@@ -1964,8 +1958,8 @@ mod tests {
         cosmetics_fixture(&payload, &target);
         install(&payload, &state, &target, false).unwrap();
 
-        let directory = target.join("addons/counterstrikesharp/configs/plugins/InventorySimulator");
-        let inventory = directory.join("inventories.json");
+        let inventory = target.join(cosmetics_inventory_relative());
+        fs::create_dir_all(inventory.parent().unwrap()).unwrap();
         fs::write(&inventory, b"player-inventory").unwrap();
 
         let inspection = inspect(&payload, &state, &target).unwrap();
@@ -2010,10 +2004,7 @@ mod tests {
         cosmetics_fixture(&payload, &target);
         install(&payload, &state, &target, false).unwrap();
 
-        let relative = safe_relative(
-            "addons/counterstrikesharp/configs/plugins/InventorySimulator/inventories.json",
-        )
-        .unwrap();
+        let relative = safe_relative(&cosmetics_inventory_relative()).unwrap();
         let destination = target.join(&relative);
         fs::create_dir_all(state.join("presets/current")).unwrap();
         fs::write(
