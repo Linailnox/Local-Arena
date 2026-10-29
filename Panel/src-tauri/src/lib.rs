@@ -2301,10 +2301,6 @@ fn knife_config_path(root: &Path) -> PathBuf {
     cosmetics_source::inventory_path(root)
 }
 
-fn gun_config_path(root: &Path) -> PathBuf {
-    cosmetics_source::secondary_inventory_path(root)
-}
-
 fn normalize_preset(preset: &mut KnifePreset) {
     preset.seed = preset.seed.clamp(0, 1000);
     preset.wear = preset.wear.clamp(0.0, 1.0);
@@ -2695,7 +2691,7 @@ fn explicit_json_path(value: &str, operation: &str) -> Result<PathBuf> {
 }
 
 fn backup_cosmetics_before_import(root: &Path) -> Result<Option<PathBuf>> {
-    let sources = [knife_config_path(root), gun_config_path(root)];
+    let sources = [knife_config_path(root)];
     if !sources.iter().any(|path| path.is_file()) {
         return Ok(None);
     }
@@ -2746,7 +2742,7 @@ fn read_cosmetics_preset(source: &Path) -> Result<KnifeCustomizerConfig> {
 }
 
 fn snapshot_cosmetics_files(root: &Path) -> Result<Vec<(PathBuf, Option<Vec<u8>>)>> {
-    [knife_config_path(root), gun_config_path(root)]
+    [knife_config_path(root)]
         .into_iter()
         .map(|path| {
             let bytes = if path.is_file() { Some(fs::read(&path)?) } else { None };
@@ -2830,11 +2826,7 @@ fn set_cosmetics_source(
             cosmetics_source::switch_to_remote(&root)?;
         }
         cosmetics_source::CosmeticsSource::Local => {
-            if !cosmetics_source::inspect(&root, None)
-                .files
-                .iter()
-                .any(|file| file.valid_json)
-            {
+            if !cosmetics_source::has_valid_inventory(&root) {
                 return Err(AppError::invalid(
                     "Save a cosmetic preset first: no inventories.json exists yet",
                 ));
@@ -3961,7 +3953,6 @@ mod tests {
         assert_eq!(error.code, "E1002");
         assert!(error.detail.contains("Unsupported cosmetics preset schema"));
         assert!(!knife_config_path(&root).exists());
-        assert!(!gun_config_path(&root).exists());
         fs::remove_dir_all(root).unwrap();
     }
 

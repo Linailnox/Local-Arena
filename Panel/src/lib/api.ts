@@ -385,6 +385,7 @@ export type CosmeticsSourceState = {
   plugin_installed: boolean;
   files: CosmeticsSourceFile[];
   mismatch: boolean;
+  autoexec_linked: boolean;
 };
 
 export type GameMode = "online" | "preview" | "bots";

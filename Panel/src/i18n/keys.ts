@@ -443,7 +443,7 @@ export const EN = {
   "cosmetics.sourceRemote": "inventory.cstrike.app",
   "cosmetics.sourceLocal": "Local preset file",
   "cosmetics.sourceRemoteHint": "The plugin fetches your inventory from the website for every player",
-  "cosmetics.sourceLocalHint": "The plugin reads the imported file; only the listed SteamID64 is covered",
+  "cosmetics.sourceLocalHint": "The plugin reads .csbip/cosmetics/inventories.json, pointed to by autoexec.cfg after startup",
   "cosmetics.sourceMismatch": "The file on disk does not match the selected source; switch again to fix it",
   "cosmetics.sourcePluginMissing": "Install the InventorySimulator plugin to use this switch",
   "cosmetics.sourceSaved": "Cosmetics source updated; restart CS2 to apply",

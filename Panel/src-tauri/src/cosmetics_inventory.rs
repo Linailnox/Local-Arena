@@ -10,7 +10,6 @@
 //!   music_kit_id        <-> musicKit.musicId
 //!   agent_model         <-> agents[team].def      only when the catalog carries a defindex
 
-use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -453,12 +452,8 @@ pub fn write_document(
     };
     player.insert(PANEL_NAMESPACE.into(), panel);
     let document = document_for(steam_id, Value::Object(player));
-    let path = crate::cosmetics_source::inventory_path(root);
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    crate::write_json_atomic(&path, &document)?;
-    Ok(path)
+    let text = serde_json::to_string_pretty(&document)?;
+    crate::cosmetics_source::write_local(root, steam_id, &text)
 }
 
 #[cfg(test)]

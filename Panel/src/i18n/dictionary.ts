@@ -509,7 +509,7 @@ export const DICTS: Record<string, Partial18n> = {
     "errcat.installation": "安装事务失败，已尝试回滚。", "errcat.launch": "无法启动 Steam 或 CS2。", "errcat.update": "在线更新在校验、下载、安装或回滚阶段失败。",
     "st.wrongLocation": "文件放错文件夹了 — 请移动到 game\\csgo", "cmd.h.botManagement": "机器人管理", "cmd.hint.botName": "机器人名称", "cmd.hint.number": "数量",
     "cosmetics.sourceTitle": "饰品来源", "cosmetics.sourceRemote": "inventory.cstrike.app 网站", "cosmetics.sourceLocal": "本地预设文件",
-    "cosmetics.sourceRemoteHint": "插件为每位玩家从网站拉取库存", "cosmetics.sourceLocalHint": "插件读取已导入的文件，仅覆盖其中列出的 SteamID64",
+    "cosmetics.sourceRemoteHint": "插件为每位玩家从网站拉取库存", "cosmetics.sourceLocalHint": "插件在启动后由 autoexec.cfg 指向 .csbip/cosmetics/inventories.json 读取",
     "cosmetics.sourceMismatch": "磁盘上的文件与所选来源不一致，请再切换一次", "cosmetics.sourcePluginMissing": "请先安装 InventorySimulator 插件再使用此开关",
     "cosmetics.sourceSaved": "饰品来源已更新，重启 CS2 后生效",
     "cosmetics.sourceLocalMissing": "还没有 inventories.json：保存一次饰品预设即可生成",
