@@ -37,8 +37,6 @@ llvm/
 .windsurf/
 **/.windsurf/
 .aider*
-AGENTS.md
-**/AGENTS.md
 CLAUDE.md
 **/CLAUDE.md
 GEMINI.md
