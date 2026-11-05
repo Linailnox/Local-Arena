@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$PackageRoot,
+    [string]$PluginBundleRoot,
     [string]$ExpectedPackageVersion = "1.4.3.3",
     [switch]$Linux
 )
@@ -19,6 +20,15 @@ function Assert-File([string]$Path, [string]$Label) {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
         Add-Failure "Missing $Label`: $Path"
     }
+}
+
+function Test-ForbiddenEntry([string]$Entry, [string]$Relative) {
+    # Directory entries are matched as path prefixes; bare names match the leaf so a
+    # stray copy at any depth is still caught (same rule the package mode check uses).
+    if ($Entry.Contains("/")) {
+        return $Relative.StartsWith($Entry, [StringComparison]::OrdinalIgnoreCase)
+    }
+    return (Split-Path $Relative -Leaf).StartsWith($Entry, [StringComparison]::OrdinalIgnoreCase)
 }
 
 function Get-JsonCount([string]$RelativePath) {
@@ -321,35 +331,53 @@ if ($trackedGenerated.Count -gt 0) {
     Add-Failure "Generated paths are tracked: $($trackedGenerated -join ', ')"
 }
 
+# The Plus-owned payload is identical in the full package and in the standalone
+# plugin bundle, so both modes read one allowlist instead of keeping two copies
+# that can drift apart.
+$plusPayloadFiles = @(
+    "addons/counterstrikesharp/plugins/PlusMatchCoordinator/PlusMatchCoordinator.dll",
+    "addons/counterstrikesharp/plugins/PlusMatchCoordinator/MatchCore.dll",
+    "addons/counterstrikesharp/plugins/PlusMatchCoordinator/match_catalog.json",
+    "addons/counterstrikesharp/plugins/PlusMatchCoordinator/open-rating-3.0-proxy-v1.json",
+    "addons/counterstrikesharp/plugins/PlusMatchCoordinator/profiles/Low/botprofile.db",
+    "addons/counterstrikesharp/plugins/PlusMatchCoordinator/profiles/Medium/botprofile.db",
+    "addons/counterstrikesharp/plugins/PlusMatchCoordinator/profiles/High/botprofile.db",
+    "addons/counterstrikesharp/plugins/TeamLineupInjector/TeamLineupInjector.dll",
+    "cfg/my_bot_ffa_config.cfg",
+    "cfg/my_bot_normal_config.cfg",
+    "plus-payload-manifest.json"
+)
+# OfflineMatchTelemetry ships a fixed file set; the Linux build swaps the Windows
+# native SQLite provider for libe_sqlite3.so.
+$expectedTelemetryFiles = @(
+    "OfflineMatchTelemetry.dll",
+    "OfflineMatchTelemetry.deps.json",
+    "OfflineMatchTelemetry.pdb",
+    "Microsoft.Data.Sqlite.dll",
+    "SQLitePCLRaw.batteries_v2.dll",
+    "SQLitePCLRaw.core.dll",
+    "SQLitePCLRaw.provider.e_sqlite3.dll",
+    "e_sqlite3.dll"
+)
+
+function Get-PlusPayloadFiles([bool]$LinuxTarget) {
+    $telemetry = @($expectedTelemetryFiles | Where-Object { -not ($LinuxTarget -and $_ -eq "e_sqlite3.dll") })
+    if ($LinuxTarget) { $telemetry += "libe_sqlite3.so" }
+    return @($plusPayloadFiles) + @($telemetry | ForEach-Object {
+        "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/$_"
+    })
+}
+
 if ($PackageRoot) {
     $package = [IO.Path]::GetFullPath($PackageRoot)
-    $requiredPackageFiles = @(
-        "addons/counterstrikesharp/plugins/PlusMatchCoordinator/PlusMatchCoordinator.dll",
-        "addons/counterstrikesharp/plugins/PlusMatchCoordinator/MatchCore.dll",
-        "addons/counterstrikesharp/plugins/PlusMatchCoordinator/match_catalog.json",
-        "addons/counterstrikesharp/plugins/PlusMatchCoordinator/open-rating-3.0-proxy-v1.json",
-        "addons/counterstrikesharp/plugins/PlusMatchCoordinator/profiles/Low/botprofile.db",
-        "addons/counterstrikesharp/plugins/PlusMatchCoordinator/profiles/Medium/botprofile.db",
-        "addons/counterstrikesharp/plugins/PlusMatchCoordinator/profiles/High/botprofile.db",
-        "addons/counterstrikesharp/plugins/TeamLineupInjector/TeamLineupInjector.dll",
-        "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/OfflineMatchTelemetry.dll",
-        "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/OfflineMatchTelemetry.deps.json",
-        "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/OfflineMatchTelemetry.pdb",
-        "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/Microsoft.Data.Sqlite.dll",
-        "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/SQLitePCLRaw.batteries_v2.dll",
-        "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/SQLitePCLRaw.core.dll",
-        "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/SQLitePCLRaw.provider.e_sqlite3.dll",
-        "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/e_sqlite3.dll",
-        "cfg/my_bot_ffa_config.cfg",
-        "cfg/my_bot_normal_config.cfg",
-        "plus-payload-manifest.json",
+    $requiredPackageFiles = @(Get-PlusPayloadFiles -LinuxTarget:$Linux.IsPresent) + @(
         "LocalArena.exe",
         "README.md",
         "README.zh-CN.md",
         "LICENSE"
     )
     if ($Linux) {
-        $requiredPackageFiles = @(
+        $requiredPackageFiles = @(Get-PlusPayloadFiles -LinuxTarget $true) + @(
             "addons/metamod/bin/linuxsteamrt64/metamod.2.cs2.so",
             "addons/metamod/bin/linuxsteamrt64/libserver.so",
             "addons/metamod/counterstrikesharp.vdf",
@@ -358,24 +386,6 @@ if ($PackageRoot) {
             "addons/BotHider/bin/linuxsteamrt64/BotHider.so",
             "addons/BotController/bin/linuxsteamrt64/BotController.so",
             "addons/BotVision/bin/linuxsteamrt64/BotVision.so",
-            "addons/counterstrikesharp/plugins/PlusMatchCoordinator/PlusMatchCoordinator.dll",
-            "addons/counterstrikesharp/plugins/PlusMatchCoordinator/MatchCore.dll",
-            "addons/counterstrikesharp/plugins/PlusMatchCoordinator/match_catalog.json",
-            "addons/counterstrikesharp/plugins/PlusMatchCoordinator/open-rating-3.0-proxy-v1.json",
-            "addons/counterstrikesharp/plugins/PlusMatchCoordinator/profiles/Low/botprofile.db",
-            "addons/counterstrikesharp/plugins/PlusMatchCoordinator/profiles/Medium/botprofile.db",
-            "addons/counterstrikesharp/plugins/PlusMatchCoordinator/profiles/High/botprofile.db",
-            "addons/counterstrikesharp/plugins/TeamLineupInjector/TeamLineupInjector.dll",
-            "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/OfflineMatchTelemetry.dll",
-            "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/OfflineMatchTelemetry.deps.json",
-            "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/OfflineMatchTelemetry.pdb",
-            "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/Microsoft.Data.Sqlite.dll",
-            "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/SQLitePCLRaw.batteries_v2.dll",
-            "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/SQLitePCLRaw.core.dll",
-            "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/SQLitePCLRaw.provider.e_sqlite3.dll",
-            "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/libe_sqlite3.so",
-            "cfg/my_bot_ffa_config.cfg",
-            "cfg/my_bot_normal_config.cfg",
             "gameinfo.gi",
             "backup/Online/gameinfo.gi",
             "backup/WithBots/gameinfo.gi",
@@ -383,7 +393,6 @@ if ($PackageRoot) {
             "overrides/Low/botprofile.vpk",
             "overrides/Medium/botprofile.vpk",
             "overrides/High/botprofile.vpk",
-            "plus-payload-manifest.json",
             "README.md",
             "README.zh-CN.md",
             "LICENSE"
@@ -458,29 +467,20 @@ if ($PackageRoot) {
         }
     }
     $telemetryPackageRoot = Join-Path $package "addons/counterstrikesharp/plugins/OfflineMatchTelemetry"
-    $expectedTelemetryFiles = @(
-        "OfflineMatchTelemetry.dll",
-        "OfflineMatchTelemetry.deps.json",
-        "OfflineMatchTelemetry.pdb",
-        "Microsoft.Data.Sqlite.dll",
-        "SQLitePCLRaw.batteries_v2.dll",
-        "SQLitePCLRaw.core.dll",
-        "SQLitePCLRaw.provider.e_sqlite3.dll",
-        "e_sqlite3.dll"
-    ) | Sort-Object
+    $expectedTelemetryAllowlist = @($expectedTelemetryFiles | Sort-Object)
     $packagedTelemetryFiles = @(
         Get-ChildItem -LiteralPath $telemetryPackageRoot -File -ErrorAction SilentlyContinue |
             ForEach-Object Name |
             Sort-Object
     )
     if ($Linux) {
-        $expectedLinuxTelemetry = @($expectedTelemetryFiles | Where-Object { $_ -ne "e_sqlite3.dll" }) + @("libe_sqlite3.so")
+        $expectedLinuxTelemetry = @($expectedTelemetryAllowlist | Where-Object { $_ -ne "e_sqlite3.dll" }) + @("libe_sqlite3.so")
         $packagedLinuxTelemetry = @($packagedTelemetryFiles | Where-Object { $_ -ne "e_sqlite3.dll" })
         if (@(Compare-Object $expectedLinuxTelemetry $packagedLinuxTelemetry).Count -gt 0) {
             Add-Failure "Packaged OfflineMatchTelemetry file set does not match the Linux allowlist."
         }
     }
-    elseif (@(Compare-Object $expectedTelemetryFiles $packagedTelemetryFiles).Count -gt 0) {
+    elseif (@(Compare-Object $expectedTelemetryAllowlist $packagedTelemetryFiles).Count -gt 0) {
         Add-Failure "Packaged OfflineMatchTelemetry file set does not match the release allowlist."
     }
     $previewNotice = Join-Path $package "PREVIEW-NOTICE.txt"
@@ -625,6 +625,147 @@ if ($PackageRoot) {
     }
 }
 
+if ($PluginBundleRoot) {
+    # Standalone Plus plugin bundle (the Panel's plugin-update asset): the Plus-owned
+    # payload only, never the upstream runtime. It shares the allowlist above, so the
+    # two packaging shapes cannot drift apart.
+    $bundle = [IO.Path]::GetFullPath($PluginBundleRoot)
+    $allowedBundlePlugins = @("PlusMatchCoordinator", "TeamLineupInjector", "OfflineMatchTelemetry")
+    $platformLabel = if ($Linux) { "Linux" } else { "Windows" }
+    if (-not (Test-Path -LiteralPath $bundle -PathType Container)) {
+        Add-Failure "Plugin bundle root does not exist: $bundle"
+    }
+    else {
+        foreach ($relative in @(Get-PlusPayloadFiles -LinuxTarget:$Linux.IsPresent)) {
+            Assert-File (Join-Path $bundle $relative) "plugin bundle file $relative"
+        }
+
+        $bundleTelemetryRoot = Join-Path $bundle "addons/counterstrikesharp/plugins/OfflineMatchTelemetry"
+        if (Test-Path -LiteralPath $bundleTelemetryRoot -PathType Container) {
+            $bundleTelemetryFiles = @(
+                Get-ChildItem -LiteralPath $bundleTelemetryRoot -File -ErrorAction SilentlyContinue |
+                    ForEach-Object Name |
+                    Sort-Object
+            )
+            $expectedBundleTelemetry = @($expectedTelemetryFiles |
+                Where-Object { -not ($Linux -and $_ -eq "e_sqlite3.dll") } |
+                Sort-Object)
+            if ($Linux) { $expectedBundleTelemetry += "libe_sqlite3.so" }
+            if (@(Compare-Object $expectedBundleTelemetry $bundleTelemetryFiles).Count -gt 0) {
+                Add-Failure "Plugin bundle OfflineMatchTelemetry file set does not match the $platformLabel allowlist."
+            }
+        }
+
+        $bundleFiles = @(Get-ChildItem -LiteralPath $bundle -Recurse -File -Force | ForEach-Object {
+            [IO.Path]::GetRelativePath($bundle, $_.FullName).Replace("\", "/")
+        })
+        $forbiddenInBundle = @(
+            "overrides/",
+            "addons/metamod/",
+            "addons/counterstrikesharp/bin/",
+            "addons/counterstrikesharp/dotnet/",
+            "addons/counterstrikesharp/shared/",
+            "addons/counterstrikesharp/source/",
+            "addons/counterstrikesharp/lang/",
+            "addons/counterstrikesharp/api/",
+            "addons/counterstrikesharp/gamedata/",
+            "addons/BotHider/",
+            "addons/counterstrikesharp/plugins/InventorySimulator/",
+            "LocalArena.exe",
+            "dotnet.exe",
+            "gameinfo.gi",
+            "backup/"
+        )
+        foreach ($entry in $forbiddenInBundle) {
+            if (Test-Path -LiteralPath (Join-Path $bundle $entry)) {
+                Add-Failure "Plugin bundle must not contain upstream content: $entry"
+                continue
+            }
+            foreach ($relative in $bundleFiles) {
+                if (Test-ForbiddenEntry $entry $relative) {
+                    Add-Failure "Plugin bundle must not contain upstream content: $entry (matched $relative)"
+                    break
+                }
+            }
+        }
+        $bundlePluginsRoot = Join-Path $bundle "addons/counterstrikesharp/plugins"
+        if (Test-Path -LiteralPath $bundlePluginsRoot -PathType Container) {
+            foreach ($entry in Get-ChildItem -LiteralPath $bundlePluginsRoot -Force) {
+                if ($entry.Name -notin $allowedBundlePlugins) {
+                    Add-Failure "Plugin bundle must not contain non-Plus plugins: addons/counterstrikesharp/plugins/$($entry.Name)"
+                }
+            }
+        }
+
+        $bundleManifestPath = Join-Path $bundle "plus-payload-manifest.json"
+        if (Test-Path -LiteralPath $bundleManifestPath -PathType Leaf) {
+            try {
+                $bundleManifest = Get-Content -LiteralPath $bundleManifestPath -Raw | ConvertFrom-Json
+                if ($bundleManifest.schema_version -ne 1) {
+                    Add-Failure "Plugin bundle payload manifest has an unexpected schema version."
+                }
+                if ([string]$bundleManifest.package_version -ne $ExpectedPackageVersion) {
+                    Add-Failure "Plugin bundle payload manifest version '$($bundleManifest.package_version)' does not match the expected $ExpectedPackageVersion."
+                }
+                $bundleManifestPaths = @{}
+                foreach ($entry in $bundleManifest.entries) {
+                    $relative = [string]$entry.path
+                    if ($bundleManifestPaths.ContainsKey($relative)) {
+                        Add-Failure "Plugin bundle payload manifest contains a duplicate path: $relative"
+                        continue
+                    }
+                    $bundleManifestPaths[$relative] = $true
+                    if ([string]$entry.ownership -ne "plus") {
+                        Add-Failure "Plugin bundle payload manifest entry is not Plus-owned: $relative"
+                    }
+                    if ($relative -notmatch '^(addons|cfg)/' -or $relative -match '(^|/)\.\.(/|$)') {
+                        Add-Failure "Plugin bundle payload manifest contains an unsafe path: $relative"
+                        continue
+                    }
+                    $file = Join-Path $bundle $relative
+                    if (-not (Test-Path -LiteralPath $file -PathType Leaf)) {
+                        Add-Failure "Plugin bundle payload manifest references a missing file: $relative"
+                        continue
+                    }
+                    $actualSize = (Get-Item -LiteralPath $file).Length
+                    $actualHash = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
+                    if ($actualSize -ne [long]$entry.size -or $actualHash -ne ([string]$entry.sha256).ToLowerInvariant()) {
+                        Add-Failure "Plugin bundle payload manifest verification failed: $relative"
+                    }
+                }
+                foreach ($relative in $bundleFiles) {
+                    if ($relative -notmatch '^(addons|cfg)/') { continue }
+                    if (-not $bundleManifestPaths.ContainsKey($relative)) {
+                        Add-Failure "Plugin bundle payload file is not tracked by the manifest: $relative"
+                    }
+                }
+            }
+            catch {
+                Add-Failure "Plugin bundle payload manifest is invalid: $($_.Exception.Message)"
+            }
+        }
+
+        $bundleBuildChecks = @(
+            @{ Relative = "addons/counterstrikesharp/plugins/PlusMatchCoordinator/PlusMatchCoordinator.dll"; Build = "addons/counterstrikesharp/plugins/PlusMatchCoordinator/bin/Release/net10.0/PlusMatchCoordinator.dll" },
+            @{ Relative = "addons/counterstrikesharp/plugins/TeamLineupInjector/TeamLineupInjector.dll"; Build = "addons/counterstrikesharp/plugins/TeamLineupInjector/bin/Release/net10.0/TeamLineupInjector.dll" },
+            @{ Relative = "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/OfflineMatchTelemetry.dll"; Build = "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/bin/Release/net8.0/OfflineMatchTelemetry.dll" }
+        )
+        foreach ($check in $bundleBuildChecks) {
+            $builtDll = Join-Path $repo $check.Build
+            if (-not (Test-Path -LiteralPath $builtDll -PathType Leaf)) {
+                Write-Host "Plugin bundle check skipped (no build output): $($check.Build)"
+                continue
+            }
+            $bundledDll = Join-Path $bundle $check.Relative
+            if (-not (Test-Path -LiteralPath $bundledDll -PathType Leaf)) { continue }
+            if ((Get-FileHash -LiteralPath $bundledDll -Algorithm SHA256).Hash -ne
+                (Get-FileHash -LiteralPath $builtDll -Algorithm SHA256).Hash) {
+                Add-Failure "Plugin bundle $($check.Relative) is not the current source build."
+            }
+        }
+    }
+}
+
 if ($failures.Count -gt 0) {
     $failures | ForEach-Object { Write-Error $_ -ErrorAction Continue }
     exit 1
@@ -636,3 +777,4 @@ Write-Host "Weapon skins: $($counts['Panel/src/data/weaponSkins.json'])"
 Write-Host "Glove skins: $($counts['Panel/src/data/gloveSkins.json'])"
 Write-Host "Music kits: $($counts['Panel/src/data/musicKits.json'])"
 if ($PackageRoot) { Write-Host "Package layout verified: $([IO.Path]::GetFullPath($PackageRoot))" }
+if ($PluginBundleRoot) { Write-Host "Plugin bundle layout verified: $([IO.Path]::GetFullPath($PluginBundleRoot))" }
