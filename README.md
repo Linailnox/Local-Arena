@@ -129,7 +129,7 @@ Downloads resolved through the GitHub release API are verified against the publi
 
 ### Downloadable components
 
-Three components are published and installed separately
+Three components are published and installed separately, and each has its own card on **Settings → Installation**
 
 | Component | Where it comes from | Notes |
 | --- | --- | --- |
@@ -294,14 +294,17 @@ Changing cosmetics, CT/T presets, difficulty, or managed bot options must not be
 
 ### Online updates
 
-The Panel and plugin payload are checked and installed separately
+The Panel, the Local Arena plugin bundle, and InventorySimulator are checked and installed separately, each with its own card on **Settings → Installation**
 
 - Startup checks are non-blocking and cached for six hours
 - Manual checks bypass the cache
 - Plugin updates require the selected CS2 process to be closed
-- Downloads are verified by signature, size, and SHA-256 before installation
+- Downloads are verified by signature, size, and SHA-256 before installation; progress is shown per component and a running download can be cancelled and resumed
 - The signed `latest.json` is schema v2 and lists the Local Arena plugin archives per platform under `components.la_plugins` (`windows`, `linux`); the Linux archive is published when a Linux build produced it
+- A `latest.json` from an older release (schema v1, a single `plugin` entry) is still accepted and read as the Windows `la_plugins` archive, so an existing update channel keeps working
+- Installing the Local Arena plugin bundle writes only the files that bundle owns and merges them into the existing installation record; it refuses to run when the upstream suite (and its `BotHiderApi.dll`) is not installed
 - The upstream runtime package has its own cache on **Settings → Installation**, where you can re-download it, clear it, or import a local ZIP
+- InventorySimulator still comes from its own releases — the Panel downloads and installs it, it is never bundled, and **Restore pristine CS2** removes it like any other recognized third-party plugin
 - Player presets use the preserve-config policy and are not overwritten by repair or update
 
 <p align="center">
