@@ -3025,17 +3025,29 @@ fn inventory_plugin_status(csgo: String) -> Result<inventory_plugin::InventoryPl
 }
 
 #[tauri::command]
-fn inventory_plugin_check() -> Result<inventory_plugin::Release> {
-    inventory_plugin::resolve_release(None)
+async fn inventory_plugin_check() -> Result<inventory_plugin::Release> {
+    // Read-only release lookup: it holds no shared state, so it needs no operation guard and a
+    // check racing an install only reads the same release metadata.
+    tauri::async_runtime::spawn_blocking(|| inventory_plugin::resolve_release(None))
+        .await
+        .map_err(|error| AppError::update(format!("Inventory check task failed: {error}")))?
 }
 
 #[tauri::command]
-fn inventory_plugin_install(
+async fn inventory_plugin_install(
+    app: AppHandle,
     csgo: String,
     tag: Option<String>,
 ) -> Result<inventory_plugin::InventoryPluginSnapshot> {
-    let root = csgo_path(&csgo)?;
-    inventory_plugin::install(&root, tag.as_deref())
+    tauri::async_runtime::spawn_blocking(move || {
+        // A long download plus a file transaction must never race a Panel or plugin update, so
+        // it takes the shared guard; it also shares the shared cancel flag with those flows.
+        let _busy = online_update::OperationGuard::acquire()?;
+        let root = csgo_path(&csgo)?;
+        inventory_plugin::install(&app, &root, tag.as_deref())
+    })
+    .await
+    .map_err(|error| AppError::update(format!("Inventory install task failed: {error}")))?
 }
 
 fn set_knife_customizer_enabled(root: &Path, enabled: bool) -> Result<Option<bool>> {
