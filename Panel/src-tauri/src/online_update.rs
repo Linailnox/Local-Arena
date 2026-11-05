@@ -307,6 +307,16 @@ fn component_state(
     }
 }
 
+/// Version of the installed Local-Arena plugin bundle.
+///
+/// The caller (`lib.rs::installed_plugin_version`) only reports a version when the
+/// merged payload actually carries an install record, so `None` means "nothing is
+/// installed". The Panel's own version must never stand in for it: on a clean machine
+/// that would report the bundle as installed and offer "Update" instead of "Install".
+fn la_plugins_current(installed: Option<&str>) -> Option<String> {
+    installed.map(str::to_owned)
+}
+
 pub fn snapshot(plugin_version: Option<&str>) -> Result<OnlineUpdateSnapshot> {
     let cached = cached_manifest(true).ok().flatten();
     let state = runtime()
@@ -322,9 +332,8 @@ pub fn snapshot(plugin_version: Option<&str>) -> Result<OnlineUpdateSnapshot> {
         .progress
         .as_ref()
         .filter(|value| value.component == "la_plugins");
-    let plugin_current_version = plugin_version
-        .map(str::to_owned)
-        .unwrap_or_else(|| app_version::display().to_owned());
+    // Empty means "not installed" — see `la_plugins_current`.
+    let plugin_current_version = la_plugins_current(plugin_version).unwrap_or_default();
     Ok(OnlineUpdateSnapshot {
         checked_at: cached.as_ref().map(|value| value.1),
         release_version: manifest.map(|value| value.release_version.clone()),
@@ -997,6 +1006,77 @@ mod tests {
         activate_payload("1.4.2.4", &payload).unwrap();
         assert_eq!(active_payload_root().unwrap(), fs::canonicalize(&payload).unwrap());
         fs::remove_dir_all(&base).unwrap();
+        unsafe { std::env::remove_var("CS2BI_STATE_ROOT"); }
+    }
+
+    #[test]
+    fn la_plugins_current_never_substitutes_the_panel_version() {
+        // A clean machine has no install record: the version stays unknown rather than
+        // borrowing the Panel's own version (which would report the bundle as installed).
+        assert_eq!(la_plugins_current(None), None);
+        let current = la_plugins_current(None).unwrap_or_default();
+        assert!(current.is_empty());
+        assert_ne!(current, app_version::display());
+    }
+
+    #[test]
+    fn la_plugins_current_reports_the_installed_version_verbatim() {
+        assert_eq!(
+            la_plugins_current(Some("1.4.3.3")),
+            Some("1.4.3.3".to_owned())
+        );
+    }
+
+    #[test]
+    fn missing_installation_reports_no_current_version_or_update() {
+        let manifest = v2_manifest(Some("1.4.3.40"), Some("1.4.3.40"));
+        let current = la_plugins_current(None).unwrap_or_default();
+        let state = component_state(
+            &current,
+            la_plugins_for(&manifest, host_platform()),
+            None,
+            None,
+        );
+        assert!(
+            state.current_version.is_empty(),
+            "a clean install must not claim a version: {:?}",
+            state.current_version
+        );
+        assert!(!state.update_available);
+        assert_eq!(state.status, "current");
+    }
+
+    #[test]
+    fn installed_bundle_version_still_drives_update_detection() {
+        let manifest = v2_manifest(Some("1.4.3.40"), Some("1.4.3.40"));
+        let current = la_plugins_current(Some("1.4.3.3")).unwrap_or_default();
+        let state = component_state(
+            &current,
+            la_plugins_for(&manifest, host_platform()),
+            None,
+            None,
+        );
+        assert_eq!(state.current_version, "1.4.3.3");
+        assert!(state.update_available);
+        assert_eq!(state.status, "available");
+    }
+
+    #[test]
+    fn snapshot_without_install_record_reports_la_plugins_as_not_installed() {
+        let _guard = app_storage::TEST_STATE_ENV_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+        let base = test_root("cs2bi-snapshot-clean");
+        unsafe { std::env::set_var("CS2BI_STATE_ROOT", &base); }
+        let snapshot = snapshot(None).unwrap();
+        assert!(
+            snapshot.la_plugins.current_version.is_empty(),
+            "no install record must yield no current version: {:?}",
+            snapshot.la_plugins.current_version
+        );
+        assert!(!snapshot.la_plugins.update_available);
+        assert!(snapshot.la_plugins.latest_version.is_none());
+        // The panel component keeps its own app-version fallback untouched.
+        assert_eq!(snapshot.panel.current_version, app_version::display());
+        fs::remove_dir_all(&base).ok();
         unsafe { std::env::remove_var("CS2BI_STATE_ROOT"); }
     }
 
