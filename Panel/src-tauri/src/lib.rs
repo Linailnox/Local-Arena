@@ -3425,7 +3425,7 @@ fn install_plugin_update_impl(app: &AppHandle, csgo: &str) -> Result<online_upda
                 &format!("version={version}, files={}", value.installed_files),
             );
             Ok(online_update::UpdateResult {
-                component: "plugin".into(),
+                component: "la_plugins".into(),
                 version,
                 installed: true,
                 restart_required: false,
@@ -3485,8 +3485,8 @@ async fn install_all_updates(
         let plugin_version = installed_plugin_version(&worker_app);
         let snapshot = online_update::snapshot(plugin_version.as_deref())?;
 
-        let plugin = if snapshot.plugin.update_available {
-            if !snapshot.plugin.compatible {
+        let la_plugins = if snapshot.la_plugins.update_available {
+            if !snapshot.la_plugins.compatible {
                 return Err(AppError::update(
                     "This plugin update requires a newer Panel updater",
                 ));
@@ -3513,7 +3513,7 @@ async fn install_all_updates(
         Ok(online_update::UpdateBatchResult {
             restart_required: panel.is_some(),
             panel,
-            plugin,
+            la_plugins,
         })
     })
     .await
