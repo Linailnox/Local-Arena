@@ -13,6 +13,7 @@ Local-Arena/
 ├── addons/            # C# CSSharp plugins; BotHider = pinned submodule
 ├── Panel/             # Tauri 2 app: src/ React frontend, src-tauri/ Rust backend
 ├── scripts/           # entire build/package/verify pipeline + linux bash wrappers
+├── artifacts/         # gitignored release outputs: full zip, panel zip, plugin zips, latest.json
 ├── cfg/               # upstream-identical tree — deletable, never editable
 ├── overrides/         # upstream-identical tree — deletable, never editable
 └── .cache/package/    # digest-verified upstream zip cache (≈73 MB)
@@ -30,6 +31,7 @@ Local-Arena/
 | Build/package/release | `scripts/*.ps1`, `scripts/linux/*.sh` | every gate routes through scripts/ |
 | Repo layout change | `scripts/verify-workspace.ps1` | must update allowlists or the gate fails |
 | Upstream pin | `scripts/dependencies.json` | v1.4.5 @ d991445 + linuxAsset sha256 |
+| Downloadable components / update manifest | `Panel/src-tauri/src/component_registry.rs`, `scripts/assemble-update-manifest.ps1` | three peers: upstream suite, LA plugin archive, InventorySimulator; `latest.json` schema v2 (`la_plugins.{windows,linux}`) |
 | i18n key | `Panel/src/i18n/` | EN source of truth + partial overrides |
 | Plugin tests | `addons/counterstrikesharp/{plugins,shared}/` | console runners, no xunit |
 
@@ -45,8 +47,13 @@ Local-Arena/
 | `BotHiderApi` | C# api | `addons/BotHider` (submodule) | PMC/TLI ProjectReference | never edit inside; gitlink pin is the version signal |
 | `MatchCore` | C# lib | `addons/counterstrikesharp/shared/` | MatchCore.Tests only | `MatchRules` is tests-only now; production MR12 lives in PMC convars (PlusMatchCoordinator.cs:267) |
 | `match_catalog.json` | data | `PlusMatchCoordinator/` | schema_version 1 | plugin↔Panel contract, frozen HLTV top-20 |
-| `verify-workspace.ps1` | gate | `scripts/` (638 LOC) | CI | LA-only whitelist (3 allowlists :166/:326/:396 move together); collects ALL failures, exits 1 at end |
+| `verify-workspace.ps1` | gate | `scripts/` (780 LOC) | CI | LA-only whitelist (3 allowlists :176/:373/:405 move together); `-PluginBundleRoot` verifies the LA-only plugin bundle; collects ALL failures, exits 1 at end |
 | `last-completed.json` | data | `<csgo>/.csbip/cs2ss/` | `match_system.rs` | completed-match marker, atomic write, watched → event `cs2ss-match-completed` |
+| `component_registry` | mod | `Panel/src-tauri/src/component_registry.rs` | 3 descriptors | compiled-in component set (upstream / la_plugins / inventory_simulator); `check_requirements` preflight — LA bundle requires the upstream `BotHiderApi.dll` |
+| `release_source` | mod | `Panel/src-tauri/src/release_source.rs` | `inventory_plugin.rs` | digest-required GitHub release resolution; trusted hosts only; `AssetSelector` |
+| `download` | mod | `Panel/src-tauri/src/download.rs` | update pipeline | shared streaming downloader: cache reuse, `.part` resume, progress + cancel, size/sha256 verify, atomic move |
+| `assemble-update-manifest.ps1` | script | `scripts/` | release | builds schema v2 `latest.json` from `artifacts/` by naming convention — panel + `la_plugins.windows` required, `la_plugins.linux` optional |
+| LA plugin bundle | artifact | `artifacts/LocalArena-plugin-<tag>-{windows,linux}.zip` | `latest.json`, `-PluginBundleRoot` gate | Windows = complete payload; Linux = LA-only (3 plugins + 2 bot cfg overlays + plus-only manifest) |
 
 ## CONVENTIONS
 - Commits: gitmoji + Conventional Commits (e.g. `✨ feat:`, `🐛 fix:`).
@@ -67,6 +74,7 @@ Local-Arena/
 ## UNIQUE STYLES
 - Version default triplicated: `package.ps1:10`, `verify-workspace.ps1:4`, `.github/workflows/release.yml:6` (regex `^\d+\.\d+\.\d+\.\d+(?:-Preview\.\d+)?$`); plus `1.4.3+3` in `Panel/src-tauri/Cargo.toml` AND `tauri.conf.json` — all bump together. PMC `ModuleVersion` 1.4.3.3 tracks it.
 - Upstream pinning via GitHub `assets[].digest` sha256 in `dependencies.json`.
+- Release assets: `LocalArena-<tag>-<os>.zip` (full), `LocalArena-panel-<tag>-windows.zip`, `LocalArena-plugin-<tag>-{windows,linux}.zip`, `latest.json` (+ `.sig`), `SHA256SUMS.txt`; the Windows plugin asset carries the merged root's `addons|cfg|overrides`, while the Linux one copies only the LA-owned subset.
 - Install payload defined by `plus-payload-manifest.json` (walks `addons|cfg|overrides` only).
 
 ## COMMANDS
@@ -75,6 +83,8 @@ Local-Arena/
 pwsh scripts/build.ps1 [-Linux]
 pwsh scripts/package.ps1 [-Linux] [-ReleaseVersion x.y.z.w]
 pwsh scripts/verify-workspace.ps1 [-Linux]
+pwsh scripts/verify-workspace.ps1 -PluginBundleRoot <dir> [-Linux]   # LA-only plugin bundle layout
+pwsh scripts/assemble-update-manifest.ps1 -Tag vX.Y.Z.W -OutputDirectory artifacts   # schema v2 latest.json
 # Linux gate suite / cross-build
 scripts/linux/build.sh [--only pwsh|bun|dotnet|cargo|verify]
 scripts/linux/release.sh --check | --version X   # env: LLVM_BIN PWSH XWIN_CACHE

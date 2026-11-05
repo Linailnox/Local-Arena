@@ -61,6 +61,7 @@
 - 四步首次安装向导，自动识别纯净 CS2、旧版兼容安装和上游原版插件
 - 事务式备份、安装验证、修复、回滚和恢复纯净 CS2
 - 面板与插件负载分别进行在线更新
+- 与完整包一同发布按平台的 Local Arena 插件压缩包（`LocalArena-plugin-<版本>-windows.zip` 与 `LocalArena-plugin-<版本>-linux.zip`）
 - 一键导出诊断 ZIP，并自动打开日志包所在文件夹
 - 面板内置真实截图教程和常见问题处理流程
 
@@ -126,6 +127,22 @@ Local Arena 自身的包只有几 MB，约 73 MB 的上游运行时会在安装�
 
 经 GitHub release API 解析的下载会在安装前用其公布的 SHA-256 摘要校验；已缓存的上游包会被后续安装与组件更新复用
 
+### 可下载组件
+
+有三个组件分别发布、分别安装
+
+| 组件 | 来源 | 说明 |
+| --- | --- | --- |
+| 上游套件 | [ed0ard/CS2-Bot-Improver](https://github.com/ed0ard/CS2-Bot-Improver) 的 release（`CS2BotImprover.zip`，约 73 MB） | 由面板下载，安装前用公布的 SHA-256 摘要校验，缓存后复用 |
+| Local Arena 插件压缩包 | 本仓库的 release，按平台发布 | `LocalArena-plugin-<版本>-windows.zip` 与 `LocalArena-plugin-<版本>-linux.zip`，在签名后的 `latest.json` 中列于 `components.la_plugins` |
+| InventorySimulator | [它自己的 release](https://github.com/ianlucas/cs2-css-inventory-simulator) | 第三方插件，从不随包发布，由面板按需下载并安装 |
+
+Linux 压缩包是仅含 Local Arena 内容的插件包：PlusMatchCoordinator、TeamLineupInjector、OfflineMatchTelemetry 三个插件，两份人机 cfg 覆盖文件（`cfg/my_bot_ffa_config.cfg`、`cfg/my_bot_normal_config.cfg`），以及一份只列出 Local Arena 自有条目的 `plus-payload-manifest.json`。它不含上游运行时、不含 `gameinfo.gi`、不含 `backup/` 目录、也不含 InventorySimulator，因此可以直接解压覆盖到已有的手动安装上，只更新 Local Arena 自己的插件
+
+Windows 压缩包保留完整负载，因为面板从同一资产安装上游运行时与 Local Arena 覆盖层
+
+单独安装插件压缩包需要先有上游套件：Local Arena 插件链接的是 `BotHiderApi.dll`，该文件只由上游负载提供，缺失时面板会在预检阶段拒绝安装
+
 ### 4. 完成安装并进入面板
 
 安装过程使用事务日志，复制后会逐个验证文件，任何步骤失败都会尝试回滚已完成的操作
@@ -146,6 +163,8 @@ Linux 包 `LocalArena-vX.Y.Z.W-linux.zip` 为自包含完整包，采用与上�
 4. 在 Steam 的 CS2 启动选项中添加 `-insecure`
 
 三个 Local Arena 独占插件（PlusMatchCoordinator、TeamLineupInjector、OfflineMatchTelemetry）及其配置均已包含；更新与修复通过解压新包覆盖旧安装完成
+
+只想更新 Local Arena 自己的插件时，把 `LocalArena-plugin-vX.Y.Z.W-linux.zip` 解压覆盖到同一目录即可；该包只含三个插件、两份人机 cfg 覆盖文件和一份仅含 plus 条目的清单，不会覆盖上游运行时
 
 玩家饰品使用 [InventorySimulator](https://github.com/ianlucas/cs2-css-inventory-simulator)，它**不随包发布**。请从其 Releases 下载 `InventorySimulator-v<版本>.zip` 并解压到 `game/csgo`（会得到 `addons/counterstrikesharp/plugins/InventorySimulator/` 与 `addons/counterstrikesharp/gamedata/inventory-simulator.json`）。面板把清单保存在 `.csbip/cosmetics/inventories.json`，并通过 `cfg/autoexec.cfg` 中的托管块把 `invsim_file` 指过去——启动时若默认路径存在合法文件，插件会加载失败
 
@@ -281,6 +300,7 @@ Linux 包 `LocalArena-vX.Y.Z.W-linux.zip` 为自包含完整包，采用与上�
 - 手动检查更新会绕过缓存
 - 插件更新前必须关闭所选目录对应的 CS2
 - 下载内容通过签名、大小和 SHA-256 验证后才会安装
+- 签名后的 `latest.json` 为 schema v2，按平台在 `components.la_plugins`（`windows`、`linux`）下列出 Local Arena 插件压缩包；Linux 压缩包只在有 Linux 构建产物时发布
 - 上游运行时包在**设置 → 安装**中单独管理，可重新下载、清除缓存或导入本地 ZIP
 - 玩家预设使用保留配置策略，不会被修复或更新覆盖
 
