@@ -519,6 +519,10 @@ export const DICTS: Record<string, Partial18n> = {
     "inventoryPlugin.check": "检查", "inventoryPlugin.checking": "检查中...", "inventoryPlugin.install": "下载并安装", "inventoryPlugin.update": "更新", "inventoryPlugin.installing": "安装中...",
     "inventoryPlugin.installedVersion": "已安装", "inventoryPlugin.latestVersion": "最新", "inventoryPlugin.unknownVersion": "版本未知", "inventoryPlugin.notInstalled": "未安装", "inventoryPlugin.notChecked": "尚未检查",
     "inventoryPlugin.installed": "InventorySimulator 已安装", "inventoryPlugin.hint": "从 GitHub Releases 下载并用 sha256 校验；只写入插件文件与 gamedata，不会改动 inventories.json。",
+    "laBundle.title": "Local Arena 插件包", "laBundle.desc": "PlusMatchCoordinator、TeamLineupInjector 与 OfflineMatchTelemetry 打包为一个独立整包，与上游组件和 InventorySimulator 分开安装",
+    "laBundle.check": "检查", "laBundle.checking": "检查中…", "laBundle.install": "安装插件包", "laBundle.update": "更新", "laBundle.installing": "安装中…",
+    "laBundle.installedVersion": "已安装", "laBundle.latestVersion": "最新版本", "laBundle.unknownVersion": "未知版本", "laBundle.notInstalled": "未安装", "laBundle.notChecked": "未检查",
+    "laBundle.installed": "插件包已安装", "laBundle.hint": "需要先安装上游套件（BotHider API）。下载经 sha256 校验，只写入 Local Arena 插件文件。",
   } satisfies Record<I18nKey, string>,
   tchinese: {
     "pre.aimUnavailable": "未安裝託管瞄準外掛，上游 BotAI 仍可正常運作",
