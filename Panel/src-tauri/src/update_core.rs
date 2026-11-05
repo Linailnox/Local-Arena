@@ -124,6 +124,103 @@ impl RemoteUpdateManifest {
     }
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct LaPluginsComponents {
+    pub windows: Option<RemoteComponent>,
+    pub linux: Option<RemoteComponent>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RemoteComponentsV2 {
+    pub panel: RemoteComponent,
+    pub la_plugins: LaPluginsComponents,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RemoteUpdateManifestV2 {
+    pub schema_version: u8,
+    pub release_version: String,
+    pub published_at: String,
+    pub release_notes_url: String,
+    pub components: RemoteComponentsV2,
+}
+
+impl RemoteUpdateManifestV2 {
+    pub fn validate(&self) -> std::result::Result<(), String> {
+        validate_v2(self)
+    }
+}
+
+fn validate_component(component: &RemoteComponent) -> std::result::Result<(), String> {
+    DisplayVersion::parse(&component.version)?;
+    DisplayVersion::parse(&component.min_panel_version)?;
+    validate_https_github_url(&component.url)?;
+    if component.size == 0 || component.size > MAX_ARCHIVE_BYTES {
+        return Err(format!(
+            "Update component size is outside the allowed range: {}",
+            component.size
+        ));
+    }
+    validate_sha256(&component.sha256)
+}
+
+pub fn validate_v2(manifest: &RemoteUpdateManifestV2) -> std::result::Result<(), String> {
+    if manifest.schema_version != 2 {
+        return Err("Unsupported update manifest schema".into());
+    }
+    DisplayVersion::parse(&manifest.release_version)?;
+    validate_https_github_url(&manifest.release_notes_url)?;
+    validate_component(&manifest.components.panel)?;
+    let la_plugins = &manifest.components.la_plugins;
+    if la_plugins.windows.is_none() && la_plugins.linux.is_none() {
+        return Err("Update manifest must publish at least one LA plugin archive".into());
+    }
+    for component in [&la_plugins.windows, &la_plugins.linux].into_iter().flatten() {
+        validate_component(component)?;
+    }
+    Ok(())
+}
+
+pub fn parse_update_manifest(
+    bytes: &[u8],
+) -> std::result::Result<RemoteUpdateManifestV2, String> {
+    #[derive(Deserialize)]
+    struct SchemaPeek {
+        schema_version: u8,
+    }
+
+    let peek: SchemaPeek = serde_json::from_slice(bytes)
+        .map_err(|error| format!("Invalid update manifest: {error}"))?;
+    match peek.schema_version {
+        2 => {
+            let manifest: RemoteUpdateManifestV2 = serde_json::from_slice(bytes)
+                .map_err(|error| format!("Invalid update manifest: {error}"))?;
+            manifest.validate()?;
+            Ok(manifest)
+        }
+        1 => {
+            let manifest: RemoteUpdateManifest = serde_json::from_slice(bytes)
+                .map_err(|error| format!("Invalid update manifest: {error}"))?;
+            manifest.validate()?;
+            // Schema v1 only ever published a Windows LA plugin archive.
+            Ok(RemoteUpdateManifestV2 {
+                schema_version: 2,
+                release_version: manifest.release_version,
+                published_at: manifest.published_at,
+                release_notes_url: manifest.release_notes_url,
+                components: RemoteComponentsV2 {
+                    panel: manifest.components.panel,
+                    la_plugins: LaPluginsComponents {
+                        windows: Some(manifest.components.plugin),
+                        linux: None,
+                    },
+                },
+            })
+        }
+        _ => Err("Unsupported update manifest schema".into()),
+    }
+}
+
 pub fn validate_https_github_url(value: &str) -> std::result::Result<(), String> {
     let Some(rest) = value.strip_prefix("https://") else {
         return Err("Update URLs must use HTTPS".into());
@@ -421,6 +518,120 @@ mod tests {
         assert!(verify_component_file(&file, 8, &hash).is_err());
         assert!(verify_component_file(&file, 7, &"0".repeat(64)).is_err());
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn parses_and_validates_v2_manifest_with_panel_and_la_plugins() {
+        let manifest = serde_json::json!({
+            "schema_version": 2,
+            "release_version": "1.4.3.4",
+            "published_at": "2026-11-05T00:00:00Z",
+            "release_notes_url": "https://github.com/numakkiyu/Local-Arena/releases/tag/v1.4.3.4",
+            "components": {
+                "panel": component_json("1.4.3.4"),
+                "la_plugins": {
+                    "windows": component_json("1.4.3.4"),
+                    "linux": component_json("1.4.3.4"),
+                },
+            },
+        });
+        let parsed = parse_update_manifest(manifest.to_string().as_bytes()).unwrap();
+        assert_eq!(parsed.schema_version, 2);
+        assert_eq!(parsed.release_version, "1.4.3.4");
+        assert_eq!(parsed.components.panel.version, "1.4.3.4");
+        let windows = parsed.components.la_plugins.windows.unwrap();
+        assert_eq!(windows.size, 1024);
+        let linux = parsed.components.la_plugins.linux.unwrap();
+        assert_eq!(linux.version, "1.4.3.4");
+    }
+
+    #[test]
+    fn converts_v1_manifest_to_v2_la_plugins_windows() {
+        let manifest = serde_json::json!({
+            "schema_version": 1,
+            "release_version": "1.4.3.3",
+            "published_at": "2026-10-31T00:00:00Z",
+            "release_notes_url": "https://github.com/numakkiyu/Local-Arena/releases/tag/v1.4.3.3",
+            "components": {
+                "panel": component_json("1.4.3.3"),
+                "plugin": component_json("1.4.3.2"),
+            },
+        });
+        let parsed = parse_update_manifest(manifest.to_string().as_bytes()).unwrap();
+        assert_eq!(parsed.schema_version, 2);
+        assert_eq!(parsed.release_version, "1.4.3.3");
+        assert_eq!(parsed.components.panel.version, "1.4.3.3");
+        assert_eq!(parsed.components.panel.sha256, "a".repeat(64));
+        assert_eq!(parsed.components.panel.min_panel_version, "1.4.3.0");
+        let windows = parsed.components.la_plugins.windows.unwrap();
+        assert_eq!(windows.version, "1.4.3.2");
+        assert_eq!(
+            windows.url,
+            component_json("1.4.3.2")["url"].as_str().unwrap()
+        );
+        assert!(parsed.components.la_plugins.linux.is_none());
+    }
+
+    #[test]
+    fn rejects_v1_manifest_without_plugin_component() {
+        let manifest = serde_json::json!({
+            "schema_version": 1,
+            "release_version": "1.4.3.3",
+            "published_at": "2026-10-31T00:00:00Z",
+            "release_notes_url": "https://github.com/numakkiyu/Local-Arena/releases/tag/v1.4.3.3",
+            "components": {
+                "panel": component_json("1.4.3.3"),
+            },
+        });
+        assert!(parse_update_manifest(manifest.to_string().as_bytes()).is_err());
+    }
+
+    #[test]
+    fn rejects_unsupported_schema_and_invalid_v2_components() {
+        let base = serde_json::json!({
+            "schema_version": 2,
+            "release_version": "1.4.3.4",
+            "published_at": "2026-11-05T00:00:00Z",
+            "release_notes_url": "https://github.com/numakkiyu/Local-Arena/releases/tag/v1.4.3.4",
+            "components": {
+                "panel": component_json("1.4.3.4"),
+                "la_plugins": {
+                    "windows": component_json("1.4.3.4"),
+                    "linux": null,
+                },
+            },
+        });
+        parse_update_manifest(base.to_string().as_bytes()).unwrap();
+
+        let mut future = base.clone();
+        future["schema_version"] = serde_json::json!(3);
+        assert!(parse_update_manifest(future.to_string().as_bytes()).is_err());
+
+        let mut empty = base.clone();
+        empty["components"]["la_plugins"]["windows"] = serde_json::Value::Null;
+        assert!(parse_update_manifest(empty.to_string().as_bytes()).is_err());
+
+        let mut bad_hash = base.clone();
+        bad_hash["components"]["panel"]["sha256"] = serde_json::json!("not-a-sha256");
+        assert!(parse_update_manifest(bad_hash.to_string().as_bytes()).is_err());
+
+        let mut bad_url = base.clone();
+        bad_url["components"]["panel"]["url"] = serde_json::json!("http://example.com/panel.zip");
+        assert!(parse_update_manifest(bad_url.to_string().as_bytes()).is_err());
+
+        let mut bad_min = base.clone();
+        bad_min["components"]["panel"]["min_panel_version"] = serde_json::json!("1.4");
+        assert!(parse_update_manifest(bad_min.to_string().as_bytes()).is_err());
+    }
+
+    fn component_json(version: &str) -> serde_json::Value {
+        serde_json::json!({
+            "version": version,
+            "url": "https://github.com/numakkiyu/Local-Arena/releases/download/v1.4.3.3/LocalArena-panel-v1.4.3.3-windows.zip",
+            "size": 1024,
+            "sha256": "a".repeat(64),
+            "min_panel_version": "1.4.3.0",
+        })
     }
 
     fn zip_with(name: &str, bytes: &[u8]) -> Vec<u8> {
