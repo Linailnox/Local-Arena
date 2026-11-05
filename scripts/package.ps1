@@ -462,31 +462,16 @@ foreach ($name in @("addons", "cfg", "overrides", "plus-payload-manifest.json"))
 $pluginZip = Join-Path $OutputDirectory "LocalArena-plugin-$releaseTag-windows.zip"
 Compress-Archive -Path (Join-Path $pluginStage "*") -DestinationPath $pluginZip -CompressionLevel Optimal
 
-$releaseBase = "https://github.com/numakkiyu/Local-Arena/releases/download/$releaseTag"
-$latest = [ordered]@{
-    schema_version = 1
-    release_version = $displayVersion
-    published_at = [DateTimeOffset]::UtcNow.ToString("o")
-    release_notes_url = "https://github.com/numakkiyu/Local-Arena/releases/tag/$releaseTag"
-    components = [ordered]@{
-        panel = [ordered]@{
-            version = $displayVersion
-            url = "$releaseBase/$([IO.Path]::GetFileName($panelZip))"
-            size = (Get-Item -LiteralPath $panelZip).Length
-            sha256 = (Get-FileHash -LiteralPath $panelZip -Algorithm SHA256).Hash.ToLowerInvariant()
-            min_panel_version = $minimumPanelVersion
-        }
-        plugin = [ordered]@{
-            version = $displayVersion
-            url = "$releaseBase/$([IO.Path]::GetFileName($pluginZip))"
-            size = (Get-Item -LiteralPath $pluginZip).Length
-            sha256 = (Get-FileHash -LiteralPath $pluginZip -Algorithm SHA256).Hash.ToLowerInvariant()
-            min_panel_version = $minimumPanelVersion
-        }
-    }
-}
+# The schema v2 manifest lives in its own script so a CI publish job can rebuild it
+# from uploaded artifacts without re-running packaging.
 $latestPath = Join-Path $OutputDirectory "latest.json"
-$latest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $latestPath -Encoding utf8
+& (Join-Path $PSScriptRoot "assemble-update-manifest.ps1") `
+    -Tag $releaseTag `
+    -OutputDirectory $OutputDirectory `
+    -MinimumPanelVersion $minimumPanelVersion
+if (-not (Test-Path -LiteralPath $latestPath -PathType Leaf)) {
+    throw "Update manifest assembly did not produce $latestPath."
+}
 $signaturePath = Join-Path $OutputDirectory "latest.json.sig"
 if ($env:CSBIP_UPDATE_SIGNING_KEY) {
     $python = (Get-Command python -ErrorAction Stop).Source
