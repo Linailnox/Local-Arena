@@ -319,6 +319,60 @@ Get-ChildItem -LiteralPath $OutputDirectory -File -ErrorAction SilentlyContinue 
 $fullZip = Join-Path $OutputDirectory "LocalArena-$releaseTag-$osSuffix.zip"
 Compress-Archive -Path $releaseRoot -DestinationPath $fullZip -CompressionLevel Optimal
 
+if ($Linux) {
+    # Linux also ships a Local-Arena-only plugin bundle: the full package carries the
+    # whole upstream runtime, while this zip carries just the LA-owned plugins so the
+    # Panel can install/repair them alone. Only the listed paths are copied (never a
+    # whole-tree copy), so no upstream file can leak in.
+    $pluginStage = Join-Path $stage "plugin-update-linux"
+    if (Test-Path -LiteralPath $pluginStage) { Remove-Item -LiteralPath $pluginStage -Recurse -Force }
+    New-Item -ItemType Directory -Path $pluginStage -Force | Out-Null
+    foreach ($name in @("PlusMatchCoordinator", "TeamLineupInjector", "OfflineMatchTelemetry")) {
+        $source = Join-Path $releaseRoot "addons/counterstrikesharp/plugins/$name"
+        if (-not (Test-Path -LiteralPath $source)) {
+            throw "Expected plus plugin payload is missing from the release root: $source"
+        }
+        Copy-Tree $source (Join-Path $pluginStage "addons/counterstrikesharp/plugins/$name")
+    }
+    $pluginCfgDir = Join-Path $pluginStage "cfg"
+    New-Item -ItemType Directory -Path $pluginCfgDir -Force | Out-Null
+    foreach ($cfgName in @("my_bot_ffa_config.cfg", "my_bot_normal_config.cfg")) {
+        Copy-Item -LiteralPath (Join-Path $releaseRoot "cfg/$cfgName") -Destination (Join-Path $pluginCfgDir $cfgName) -Force
+    }
+    $omtBundleDir = Join-Path $pluginStage "addons/counterstrikesharp/plugins/OfflineMatchTelemetry"
+    if (-not (Test-Path -LiteralPath (Join-Path $omtBundleDir "libe_sqlite3.so"))) {
+        throw "Linux plugin bundle is missing OfflineMatchTelemetry/libe_sqlite3.so."
+    }
+    if (Test-Path -LiteralPath (Join-Path $omtBundleDir "e_sqlite3.dll")) {
+        throw "Linux plugin bundle must not contain OfflineMatchTelemetry/e_sqlite3.dll."
+    }
+
+    # installer::verify_payload requires every manifest entry to exist inside the
+    # payload with matching size and sha256, so the bundle needs its own manifest:
+    # the release-root one also lists upstream files that this bundle deliberately
+    # omits. Only plus-owned entries are kept; schema/package versions are unchanged.
+    $releaseManifest = Get-Content -LiteralPath (Join-Path $releaseRoot "plus-payload-manifest.json") -Raw | ConvertFrom-Json
+    $plusEntries = @($releaseManifest.entries | Where-Object { $_.ownership -eq "plus" })
+    if ($plusEntries.Count -eq 0) {
+        throw "The release manifest contains no plus-owned entries; refusing to build an empty Linux plugin bundle."
+    }
+    foreach ($entry in $plusEntries) {
+        $bundled = Join-Path $pluginStage $entry.path
+        if (-not (Test-Path -LiteralPath $bundled -PathType Leaf)) {
+            throw "Linux plugin bundle is missing a manifest entry: $($entry.path)"
+        }
+    }
+    $pluginManifest = [ordered]@{
+        schema_version = $releaseManifest.schema_version
+        package_version = $releaseManifest.package_version
+        entries = @($plusEntries)
+    }
+    $pluginManifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $pluginStage "plus-payload-manifest.json") -Encoding utf8
+
+    $pluginZip = Join-Path $OutputDirectory "LocalArena-plugin-$releaseTag-linux.zip"
+    Compress-Archive -Path (Join-Path $pluginStage "*") -DestinationPath $pluginZip -CompressionLevel Optimal
+}
+
 function Get-PanelArtifactCandidates {
     param([string]$FileName)
     $candidates = @()
@@ -443,7 +497,10 @@ if ($env:CSBIP_UPDATE_SIGNING_KEY) {
 }
 
 $sumFiles = @($fullZip)
-if (-not $Linux) {
+if ($Linux) {
+    $sumFiles += $pluginZip
+}
+else {
     $sumFiles += $panelZip, $pluginZip, $latestPath
     if (Test-Path -LiteralPath $signaturePath) { $sumFiles += $signaturePath }
 }
@@ -460,5 +517,8 @@ if ($panelLinuxBinary) {
 }
 if (-not $Linux) {
     Write-Host "Panel update: $panelZip"
+    Write-Host "Plugin update: $pluginZip"
+}
+else {
     Write-Host "Plugin update: $pluginZip"
 }
