@@ -12,6 +12,7 @@ mod app_storage;
 mod app_version;
 mod appearance;
 mod atomic_fs;
+mod component_registry;
 mod cosmetics_inventory;
 mod cosmetics_source;
 mod cs2ss_bridge;
