@@ -369,6 +369,11 @@ if ($Linux) {
     }
     $pluginManifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $pluginStage "plus-payload-manifest.json") -Encoding utf8
 
+    # The bundle gate runs against the staged tree, not the zip, so a rejected bundle
+    # aborts packaging before anything is written to the output directory.
+    & (Join-Path $PSScriptRoot "verify-workspace.ps1") -PluginBundleRoot $pluginStage -ExpectedPackageVersion $displayVersion -Linux
+    if ($LASTEXITCODE -ne 0) { throw "Plugin bundle verification failed." }
+
     $pluginZip = Join-Path $OutputDirectory "LocalArena-plugin-$releaseTag-linux.zip"
     Compress-Archive -Path (Join-Path $pluginStage "*") -DestinationPath $pluginZip -CompressionLevel Optimal
 }

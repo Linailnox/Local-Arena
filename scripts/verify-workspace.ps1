@@ -191,6 +191,7 @@ $requiredSources = @(
     "scripts/generate-sticker-catalog.mjs",
     "scripts/generate-player-cosmetic-placements.mjs",
     "scripts/test-sticker-editor.mjs",
+    "scripts/assemble-update-manifest.ps1",
     "addons/BotHider/csharp/BotHiderImpl/BotHiderImplPlugin.cs",
     "addons/counterstrikesharp/plugins/TeamLineupInjector/TeamLineupInjector.cs",
     "addons/counterstrikesharp/plugins/TeamLineupInjector/TeamLineupInjector.csproj",
