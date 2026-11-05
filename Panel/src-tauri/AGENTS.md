@@ -3,8 +3,8 @@
 ## OVERVIEW
 Score 17 — the entire backend; distinct domain from the React frontend. Crate
 `cs2-bot-improver-plus-panel` (lib `cs2_bot_improver_plus_panel_lib`, edition 2024).
-Flat `src/`: 22 `.rs` files (21 modules + `main.rs`), ~17.6k LOC; 21 modules carry
-inline `mod tests` (~178 `#[test]`s). No `tests/` dir — cross-crate tests live in `core-tests/`.
+Flat `src/`: 25 `.rs` files (24 modules + `main.rs`), ~18.9k LOC; 24 modules carry
+inline `mod tests` (~200 `#[test]`s). No `tests/` dir — cross-crate tests live in `core-tests/`.
 
 ## WHERE TO LOOK
 | Task | Location |
@@ -18,6 +18,10 @@ inline `mod tests` (~178 `#[test]`s). No `tests/` dir — cross-crate tests live
 | Launch modes / gameinfo.gi | `src/mode_files.rs` (`apply_launch_mode` rewrites from current Steam files) |
 | Steam discovery | `src/steam.rs` (cross-platform roots incl. non-Windows) |
 | Online update | `src/online_update.rs`, `update_core.rs` |
+| Update manifest schema v2 | `src/update_core.rs` — `components.la_plugins.{windows,linux}`; a v1 `plugin` entry is converted to `la_plugins.windows` by `parse_update_manifest` |
+| Component registry | `src/component_registry.rs` — compiled-in descriptors (upstream / la_plugins / inventory_simulator), `requires` preflight, `VersionScheme` Panel vs UpstreamTag |
+| GitHub release resolution | `src/release_source.rs` — digest-required, trusted GitHub hosts only, `AssetSelector` (`.zip`-only prefix match) |
+| Shared streaming download | `src/download.rs` — `download_with_progress`: cache reuse, `.part` resume, progress + cancel, size/sha256 verify, atomic move |
 | Install health / diagnostics | `src/install_checks.rs`, `diagnostics.rs` |
 | Cosmetics (InventorySimulator) | `src/cosmetics_source.rs` (local↔direct switch), `cosmetics_inventory.rs` (JSON mapping + `_panel` sidecar), `inventory_plugin.rs` (third-party plugin download) |
 | App state root | `src/app_storage.rs` — `.csbip` next to the exe (override `CS2BI_STATE_ROOT`); all writes via `atomic_fs.rs` (temp + replace) |
@@ -40,7 +44,8 @@ inline `mod tests` (~178 `#[test]`s). No `tests/` dir — cross-crate tests live
 - Linux `cargo build` needs a temp `icons/icon.png` (only icon.ico is committed) — create it, never commit it.
 - `scripts/verify-workspace.ps1` greps `lib.rs` for literal markers (`aim_supported,`, `.csbip/aim-runtime.json`, `aim_override_count`, `"normal", "less", "off"`) — renaming those strings fails the gate even if behavior is unchanged.
 - Linux test failures are allowlisted by exact test name in `scripts/linux/build.sh` (`KNOWN_WINDOWS_ONLY`, 7 entries) — never widen that list.
-- InventorySimulator (`inventory_plugin.rs`) is third-party: never shipped in the package; the Panel only downloads/installs it.
+- InventorySimulator (`inventory_plugin.rs`) is third-party: never shipped in the package; the Panel only downloads/installs it (release resolution via `release_source.rs`, `.installed.json` marker, only its two payload paths written).
+- The managed component set is compiled in `component_registry.rs` — adding a component is a compile-time change; never introduce a shipped `components.json` (second source of truth, editable after install).
 - Never read or derive state from `src-tauri/gen/` (generated Tauri schemas, untracked).
 
 ## COMMANDS

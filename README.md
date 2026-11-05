@@ -61,6 +61,7 @@ Beginning with the next version, Local Arena will adopt a new UI design language
 - A four-step installer that detects clean CS2, legacy compatible builds, and the original upstream plugin
 - Transactional backups, installation verification, repair, rollback, and pristine-CS2 recovery
 - Separate online updates for the Panel and plugin payload
+- Per-platform Local Arena plugin archives (`LocalArena-plugin-<version>-windows.zip` and `LocalArena-plugin-<version>-linux.zip`) published beside the full package
 - One-click diagnostic ZIP export that opens the output folder automatically
 - A built-in guide with real screenshots and troubleshooting steps
 
@@ -126,6 +127,22 @@ The first installation therefore needs an internet connection, or a local `CS2Bo
 
 Downloads resolved through the GitHub release API are verified against the published SHA-256 digest before installation, and the cached package is reused by later installs and component updates
 
+### Downloadable components
+
+Three components are published and installed separately
+
+| Component | Where it comes from | Notes |
+| --- | --- | --- |
+| Upstream suite | [ed0ard/CS2-Bot-Improver](https://github.com/ed0ard/CS2-Bot-Improver) releases (`CS2BotImprover.zip`, about 73 MB) | Downloaded by the Panel, verified against the published SHA-256 digest, cached and reused |
+| Local Arena plugin archive | This repository's releases, per platform | `LocalArena-plugin-<version>-windows.zip` and `LocalArena-plugin-<version>-linux.zip`, listed in the signed `latest.json` under `components.la_plugins` |
+| InventorySimulator | [its own releases](https://github.com/ianlucas/cs2-css-inventory-simulator) | Third-party; never bundled, downloaded and installed on request from the Panel |
+
+The Linux archive is a Local Arena-only bundle: PlusMatchCoordinator, TeamLineupInjector and OfflineMatchTelemetry, the two bot cfg overlays (`cfg/my_bot_ffa_config.cfg`, `cfg/my_bot_normal_config.cfg`), and a `plus-payload-manifest.json` that lists only Local Arena-owned entries. It contains no upstream runtime, no `gameinfo.gi`, no `backup/` tree and no InventorySimulator, so it can be extracted over an existing manual install to update just Local Arena's plugins
+
+The Windows archive keeps the complete payload, because the Panel installs the upstream runtime and the Local Arena overlay from the same asset
+
+Installing the plugin archive on its own requires the upstream suite: the Local Arena plugins link against `BotHiderApi.dll`, which only the upstream payload ships, and the Panel refuses the install with a preflight error when that file is missing
+
 ### 4. Install and enter the Panel
 
 Installation uses a transaction journal, verifies every copied file, and rolls back completed steps if an operation fails
@@ -146,6 +163,8 @@ The Linux package `LocalArena-vX.Y.Z.W-linux.zip` is self-contained and follows 
 4. Add `-insecure` to the CS2 launch options in Steam
 
 The three Local Arena plugins (PlusMatchCoordinator, TeamLineupInjector, OfflineMatchTelemetry) and their configuration are included; updates and repair are performed by re-extracting a newer package over the existing install
+
+To update only Local Arena's plugins, extract `LocalArena-plugin-vX.Y.Z.W-linux.zip` over the same directory; that archive holds just the three plugins, the two bot cfg overlays, and a plus-only manifest, so it never overwrites the upstream runtime
 
 Player cosmetics use [InventorySimulator](https://github.com/ianlucas/cs2-css-inventory-simulator), which is **not** bundled. Download `InventorySimulator-v<latest>.zip` from its releases page and extract it into `game/csgo` (it adds `addons/counterstrikesharp/plugins/InventorySimulator/` and `addons/counterstrikesharp/gamedata/inventory-simulator.json`). The Panel keeps the inventory in `.csbip/cosmetics/inventories.json` and points `invsim_file` at it from a managed block in `cfg/autoexec.cfg`: a valid file at the plugin's default path aborts plugin load at startup
 
@@ -281,6 +300,7 @@ The Panel and plugin payload are checked and installed separately
 - Manual checks bypass the cache
 - Plugin updates require the selected CS2 process to be closed
 - Downloads are verified by signature, size, and SHA-256 before installation
+- The signed `latest.json` is schema v2 and lists the Local Arena plugin archives per platform under `components.la_plugins` (`windows`, `linux`); the Linux archive is published when a Linux build produced it
 - The upstream runtime package has its own cache on **Settings → Installation**, where you can re-download it, clear it, or import a local ZIP
 - Player presets use the preserve-config policy and are not overwritten by repair or update
 

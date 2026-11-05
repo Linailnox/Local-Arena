@@ -11,9 +11,11 @@ Gate matrix — which script proves what:
 | Proof | Script | Notes |
 |------|--------|-------|
 | Code builds; Panel exe is production-compiled | `build.ps1` | greps tauri output for `cargo:dev=false` / absence of `cargo:rustc-cfg=dev` (:254-274) |
-| Repo layout / pins / source invariants | `verify-workspace.ps1` | 638 LOC; no args = workspace gate |
+| Repo layout / pins / source invariants | `verify-workspace.ps1` | 780 LOC; no args = workspace gate |
 | Released payload LA-only + manifest-complete | `verify-workspace.ps1 -PackageRoot <dir> -ExpectedPackageVersion X` | package mode |
-| Release shape, OpenRating gate, signing, checksums | `package.ps1` | `latest.json`, SHA256SUMS, PREVIEW-NOTICE |
+| Release shape, OpenRating gate, signing, checksums | `package.ps1` | full zip, `LocalArena-panel-<tag>-windows.zip`, `LocalArena-plugin-<tag>-{windows,linux}.zip`, SHA256SUMS, PREVIEW-NOTICE |
+| Schema v2 update manifest | `assemble-update-manifest.ps1 -Tag vX.Y.Z.W -OutputDirectory artifacts` | builds `latest.json` by artifact naming convention: panel + `la_plugins.windows` required, `la_plugins.linux` optional; `package.ps1` calls it, a CI publish job can re-run it alone |
+| LA-only plugin bundle shape | `verify-workspace.ps1 -PluginBundleRoot <dir> [-Linux]` | three plugins + two bot cfg overlays + plus-only manifest; forbids upstream paths, `gameinfo.gi`, `backup/`, InventorySimulator; shares `Get-PlusPayloadFiles` with package mode |
 | Five local gates on Linux | `linux/build.sh` | step keys `pwsh\|bun\|dotnet\|cargo\|verify`; `--only <step>` |
 | Cross-compile prerequisites | `linux/release.sh --check` | `--version X` cross-builds via package.ps1; env `LLVM_BIN PWSH XWIN_CACHE` |
 | Panel TS logic invariants | `test-sticker-editor.mjs`, `test-install-gate.mjs` | wired from `Panel/package.json`; run from Panel/ |
@@ -34,7 +36,7 @@ Gate matrix — which script proves what:
 ## ANTI-PATTERNS
 - `Assert-ChildPath` guards ONLY `$stage`/`$extract` under `.cache/package` (:88-89); `package.ps1` also writes `-OutputDirectory` (default `artifacts/`) and copies into `Panel/src-tauri/target/release`. Never claim it "mutates nothing outside `.cache/package`".
 - `generate-player-cosmetic-placements.mjs` re-run throws ENOENT — its inputs under `plugins/BotRandomizer/` are deleted (0 tracked files). Gate only asserts output counts + `charmAnchors`; don't regenerate without new inputs.
-- Layout/package change must update all three `verify-workspace.ps1` allowlists: `$requiredSources` (166-189), `$requiredPackageFiles` (326-391), `$forbiddenInPackage` (396-438).
+- Layout/package change must update all three `verify-workspace.ps1` allowlists: `$requiredSources` (176-198), `$requiredPackageFiles` (373-403), `$forbiddenInPackage` (405-450). The `-PluginBundleRoot` gate reuses `Get-PlusPayloadFiles` (363), so the bundle and the package cannot drift apart — but the three allowlists still move together.
 - Never strip the OpenRating holdout assertion in `package.ps1` (release_gate.passed, dataset_sha256, holdout MAE/spearman bounds, 7 finite weights).
 - `-Explode` requires `-Linux` and a previously built native Panel binary.
 - Never pipe a gate through `tail` — it swallows exit codes (`run_cargo` tees to a log and greps instead).
