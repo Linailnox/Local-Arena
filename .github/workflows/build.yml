@@ -101,3 +101,64 @@ jobs:
             name: SHA256SUMS.txt
             path: artifacts/SHA256SUMS.txt
             archive: false
+
+  linux:
+    runs-on: ubuntu-latest
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.3"
+
+      # Bun owns dependency installs (Panel/bun.lock); Node stays because the gate
+      # scripts and the tsc/esbuild shims spawn `node` directly.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('Panel/bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      # MatchCore.Tests targets net8.0 and a net10 SDK alone carries no net8 runtime.
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Get latest tags
+        id: get_tag
+        shell: pwsh
+        run: |
+          $latest_tag = git describe --tags --abbrev=0
+          echo "LTAG=$latest_tag" >> $env:GITHUB_OUTPUT
+
+      # build.ps1 and verify-workspace.ps1 dot-source this gitignored file on every
+      # host (verify-workspace only skips it under GITHUB_ACTIONS).
+      - name: Prepare Linux build hooks
+        run: printf '$DotNet = (Get-Command dotnet).Source\n' > .local-build.ps1
+
+      - name: Build and package (Linux)
+        shell: pwsh
+        run: |
+          $version = "${{ steps.get_tag.outputs.LTAG }}".TrimStart("v")
+          ./scripts/package.ps1 -Linux -ReleaseVersion $version -OutputDirectory (Join-Path $PWD "artifacts")
+          if ((git status --short --untracked-files=no).Length -ne 0) { git status --short; throw "Build modified tracked files" }
+
+      - uses: actions/upload-artifact@v7
+        with:
+            name: LocalArena-plugin-${{ steps.get_tag.outputs.LTAG }}-linux.zip
+            path: artifacts/LocalArena-plugin-${{ steps.get_tag.outputs.LTAG }}-linux.zip
+            archive: false
+            if-no-files-found: error

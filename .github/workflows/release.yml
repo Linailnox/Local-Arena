@@ -9,8 +9,12 @@ permissions:
   contents: write
 
 jobs:
-  release:
-    runs-on: windows-latest
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
     env:
       CARGO_TERM_COLOR: always
     steps:
@@ -39,15 +43,68 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
+      # MatchCore.Tests targets net8.0 and a net10 SDK alone carries no net8 runtime.
+      - uses: actions/setup-dotnet@v4
+        if: runner.os == 'Linux'
+        with:
+          dotnet-version: "8.0.x"
+
       - uses: dtolnay/rust-toolchain@stable
+        if: runner.os == 'Windows'
         with:
           targets: x86_64-pc-windows-msvc
+
+      - uses: dtolnay/rust-toolchain@stable
+        if: runner.os == 'Linux'
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
+      # Tauri 2 on Linux links against WebKitGTK/GTK; the runner image ships none
+      # of the development packages.
+      - name: Install Linux Panel dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libxdo-dev \
+            libssl-dev \
+            patchelf
+
+      # build.ps1 and verify-workspace.ps1 dot-source this gitignored file on every
+      # host (verify-workspace only skips it under GITHUB_ACTIONS), and the repository
+      # ships only icon.ico while the Linux codegen needs a PNG icon.
+      - name: Prepare Linux build hooks
+        if: runner.os == 'Linux'
+        run: |
+          printf '$DotNet = (Get-Command dotnet).Source\n' > .local-build.ps1
+          python3 - <<'EOF'
+          import pathlib, struct, zlib
+
+          w = h = 16
+          def chunk(tag, data):
+              return struct.pack('>I', len(data)) + tag + data + struct.pack('>I', zlib.crc32(tag + data) & 0xffffffff)
+          raw = b''.join(b'\x00' + b'\x40\x70\xc0\xff' * w for _ in range(h))
+          png = b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 6, 0, 0, 0)) + chunk(b'IDAT', zlib.compress(raw)) + chunk(b'IEND', b'')
+          pathlib.Path('Panel/src-tauri/icons/icon.png').write_bytes(png)
+          EOF
+
+      # package.ps1 -Linux never runs cargo: it only picks up a Panel binary that
+      # already exists, so the Linux release ships one only when it is built here.
+      - name: Build Linux Panel
+        if: runner.os == 'Linux'
+        run: |
+          cd Panel
+          bun install --frozen-lockfile
+          bun tauri build --no-bundle --features tauri/custom-protocol
+
       - name: Prepare build tools
+        if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $env:CARGO_HOME = Join-Path $PWD ".cache/cargo-home"
@@ -55,12 +112,121 @@ jobs:
           cargo install cargo-xwin --locked --root $env:CARGO_HOME
 
       - name: Build, test, and package
+        if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $llvm = Join-Path $env:ProgramFiles "LLVM/bin"
           if (-not (Test-Path (Join-Path $llvm "lld-link.exe"))) { throw "LLVM linker is unavailable: $llvm" }
           $version = "${{ github.ref_name }}".TrimStart("v")
           ./scripts/package.ps1 -ReleaseVersion $version -LlvmBin $llvm -XwinCache (Join-Path $PWD ".cache/xwin") -OutputDirectory (Join-Path $PWD "artifacts")
+
+      - name: Build and package (Linux)
+        if: runner.os == 'Linux'
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart("v")
+          ./scripts/package.ps1 -Linux -ReleaseVersion $version -OutputDirectory (Join-Path $PWD "artifacts")
+
+      - name: Upload Windows package
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-full
+          path: artifacts/LocalArena-${{ github.ref_name }}-windows.zip
+          archive: false
+          if-no-files-found: error
+
+      - name: Upload Windows panel update
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-panel
+          path: artifacts/LocalArena-panel-${{ github.ref_name }}-windows.zip
+          archive: false
+          if-no-files-found: error
+
+      - name: Upload Windows plugin update
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-plugin
+          path: artifacts/LocalArena-plugin-${{ github.ref_name }}-windows.zip
+          archive: false
+          if-no-files-found: error
+
+      - name: Upload Linux package
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v7
+        with:
+          name: linux-full
+          path: artifacts/LocalArena-${{ github.ref_name }}-linux.zip
+          archive: false
+          if-no-files-found: error
+
+      - name: Upload Linux plugin bundle
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v7
+        with:
+          name: linux-plugin
+          path: artifacts/LocalArena-plugin-${{ github.ref_name }}-linux.zip
+          archive: false
+          if-no-files-found: error
+
+      - name: Upload Linux Panel binary
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v7
+        with:
+          name: linux-panel
+          path: artifacts/cs2-bot-improver-plus-panel
+          archive: false
+          if-no-files-found: error
+
+  # Assembles the schema v2 manifest from both platforms, signs it, and publishes the
+  # release. latest.json is only meaningful once every platform archive exists, so the
+  # per-platform jobs never produce it.
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install signing tool
+        run: python -m pip install --disable-pip-version-check pynacl
+
+      - name: Assemble and sign update manifest
+        shell: pwsh
+        env:
+          CSBIP_UPDATE_SIGNING_KEY: ${{ secrets.CSBIP_UPDATE_SIGNING_KEY }}
+        run: |
+          $artifacts = Join-Path $PWD "artifacts"
+          ./scripts/assemble-update-manifest.ps1 -Tag "${{ github.ref_name }}" -OutputDirectory $artifacts -MinimumPanelVersion 1.4.2.4
+          $latest = Join-Path $artifacts "latest.json"
+          $signature = Join-Path $artifacts "latest.json.sig"
+          if (-not (Test-Path -LiteralPath $latest -PathType Leaf)) { throw "Update manifest assembly did not produce $latest." }
+          $python = (Get-Command python -ErrorAction Stop).Source
+          & $python (Join-Path $PWD "scripts/sign-update.py") $latest $signature --public-key (Join-Path $PWD "scripts/update-public-key.txt")
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $signature)) { throw "Update signing failed." }
+
+      - name: Recompute SHA256SUMS
+        shell: pwsh
+        run: |
+          $artifacts = Join-Path $PWD "artifacts"
+          $files = Get-ChildItem -LiteralPath $artifacts -File |
+            Where-Object { $_.Name -ne "SHA256SUMS.txt" } |
+            Sort-Object Name
+          $lines = foreach ($file in $files) {
+            "$((Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant())  $($file.Name)"
+          }
+          Set-Content -LiteralPath (Join-Path $artifacts "SHA256SUMS.txt") -Value $lines -Encoding ascii
 
       - name: Publish release assets
         uses: softprops/action-gh-release@v2
@@ -74,6 +240,9 @@ jobs:
             artifacts/LocalArena-${{ github.ref_name }}-windows.zip
             artifacts/LocalArena-panel-${{ github.ref_name }}-windows.zip
             artifacts/LocalArena-plugin-${{ github.ref_name }}-windows.zip
+            artifacts/LocalArena-${{ github.ref_name }}-linux.zip
+            artifacts/LocalArena-plugin-${{ github.ref_name }}-linux.zip
+            artifacts/cs2-bot-improver-plus-panel
             artifacts/latest.json
             artifacts/latest.json.sig
             artifacts/SHA256SUMS.txt
