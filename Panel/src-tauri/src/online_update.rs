@@ -1,7 +1,7 @@
 use crate::{AppError, Result, app_storage, app_version, atomic_fs, installer, logging, update_core};
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File};
-use std::io::{Read, Write};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -48,7 +48,7 @@ pub struct OnlineUpdateSnapshot {
     pub release_version: Option<String>,
     pub release_notes_url: Option<String>,
     pub panel: UpdateComponentState,
-    pub plugin: UpdateComponentState,
+    pub la_plugins: UpdateComponentState,
     pub busy: bool,
     pub error: Option<String>,
 }
@@ -74,7 +74,7 @@ pub struct UpdateResult {
 #[derive(Clone, Debug, Serialize)]
 pub struct UpdateBatchResult {
     pub panel: Option<UpdateResult>,
-    pub plugin: Option<UpdateResult>,
+    pub la_plugins: Option<UpdateResult>,
     pub restart_required: bool,
 }
 
@@ -156,18 +156,54 @@ fn read_limited_response(mut response: reqwest::blocking::Response, limit: u64) 
     Ok(bytes)
 }
 
-fn verify_manifest(manifest: &[u8], signature: &[u8]) -> Result<update_core::RemoteUpdateManifest> {
-    let signature = std::str::from_utf8(signature)
-        .map_err(|_| AppError::update("Update signature is not valid UTF-8"))?;
-    update_core::verify_manifest_signature(manifest, signature, UPDATE_PUBLIC_KEY)
-        .map_err(AppError::update)?;
-    let parsed: update_core::RemoteUpdateManifest = serde_json::from_slice(manifest)
-        .map_err(|error| AppError::update(format!("Invalid signed update manifest: {error}")))?;
-    parsed.validate().map_err(AppError::update)?;
-    Ok(parsed)
+/// Parses an already-authenticated manifest into the schema-2 shape. A schema
+/// 1 payload is converted here, so every consumer below only ever sees
+/// `la_plugins { windows, linux }`.
+fn parse_manifest(manifest: &[u8]) -> Result<update_core::RemoteUpdateManifestV2> {
+    update_core::parse_update_manifest(manifest).map_err(AppError::update)
 }
 
-fn cached_manifest(allow_stale: bool) -> Result<Option<(update_core::RemoteUpdateManifest, u64)>> {
+fn verify_manifest(
+    manifest: &[u8],
+    signature: &[u8],
+) -> Result<update_core::RemoteUpdateManifestV2> {
+    let signature = std::str::from_utf8(signature)
+        .map_err(|_| AppError::update("Update signature is not valid UTF-8"))?;
+    // Signature first: never parse unsigned bytes.
+    update_core::verify_manifest_signature(manifest, signature, UPDATE_PUBLIC_KEY)
+        .map_err(AppError::update)?;
+    parse_manifest(manifest)
+}
+
+/// The platform key used to select the LA plugin archive of a release.
+fn host_platform() -> &'static str {
+    if cfg!(windows) {
+        "windows"
+    } else {
+        "linux"
+    }
+}
+
+fn la_plugins_for<'a>(
+    manifest: &'a update_core::RemoteUpdateManifestV2,
+    platform: &str,
+) -> Option<&'a update_core::RemoteComponent> {
+    match platform {
+        "windows" => manifest.components.la_plugins.windows.as_ref(),
+        "linux" => manifest.components.la_plugins.linux.as_ref(),
+        _ => None,
+    }
+}
+
+fn host_la_plugins(
+    manifest: &update_core::RemoteUpdateManifestV2,
+) -> Option<&update_core::RemoteComponent> {
+    la_plugins_for(manifest, host_platform())
+}
+
+fn cached_manifest(
+    allow_stale: bool,
+) -> Result<Option<(update_core::RemoteUpdateManifestV2, u64)>> {
     let root = update_root()?;
     let manifest_path = root.join("latest.json");
     let signature_path = root.join("latest.json.sig");
@@ -282,10 +318,10 @@ pub fn snapshot(plugin_version: Option<&str>) -> Result<OnlineUpdateSnapshot> {
         .progress
         .as_ref()
         .filter(|value| value.component == "panel");
-    let plugin_progress = state
+    let la_plugins_progress = state
         .progress
         .as_ref()
-        .filter(|value| value.component == "plugin");
+        .filter(|value| value.component == "la_plugins");
     let plugin_current_version = plugin_version
         .map(str::to_owned)
         .unwrap_or_else(|| app_version::display().to_owned());
@@ -299,10 +335,13 @@ pub fn snapshot(plugin_version: Option<&str>) -> Result<OnlineUpdateSnapshot> {
             panel_progress,
             state.last_error.clone(),
         ),
-        plugin: component_state(
+        // A release may publish only one platform (schema 1 is Windows-only).
+        // A missing key for this host is a normal "nothing to install" state,
+        // never an error: `component_state(None, ..)` reports `current`.
+        la_plugins: component_state(
             &plugin_current_version,
-            manifest.map(|value| &value.components.plugin),
-            plugin_progress,
+            manifest.and_then(host_la_plugins),
+            la_plugins_progress,
             state.last_error.clone(),
         ),
         busy: state.busy,
@@ -381,7 +420,9 @@ fn selected_component(name: &str) -> Result<update_core::RemoteComponent> {
     };
     Ok(match name {
         "panel" => manifest.components.panel,
-        "plugin" => manifest.components.plugin,
+        "la_plugins" => host_la_plugins(&manifest).cloned().ok_or_else(|| {
+            AppError::update("This release has no LA plugin archive for this platform")
+        })?,
         _ => return Err(AppError::update("Unknown update component")),
     })
 }
@@ -402,79 +443,30 @@ fn download_component(
     let directory = update_root()?.join("downloads").join(&component.version);
     fs::create_dir_all(&directory).map_err(AppError::transaction_io)?;
     let archive = directory.join(format!("{name}.zip"));
-    if archive.is_file()
-        && update_core::verify_component_file(&archive, component.size, &component.sha256).is_ok()
-    {
-        return Ok((component, archive));
-    }
-    let temporary = archive.with_extension("zip.download");
-    let result = (|| -> Result<()> {
-        update_core::validate_https_github_url(&component.url).map_err(AppError::update)?;
-        let mut response = client(DOWNLOAD_TIMEOUT)?
-            .get(&component.url)
-            .send()
-            .map_err(|error| {
-                AppError::update(format!(
-                    "Cannot download {name} update from GitHub: {error}"
-                ))
-            })?;
-        if !response.status().is_success() {
-            return Err(AppError::update(format!(
-                "GitHub update download failed with HTTP {}",
-                response.status()
-            )));
-        }
-        update_core::validate_https_github_url(response.url().as_str())
-            .map_err(AppError::update)?;
-        if response
-            .content_length()
-            .is_some_and(|size| size != component.size)
-        {
-            return Err(AppError::update(
-                "GitHub update Content-Length did not match the signed manifest",
-            ));
-        }
-        let mut output = File::create(&temporary).map_err(AppError::transaction_io)?;
-        let mut downloaded = 0_u64;
-        let mut buffer = [0_u8; 128 * 1024];
-        loop {
-            if CANCELLED.load(Ordering::Acquire) {
-                return Err(AppError::update("Update download was cancelled"));
-            }
-            let count = response
-                .read(&mut buffer)
-                .map_err(|error| AppError::update(format!("Update download failed: {error}")))?;
-            if count == 0 {
-                break;
-            }
-            downloaded = downloaded.saturating_add(count as u64);
-            if downloaded > component.size || downloaded > update_core::MAX_ARCHIVE_BYTES {
-                return Err(AppError::update(
-                    "Downloaded update exceeded the signed size",
-                ));
-            }
-            output
-                .write_all(&buffer[..count])
-                .map_err(AppError::transaction_io)?;
+    // The shared downloader reuses a verified archive, resumes `<dest>.part`,
+    // and honours the same cancellation flag as the rest of the Panel.
+    // Pre-existing `.zip.download` temp files left by the old inline loop are
+    // not resumed by the `.part` logic: nothing reads them, so a stale copy is
+    // never promoted to a verified archive.
+    crate::download::download_with_progress(
+        &client(DOWNLOAD_TIMEOUT)?,
+        &component.url,
+        component.size,
+        &component.sha256,
+        &archive,
+        |downloaded_bytes, total_bytes| {
             set_progress(
                 app,
                 UpdateProgress {
                     component: name.into(),
                     stage: "downloading".into(),
-                    downloaded_bytes: downloaded,
-                    total_bytes: component.size,
+                    downloaded_bytes,
+                    total_bytes,
                 },
             );
-        }
-        output.sync_all().map_err(AppError::transaction_io)?;
-        update_core::verify_component_file(&temporary, component.size, &component.sha256)
-            .map_err(AppError::update)?;
-        atomic_fs::replace(&temporary, &archive).map_err(AppError::transaction_io)
-    })();
-    if result.is_err() {
-        let _ = fs::remove_file(&temporary);
-    }
-    result?;
+        },
+        cancelled,
+    )?;
     Ok((component, archive))
 }
 
@@ -504,11 +496,11 @@ fn find_payload_root(extracted: &Path) -> Option<PathBuf> {
 }
 
 pub fn prepare_plugin(app: &AppHandle) -> Result<(String, PathBuf)> {
-    let (component, archive) = download_component(app, "plugin")?;
+    let (component, archive) = download_component(app, "la_plugins")?;
     set_progress(
         app,
         UpdateProgress {
-            component: "plugin".into(),
+            component: "la_plugins".into(),
             stage: "extracting".into(),
             downloaded_bytes: component.size,
             total_bytes: component.size,
@@ -806,6 +798,130 @@ mod tests {
 
     fn test_root(prefix: &str) -> PathBuf {
         std::env::temp_dir().join(format!("{prefix}-{}-{}", std::process::id(), unix_time()))
+    }
+
+    fn component_json(version: &str) -> serde_json::Value {
+        serde_json::json!({
+            "version": version,
+            "url": "https://github.com/numakkiyu/Local-Arena/releases/download/v1.4.3.4/Local-Arena-la-plugins.zip",
+            "size": 1024,
+            "sha256": "a".repeat(64),
+            "min_panel_version": "1.4.3.0",
+        })
+    }
+
+    fn v2_manifest(
+        windows: Option<&str>,
+        linux: Option<&str>,
+    ) -> update_core::RemoteUpdateManifestV2 {
+        let manifest = serde_json::json!({
+            "schema_version": 2,
+            "release_version": "1.4.3.4",
+            "published_at": "2026-11-05T00:00:00Z",
+            "release_notes_url": "https://github.com/numakkiyu/Local-Arena/releases/tag/v1.4.3.4",
+            "components": {
+                "panel": component_json("1.4.3.4"),
+                "la_plugins": {
+                    "windows": windows.map(component_json),
+                    "linux": linux.map(component_json),
+                },
+            },
+        });
+        parse_manifest(manifest.to_string().as_bytes()).unwrap()
+    }
+
+    fn v1_manifest(plugin_version: &str) -> Vec<u8> {
+        serde_json::json!({
+            "schema_version": 1,
+            "release_version": "1.4.3.3",
+            "published_at": "2026-10-31T00:00:00Z",
+            "release_notes_url": "https://github.com/numakkiyu/Local-Arena/releases/tag/v1.4.3.3",
+            "components": {
+                "panel": component_json("1.4.3.3"),
+                "plugin": component_json(plugin_version),
+            },
+        })
+        .to_string()
+        .into_bytes()
+    }
+
+    #[test]
+    fn platform_key_selects_the_host_la_plugins_archive() {
+        let manifest = v2_manifest(Some("1.4.3.10"), Some("1.4.3.20"));
+        assert_eq!(
+            la_plugins_for(&manifest, "windows").map(|value| value.version.as_str()),
+            Some("1.4.3.10")
+        );
+        assert_eq!(
+            la_plugins_for(&manifest, "linux").map(|value| value.version.as_str()),
+            Some("1.4.3.20")
+        );
+        assert!(la_plugins_for(&manifest, "darwin").is_none());
+        // The snapshot path uses exactly this lookup for the current host.
+        let state = component_state(
+            "1.4.3.1",
+            la_plugins_for(&manifest, "linux"),
+            None,
+            None,
+        );
+        assert_eq!(state.latest_version.as_deref(), Some("1.4.3.20"));
+        assert!(state.update_available);
+        assert!(state.compatible);
+        assert_eq!(state.status, "available");
+        assert!(state.error.is_none());
+    }
+
+    #[test]
+    fn converted_v1_manifest_is_graceful_on_a_linux_host() {
+        let manifest = parse_manifest(&v1_manifest("1.4.3.2")).unwrap();
+        // Schema 1 only ever published a Windows archive; the linux key is None.
+        assert_eq!(
+            la_plugins_for(&manifest, "windows").map(|value| value.version.as_str()),
+            Some("1.4.3.2")
+        );
+        assert!(la_plugins_for(&manifest, "linux").is_none());
+        let state = component_state(
+            "1.4.3.2",
+            la_plugins_for(&manifest, "linux"),
+            None,
+            None,
+        );
+        assert_eq!(state.latest_version, None);
+        assert!(!state.update_available);
+        assert!(state.compatible);
+        assert_eq!(state.status, "current");
+        assert_eq!(state.total_bytes, 0);
+        assert!(state.error.is_none());
+    }
+
+    #[test]
+    fn windows_only_v2_release_is_graceful_on_a_linux_host() {
+        let manifest = v2_manifest(Some("1.4.3.40"), None);
+        assert!(la_plugins_for(&manifest, "linux").is_none());
+        let state = component_state(
+            "1.4.3.4",
+            la_plugins_for(&manifest, "linux"),
+            None,
+            None,
+        );
+        assert_eq!(state.latest_version, None);
+        assert!(!state.update_available);
+        assert_eq!(state.status, "current");
+        assert!(state.error.is_none());
+    }
+
+    #[test]
+    fn unsupported_schema_surfaces_through_the_online_update_parser() {
+        let mut value: serde_json::Value =
+            serde_json::from_slice(&v1_manifest("1.4.3.2")).unwrap();
+        value["schema_version"] = serde_json::json!(3);
+        let error = parse_manifest(value.to_string().as_bytes()).unwrap_err();
+        assert_eq!(error.code, "E1601");
+        assert!(
+            error.detail.contains("schema"),
+            "schema errors must surface: {}",
+            error.detail
+        );
     }
 
     #[test]
