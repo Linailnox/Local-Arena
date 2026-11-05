@@ -3471,6 +3471,55 @@ async fn install_plugin_update(
 }
 
 #[tauri::command]
+async fn install_la_plugin_bundle(
+    app: AppHandle,
+    csgo: String,
+) -> Result<online_update::UpdateResult> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let _busy = online_update::OperationGuard::acquire()?;
+        let root = csgo_path(&csgo)?;
+        ensure_target_not_running(&root)?;
+        ensure_steam_app_idle(&root)?;
+        let state = local_state_root(&app)?;
+        let config = read_config(&app)?;
+        let restore_preview = config.mode.as_deref() == Some("preview");
+        let payload = merged_payload_root(&app, &root)?;
+        logging::append(&state, "INFO", "update.la_bundle_started", "source=local-payload");
+        match with_canonical_layout(&state, &root, restore_preview, || {
+            installer::install_la_plugins_component(&payload, &state, &root)
+        }) {
+            Ok(value) => {
+                logging::append(
+                    &state,
+                    "INFO",
+                    "update.la_bundle_completed",
+                    &format!("version={}, files={}", value.package_version, value.installed_files),
+                );
+                Ok(online_update::UpdateResult {
+                    component: "la_plugins".into(),
+                    version: value.package_version,
+                    installed: true,
+                    restart_required: false,
+                    rollback_succeeded: None,
+                    detail: format!("LA plugins bundle installed ({} files)", value.installed_files),
+                })
+            }
+            Err(error) => {
+                logging::append(
+                    &state,
+                    "ERROR",
+                    "update.la_bundle_failed",
+                    &format!("stage=install, rollback=attempted, {}", error.detail),
+                );
+                Err(error)
+            }
+        }
+    })
+    .await
+    .map_err(|error| AppError::update(format!("LA plugin bundle task failed: {error}")))?
+}
+
+#[tauri::command]
 async fn install_panel_update(app: AppHandle) -> Result<online_update::UpdateResult> {
     let worker_app = app.clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
@@ -4565,7 +4614,11 @@ pub fn run() {
             appearance::get_appearance, appearance::save_appearance,
             appearance::export_appearance, appearance::import_appearance,
             record_panel_error, get_update_snapshot, check_online_updates,
-            install_panel_update, install_plugin_update, install_all_updates, cancel_update,
+            install_panel_update,
+            install_plugin_update,
+            install_la_plugin_bundle,
+            install_all_updates,
+            cancel_update,
             upstream_release_info, upstream_download, upstream_cancel,
             upstream_aria2_available,
             upstream_cache_info, upstream_cache_clear, upstream_import_local,

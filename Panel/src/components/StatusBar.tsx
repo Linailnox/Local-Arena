@@ -41,7 +41,7 @@ export default function StatusBar({ onOpenSettings }: { onOpenSettings?: () => v
     ? "yellow"
     : "green";
 
-  const updateAvailable = !!updates && (updates.panel.update_available || updates.plugin.update_available);
+  const updateAvailable = !!updates && (updates.panel.update_available || updates.la_plugins.update_available);
   const updateStatus: Status = !updates ? "off" : updateAvailable ? "yellow" : "green";
 
   const dirHint = !directory?.steam_found
