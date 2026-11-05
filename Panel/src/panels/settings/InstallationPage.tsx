@@ -7,6 +7,7 @@ import { api, toAppError, type InstallCheckReport, type InstallationSource, type
 import { installAttemptDisabled, installBlockedByUpstream } from "../../lib/installGate";
 import Segmented from "../../components/Segmented";
 import InventoryPluginCard from "../../components/InventoryPluginCard";
+import LaPluginBundleCard from "../../components/LaPluginBundleCard";
 import { OnlineUpdateSection } from "./OnlineUpdatePage";
 import { localizeInstallCheck } from "../../lib/installCheckLocalization";
 import Modal from "../../components/Modal";
@@ -412,6 +413,7 @@ export default function InstallationPage() {
         </section>
 
         <InventoryPluginCard csgoPath={csgoPath} onError={reportError} />
+        <LaPluginBundleCard csgoPath={csgoPath} onError={reportError} />
       </OnlineUpdateSection>
 
       <div className="inst-groups">
