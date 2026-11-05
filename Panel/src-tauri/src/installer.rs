@@ -987,13 +987,79 @@ pub fn install(
     let _transaction_lock = acquire_transaction_lock(target)?;
     recover_incomplete_locked(state_root, target)?;
     let manifest = read_manifest_for_target(payload_root, target)?;
+    install_manifest(&manifest, payload_root, state_root, target, repaired)
+}
+
+/// Installs only the manifest entries whose `ownership` matches `ownership_filter` (`"plus"` is
+/// the Local Arena plugin bundle) through the same locked, journalled, record-merging transaction
+/// as [`install`].
+///
+/// The install record stays one file per target: entries already recorded for other owners are
+/// carried over untouched and the component's entries are merged into them. Identical files are
+/// skipped, so re-running the same component payload is a no-op. `active-payload.json` is
+/// deliberately never written here — that pointer belongs to `online_update::activate_payload`
+/// for full-payload installs.
+pub fn install_component(
+    payload_root: &Path,
+    state_root: &Path,
+    target: &Path,
+    ownership_filter: &str,
+) -> Result<InstallTransactionResult> {
+    let _transaction_lock = acquire_transaction_lock(target)?;
+    recover_incomplete_locked(state_root, target)?;
+    let manifest = read_manifest_for_target(payload_root, target)?;
+    let filtered = PayloadManifest {
+        schema_version: manifest.schema_version,
+        package_version: manifest.package_version.clone(),
+        entries: manifest
+            .entries
+            .into_iter()
+            .filter(|entry| entry.ownership == ownership_filter)
+            .collect(),
+    };
+    if filtered.entries.is_empty() {
+        return Err(AppError::payload(
+            "Component has no owned files in this payload",
+        ));
+    }
+    // `repaired` selects the skip-identical branch, which is what an incremental component
+    // install needs: only missing or differing files are replaced.
+    let mut result = install_manifest(&filtered, payload_root, state_root, target, true)?;
+    // A single component is never the full-package first install the welcome story narrates.
+    result.welcome_story_eligible = false;
+    Ok(result)
+}
+
+/// Installs the Local Arena plugin bundle after its dependency preflight (the managed
+/// `BotHiderApi.dll` supplied by the upstream bundle).
+pub fn install_la_plugins_component(
+    payload_root: &Path,
+    state_root: &Path,
+    target: &Path,
+) -> Result<InstallTransactionResult> {
+    crate::component_registry::check_requirements(
+        target,
+        &[crate::component_registry::Requirement::BotHiderApi],
+    )?;
+    install_component(payload_root, state_root, target, "plus")
+}
+
+/// Transaction body shared by [`install`] and [`install_component`]. Callers hold the target
+/// transaction lock and have already recovered any interrupted transaction.
+fn install_manifest(
+    manifest: &PayloadManifest,
+    payload_root: &Path,
+    state_root: &Path,
+    target: &Path,
+    repaired: bool,
+) -> Result<InstallTransactionResult> {
     let detection = detect_source(state_root, target);
     if !detection.can_install {
         return Err(AppError::transaction(
             "A partial or mixed enhanced-plugin installation was detected. Export diagnostics or restore pristine CS2 before installing.",
         ));
     }
-    preflight(&manifest, state_root, target)?;
+    preflight(manifest, state_root, target)?;
     let directory = installation_dir(state_root, target);
     fs::create_dir_all(&directory).map_err(AppError::transaction_io)?;
     let old_record = read_record(&directory);
@@ -1243,7 +1309,7 @@ pub fn install(
     let _ = fs::remove_dir_all(transaction_root);
     fs::remove_file(journal_path).map_err(AppError::transaction_io)?;
     Ok(InstallTransactionResult {
-        package_version: manifest.package_version,
+        package_version: manifest.package_version.clone(),
         installed_files,
         backup_path: directory.to_string_lossy().into_owned(),
         repaired,
@@ -1730,6 +1796,86 @@ mod tests {
         let path = target.join(raw.replace('/', "\\"));
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(path, b"marker").unwrap();
+    }
+
+    const COMPONENT_SHARED: [&str; 2] = [
+        "addons/counterstrikesharp/plugins/BotAI/BotAI.dll",
+        "addons/counterstrikesharp/shared/BotHiderApi/BotHiderApi.dll",
+    ];
+    const COMPONENT_PLUS: [&str; 2] = [
+        "addons/counterstrikesharp/plugins/PlusMatchCoordinator/PlusMatchCoordinator.dll",
+        "addons/counterstrikesharp/plugins/TeamLineupInjector/TeamLineupInjector.dll",
+    ];
+
+    fn write_owned_entry(
+        payload: &Path,
+        manifest: &mut PayloadManifest,
+        raw: &str,
+        bytes: &[u8],
+        ownership: &str,
+    ) {
+        let path = payload.join(safe_relative(raw).unwrap());
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, bytes).unwrap();
+        manifest.entries.push(PayloadEntry {
+            path: raw.to_string(),
+            size: bytes.len() as u64,
+            sha256: sha256(&path).unwrap(),
+            component: if ownership == "plus" {
+                "PlusMatchCoordinator".to_string()
+            } else {
+                "runtime".to_string()
+            },
+            ownership: ownership.to_string(),
+            restore_policy: "restore".to_string(),
+        });
+    }
+
+    /// Two shared entries always, plus the two Local Arena plugin entries when requested.
+    fn component_payload(payload: &Path, include_plus: bool) -> PayloadManifest {
+        let mut manifest = PayloadManifest {
+            schema_version: 1,
+            package_version: "1.4.3.3".to_string(),
+            entries: Vec::new(),
+        };
+        write_owned_entry(
+            payload,
+            &mut manifest,
+            COMPONENT_SHARED[0],
+            b"shared-bot-ai",
+            "shared",
+        );
+        write_owned_entry(
+            payload,
+            &mut manifest,
+            COMPONENT_SHARED[1],
+            b"shared-bothider-api",
+            "shared",
+        );
+        if include_plus {
+            write_owned_entry(
+                payload,
+                &mut manifest,
+                COMPONENT_PLUS[0],
+                b"plus-match-coordinator",
+                "plus",
+            );
+            write_owned_entry(
+                payload,
+                &mut manifest,
+                COMPONENT_PLUS[1],
+                b"plus-team-lineup-injector",
+                "plus",
+            );
+        }
+        write_json_atomic(&payload.join(MANIFEST_FILE), &manifest).unwrap();
+        manifest
+    }
+
+    /// Target-side path for a manifest entry: `safe_relative` is the one join the installer
+    /// itself uses on every platform, so tests must not assume `/` becomes `\\` here.
+    fn owned_target(target: &Path, raw: &str) -> PathBuf {
+        target.join(safe_relative(raw).unwrap())
     }
 
     #[test]
@@ -2280,6 +2426,200 @@ mod tests {
         assert_eq!(fs::read(target.join("cfg/test.cfg")).unwrap(), b"plus");
         assert!(directory.join("record.json").is_file());
         assert!(!directory.join("journal.json").exists());
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn component_install_writes_only_owned_files_and_merges_one_record() {
+        let base = root("component-subset");
+        let payload = base.join("payload");
+        let target = base.join("target");
+        let state = base.join("state");
+        fs::create_dir_all(&target).unwrap();
+
+        // Seed: a full-package install that only carried the shared half.
+        component_payload(&payload, false);
+        install(&payload, &state, &target, false).unwrap();
+        let directory = installation_dir(&state, &target);
+        let seeded = read_record(&directory).unwrap();
+        assert_eq!(seeded.entries.len(), 2);
+        assert!(
+            seeded
+                .entries
+                .iter()
+                .all(|entry| entry.ownership == "shared")
+        );
+
+        let shared = owned_target(&target, COMPONENT_SHARED[0]);
+        fs::write(&shared, b"player-modified").unwrap();
+        let plus = owned_target(&target, COMPONENT_PLUS[0]);
+        assert!(!plus.exists());
+
+        // The component payload adds the plus half to the same manifest.
+        component_payload(&payload, true);
+        let result = install_component(&payload, &state, &target, "plus").unwrap();
+
+        assert_eq!(result.installed_files, 2);
+        assert_eq!(result.package_version, "1.4.3.3");
+        assert_eq!(fs::read(&plus).unwrap(), b"plus-match-coordinator");
+        assert_eq!(
+            fs::read(owned_target(&target, COMPONENT_PLUS[1])).unwrap(),
+            b"plus-team-lineup-injector"
+        );
+        // The shared half is outside the filter: not copied over, player bytes intact.
+        assert_eq!(fs::read(&shared).unwrap(), b"player-modified");
+
+        let merged = read_record(&directory).unwrap();
+        let mut paths = merged
+            .entries
+            .iter()
+            .map(|entry| entry.path.as_str())
+            .collect::<Vec<_>>();
+        paths.sort_unstable();
+        let mut expected = COMPONENT_SHARED
+            .iter()
+            .chain(COMPONENT_PLUS.iter())
+            .copied()
+            .collect::<Vec<_>>();
+        expected.sort_unstable();
+        assert_eq!(paths, expected);
+        for entry in &seeded.entries {
+            let carried = merged
+                .entries
+                .iter()
+                .find(|candidate| candidate.path == entry.path)
+                .expect("the seed entry must survive the component install");
+            assert_eq!(carried.installed_sha256, entry.installed_sha256);
+            assert_eq!(carried.original_sha256, entry.original_sha256);
+            assert_eq!(carried.ownership, "shared");
+        }
+        // One record file per target, never a per-component fork.
+        let names = fs::read_dir(&directory)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(names, vec!["record.json".to_string()]);
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn component_install_rejects_a_payload_with_no_owned_files() {
+        let base = root("component-empty");
+        let payload = base.join("payload");
+        let target = base.join("target");
+        let state = base.join("state");
+        fs::create_dir_all(&target).unwrap();
+        component_payload(&payload, false);
+
+        let error = install_component(&payload, &state, &target, "plus").unwrap_err();
+
+        assert_eq!(error.code, "E1301");
+        assert!(error.detail.contains("no owned files"), "{}", error.detail);
+        assert!(!installation_dir(&state, &target).exists());
+        assert!(fs::read_dir(&target).unwrap().next().is_none());
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn la_plugin_component_requires_the_bothider_api_first() {
+        let base = root("component-preflight");
+        let payload = base.join("payload");
+        let target = base.join("target");
+        let state = base.join("state");
+        fs::create_dir_all(&target).unwrap();
+        component_payload(&payload, true);
+
+        let error = install_la_plugins_component(&payload, &state, &target).unwrap_err();
+
+        assert_eq!(error.code, "E1401");
+        assert!(error.detail.contains("BotHiderApi"), "{}", error.detail);
+        assert!(fs::read_dir(&target).unwrap().next().is_none());
+
+        let dll = owned_target(&target, COMPONENT_SHARED[1]);
+        fs::create_dir_all(dll.parent().unwrap()).unwrap();
+        fs::write(&dll, b"shared-bothider-api").unwrap();
+        let result = install_la_plugins_component(&payload, &state, &target).unwrap();
+
+        assert_eq!(result.installed_files, 2);
+        assert_eq!(
+            fs::read(owned_target(&target, COMPONENT_PLUS[0])).unwrap(),
+            b"plus-match-coordinator"
+        );
+        // The ownership filter still applies: this path never installs the shared half.
+        assert!(!owned_target(&target, COMPONENT_SHARED[0]).exists());
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn component_install_rerun_skips_identical_files() {
+        let base = root("component-idempotent");
+        let payload = base.join("payload");
+        let target = base.join("target");
+        let state = base.join("state");
+        fs::create_dir_all(&target).unwrap();
+        component_payload(&payload, true);
+
+        let first = install_component(&payload, &state, &target, "plus").unwrap();
+        assert_eq!(first.installed_files, 2);
+        let plus = owned_target(&target, COMPONENT_PLUS[0]);
+        let installed_sha = sha256(&plus).unwrap();
+
+        let second = install_component(&payload, &state, &target, "plus").unwrap();
+
+        assert_eq!(second.installed_files, 0);
+        assert_eq!(sha256(&plus).unwrap(), installed_sha);
+        let directory = installation_dir(&state, &target);
+        assert!(!directory.join("journal.json").exists());
+        assert_eq!(read_record(&directory).unwrap().entries.len(), 2);
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn component_install_recovers_an_interrupted_transaction_first() {
+        let base = root("component-recovery");
+        let payload = base.join("payload");
+        let target = base.join("target");
+        let state = base.join("state");
+        fs::create_dir_all(&target).unwrap();
+        component_payload(&payload, true);
+
+        // A crashed earlier transaction left a half-written shared file and its journal.
+        let directory = installation_dir(&state, &target);
+        let transaction = directory.join("transaction-stale");
+        let shared = owned_target(&target, COMPONENT_SHARED[1]);
+        fs::create_dir_all(shared.parent().unwrap()).unwrap();
+        fs::write(&shared, b"partial-write").unwrap();
+        fs::create_dir_all(transaction.join("addons/counterstrikesharp/shared/BotHiderApi"))
+            .unwrap();
+        fs::write(
+            transaction.join("addons/counterstrikesharp/shared/BotHiderApi/BotHiderApi.dll"),
+            b"steam-original",
+        )
+        .unwrap();
+        write_json_atomic(
+            &directory.join("journal.json"),
+            &TransactionJournal {
+                schema_version: 1,
+                operation: "install".to_string(),
+                target: target.to_string_lossy().into_owned(),
+                transaction_dir: "transaction-stale".to_string(),
+                changes: vec![TransactionChange {
+                    path: COMPONENT_SHARED[1].to_string(),
+                    existed: true,
+                    backup: Some(format!("transaction-stale/{}", COMPONENT_SHARED[1])),
+                }],
+                committed: false,
+                previous_record: None,
+            },
+        )
+        .unwrap();
+
+        let result = install_component(&payload, &state, &target, "plus").unwrap();
+
+        assert_eq!(result.installed_files, 2);
+        assert_eq!(fs::read(&shared).unwrap(), b"steam-original");
+        assert!(!directory.join("journal.json").exists());
+        assert!(!transaction.exists());
         fs::remove_dir_all(base).unwrap();
     }
 }
