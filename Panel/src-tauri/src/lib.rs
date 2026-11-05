@@ -17,6 +17,7 @@ mod cosmetics_inventory;
 mod cosmetics_source;
 mod cs2ss_bridge;
 mod diagnostics;
+mod download;
 mod install_checks;
 mod installer;
 mod inventory_plugin;
