@@ -25,6 +25,7 @@ mod match_system;
 mod mode_files;
 mod mode_layout;
 mod online_update;
+mod release_source;
 mod runtime_state;
 mod steam;
 mod update_core;

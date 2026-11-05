@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use crate::release_source::{self, AssetSelector};
 use crate::AppError;
 
 const REPOSITORY: &str = "ianlucas/cs2-css-inventory-simulator";
@@ -63,72 +64,24 @@ fn client() -> Result<reqwest::blocking::Client, AppError> {
         .map_err(|error| AppError::update(error.to_string()))
 }
 
-fn pick_asset(name: &str) -> bool {
-    name.starts_with(ASSET_PREFIX) && name.ends_with(".zip")
-}
-
-fn parse_release(value: &serde_json::Value) -> Result<Release, AppError> {
-    let tag = value
-        .get("tag_name")
-        .and_then(|tag| tag.as_str())
-        .ok_or_else(|| AppError::update("Release has no tag_name"))?;
-    let asset = value
-        .get("assets")
-        .and_then(|assets| assets.as_array())
-        .and_then(|assets| {
-            assets.iter().find(|asset| {
-                asset
-                    .get("name")
-                    .and_then(|name| name.as_str())
-                    .is_some_and(pick_asset)
-            })
-        })
-        .ok_or_else(|| AppError::update("Release has no InventorySimulator zip asset"))?;
-    let digest = asset
-        .get("digest")
-        .and_then(|digest| digest.as_str())
-        .ok_or_else(|| AppError::update("Release asset has no digest"))?;
-    let sha256 = digest
-        .strip_prefix("sha256:")
-        .unwrap_or(digest)
-        .to_ascii_lowercase();
-    Ok(Release {
-        tag: tag.to_string(),
-        asset_name: asset
-            .get("name")
-            .and_then(|name| name.as_str())
-            .unwrap_or_default()
-            .to_string(),
-        url: asset
-            .get("browser_download_url")
-            .and_then(|url| url.as_str())
-            .unwrap_or_default()
-            .to_string(),
-        size: asset.get("size").and_then(|size| size.as_u64()).unwrap_or(0),
-        sha256,
-    })
+fn asset_selector() -> AssetSelector {
+    AssetSelector::Prefix(ASSET_PREFIX.to_string())
 }
 
 pub fn resolve_release(tag: Option<&str>) -> Result<Release, AppError> {
-    let url = match tag {
-        Some(tag) => format!("https://api.github.com/repos/{REPOSITORY}/releases/tags/{tag}"),
-        None => format!("https://api.github.com/repos/{REPOSITORY}/releases/latest"),
+    let client = client()?;
+    let selector = asset_selector();
+    let resolved = match tag {
+        Some(tag) => release_source::resolve_tag(&client, REPOSITORY, tag, &selector)?,
+        None => release_source::resolve_latest(&client, REPOSITORY, &selector)?,
     };
-    let response = client()?
-        .get(url)
-        .header("Accept", "application/vnd.github+json")
-        .send()
-        .map_err(|error| AppError::update(format!("GitHub release request failed: {error}")))?;
-    if !response.status().is_success() {
-        return Err(AppError::update(format!(
-            "GitHub release request returned {}",
-            response.status()
-        )));
-    }
-    let value: serde_json::Value = response
-        .json()
-        .map_err(|error| AppError::update(format!("GitHub release JSON is invalid: {error}")))?;
-    parse_release(&value)
+    Ok(Release {
+        tag: resolved.tag,
+        asset_name: resolved.asset_name,
+        url: resolved.url,
+        size: resolved.size,
+        sha256: resolved.sha256,
+    })
 }
 
 pub fn snapshot(root: &Path) -> InventoryPluginSnapshot {
@@ -256,9 +209,10 @@ mod tests {
 
     #[test]
     fn picks_only_the_plugin_zip_asset() {
-        assert!(pick_asset("InventorySimulator-v3.7.0.zip"));
-        assert!(!pick_asset("source.zip"));
-        assert!(!pick_asset("InventorySimulator-v3.7.0.zip.sha256"));
+        let selector = asset_selector();
+        assert!(selector.matches("InventorySimulator-v3.7.0.zip"));
+        assert!(!selector.matches("source.zip"));
+        assert!(!selector.matches("InventorySimulator-v3.7.0.zip.sha256"));
     }
 
     #[test]
@@ -266,30 +220,50 @@ mod tests {
         let value = serde_json::json!({
             "tag_name": "3.7.0",
             "assets": [
-                { "name": "other.txt", "browser_download_url": "u0", "size": 1, "digest": "sha256:aa" },
+                { "name": "other.txt", "browser_download_url": "https://github.com/ianlucas/cs2-css-inventory-simulator/releases/download/3.7.0/other.txt", "size": 1, "digest": "sha256:aa" },
                 {
                     "name": "InventorySimulator-v3.7.0.zip",
-                    "browser_download_url": "u1",
+                    "browser_download_url": "https://github.com/ianlucas/cs2-css-inventory-simulator/releases/download/3.7.0/InventorySimulator-v3.7.0.zip",
                     "size": 83624,
                     "digest": "sha256:A19705A7825CA68379CD09E2B25AFDC2364D6947DB3F3121311954224F573933"
                 }
             ]
         });
-        let release = parse_release(&value).unwrap();
+        let release = release_source::parse_release_value(&value, REPOSITORY, &asset_selector()).unwrap();
         assert_eq!(release.tag, "3.7.0");
         assert_eq!(release.size, 83_624);
-        assert_eq!(release.url, "u1");
+        assert_eq!(
+            release.url,
+            "https://github.com/ianlucas/cs2-css-inventory-simulator/releases/download/3.7.0/InventorySimulator-v3.7.0.zip"
+        );
         assert!(release.sha256.starts_with("a19705a7"));
     }
 
     #[test]
     fn rejects_release_without_digest_or_asset() {
-        assert!(parse_release(&serde_json::json!({ "tag_name": "1" })).is_err());
-        assert!(parse_release(&serde_json::json!({
-            "tag_name": "1",
-            "assets": [{ "name": "InventorySimulator-v1.zip", "browser_download_url": "u", "size": 1 }]
-        }))
-        .is_err());
+        assert!(
+            release_source::parse_release_value(
+                &serde_json::json!({ "tag_name": "1" }),
+                REPOSITORY,
+                &asset_selector()
+            )
+            .is_err()
+        );
+        assert!(
+            release_source::parse_release_value(
+                &serde_json::json!({
+                    "tag_name": "1",
+                    "assets": [{
+                        "name": "InventorySimulator-v1.zip",
+                        "browser_download_url": "https://github.com/ianlucas/cs2-css-inventory-simulator/releases/download/1/InventorySimulator-v1.zip",
+                        "size": 1
+                    }]
+                }),
+                REPOSITORY,
+                &asset_selector()
+            )
+            .is_err()
+        );
     }
 
     #[test]
