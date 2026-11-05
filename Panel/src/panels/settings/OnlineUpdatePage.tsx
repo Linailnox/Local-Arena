@@ -45,7 +45,7 @@ export function OnlineUpdateSection({ children, toolbarExtra }: { children?: Rea
     setWorking("all");
     setLocalError(null);
     try {
-      await api.installAllUpdates(snapshot?.plugin.update_available ? csgoPath : null);
+      await api.installAllUpdates(snapshot?.la_plugins.update_available ? csgoPath : null);
       await refreshSnapshot();
     } catch (error) {
       setLocalError(toAppError(error).detail);
@@ -60,10 +60,10 @@ export function OnlineUpdateSection({ children, toolbarExtra }: { children?: Rea
 
   const blocked = !!process?.running && (process.matches_selected || !process.path_accessible);
   const panelAvailable = !!snapshot?.panel.update_available;
-  const pluginAvailable = !!snapshot?.plugin.update_available;
+  const pluginAvailable = !!snapshot?.la_plugins.update_available;
   const hasUpdates = panelAvailable || pluginAvailable;
   const pluginNeedsDirectory = pluginAvailable && !csgoPath;
-  const pluginIncompatible = pluginAvailable && snapshot?.plugin.compatible === false;
+  const pluginIncompatible = pluginAvailable && snapshot?.la_plugins.compatible === false;
   const panelIncompatible = panelAvailable && snapshot?.panel.compatible === false;
   const canInstallAll = hasUpdates && !snapshot?.busy && !working
     && !pluginNeedsDirectory && !(pluginAvailable && blocked)
@@ -88,7 +88,7 @@ export function OnlineUpdateSection({ children, toolbarExtra }: { children?: Rea
   };
 
   const componentSection = (component: "panel" | "plugin") => {
-    const state = snapshot?.[component];
+    const state = snapshot?.[component === "panel" ? "panel" : "la_plugins"];
     const progress = state?.total_bytes
       ? Math.min(100, Math.round((state.downloaded_bytes / state.total_bytes) * 100)) : 0;
     const installing = !!snapshot?.busy && ["downloading", "extracting"].includes(state?.status ?? "");

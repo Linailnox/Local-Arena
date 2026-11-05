@@ -56,7 +56,7 @@ export default function OverviewDashboard({ onNavigate }: { onNavigate: (view: D
     void api.listCs2ssMatchesWithStats(csgo).then(setMatches).catch(() => setMatches([]));
   }, [csgo]);
 
-  const updateAvailable = !!updates && (updates.panel.update_available || updates.plugin.update_available);
+  const updateAvailable = !!updates && (updates.panel.update_available || updates.la_plugins.update_available);
   const latest = matches?.[0] ?? null;
 
   return (

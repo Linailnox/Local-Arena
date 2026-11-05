@@ -516,7 +516,7 @@ export type OnlineUpdateSnapshot = {
   release_version: string | null;
   release_notes_url: string | null;
   panel: UpdateComponentState;
-  plugin: UpdateComponentState;
+  la_plugins: UpdateComponentState;
   busy: boolean;
   error: string | null;
 };
@@ -539,7 +539,7 @@ export type UpdateResult = {
 
 export type UpdateBatchResult = {
   panel: UpdateResult | null;
-  plugin: UpdateResult | null;
+  la_plugins: UpdateResult | null;
   restart_required: boolean;
 };
 
@@ -872,6 +872,8 @@ export const api = {
   installPanelUpdate: () => invoke<UpdateResult>("install_panel_update"),
   installPluginUpdate: (csgo: string) =>
     invoke<UpdateResult>("install_plugin_update", { csgo }),
+  installLaPluginBundle: (csgo: string) =>
+    invoke<UpdateResult>("install_la_plugin_bundle", { csgo }),
   installAllUpdates: (csgo: string | null) =>
     invoke<UpdateBatchResult>("install_all_updates", { csgo }),
   cancelUpdate: () => invoke<void>("cancel_update"),
