@@ -3470,6 +3470,27 @@ async fn install_plugin_update(
     .map_err(|error| AppError::update(format!("Plugin update task failed: {error}")))?
 }
 
+/// Which payload [`install_la_plugin_bundle`] installs from (F2 review, major 1).
+/// The branch is decided from the update snapshot — before the local payload
+/// root is resolved — because that root is stale whenever an update is
+/// available; the download reuses the `online_update::prepare_plugin` chain
+/// instead of a second download path.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LaBundleSource {
+    /// A newer release is published: download, verify and merge it first.
+    Download,
+    /// No update available: install/repair from the already-merged local payload.
+    Local,
+}
+
+fn la_bundle_source(update_available: bool) -> LaBundleSource {
+    if update_available {
+        LaBundleSource::Download
+    } else {
+        LaBundleSource::Local
+    }
+}
+
 #[tauri::command]
 async fn install_la_plugin_bundle(
     app: AppHandle,
@@ -3483,21 +3504,58 @@ async fn install_la_plugin_bundle(
         let state = local_state_root(&app)?;
         let config = read_config(&app)?;
         let restore_preview = config.mode.as_deref() == Some("preview");
-        let payload = merged_payload_root(&app, &root)?;
-        logging::append(&state, "INFO", "update.la_bundle_started", "source=local-payload");
+        // Decide from the snapshot before resolving any payload root: the local
+        // root is stale whenever an update is available (F2 major 1).
+        let snapshot = online_update::snapshot(installed_plugin_version(&app).as_deref())?;
+        let (payload, downloaded_version) =
+            match la_bundle_source(snapshot.la_plugins.update_available) {
+                LaBundleSource::Download => {
+                    logging::append(
+                        &state,
+                        "INFO",
+                        "update.la_bundle_started",
+                        "source=github.com",
+                    );
+                    match online_update::prepare_plugin(&app) {
+                        // `prepare_plugin` downloads, verifies, merges with the
+                        // cached upstream zip and activates the payload before
+                        // returning, so this root is resolved after activation.
+                        Ok((version, merged)) => (merged, Some(version)),
+                        Err(error) => {
+                            logging::append(
+                                &state,
+                                "ERROR",
+                                "update.la_bundle_failed",
+                                &format!("stage=download, {}", error.detail),
+                            );
+                            return Err(error);
+                        }
+                    }
+                }
+                LaBundleSource::Local => {
+                    logging::append(
+                        &state,
+                        "INFO",
+                        "update.la_bundle_started",
+                        "source=local-payload",
+                    );
+                    (merged_payload_root(&app, &root)?, None)
+                }
+            };
         match with_canonical_layout(&state, &root, restore_preview, || {
             installer::install_la_plugins_component(&payload, &state, &root)
         }) {
             Ok(value) => {
+                let version = downloaded_version.unwrap_or_else(|| value.package_version.clone());
                 logging::append(
                     &state,
                     "INFO",
                     "update.la_bundle_completed",
-                    &format!("version={}, files={}", value.package_version, value.installed_files),
+                    &format!("version={}, files={}", version, value.installed_files),
                 );
                 Ok(online_update::UpdateResult {
                     component: "la_plugins".into(),
-                    version: value.package_version,
+                    version,
                     installed: true,
                     restart_required: false,
                     rollback_succeeded: None,
@@ -4564,6 +4622,43 @@ mod tests {
         normalize_knife_config(&mut config).unwrap();
         left.paint = config.loadouts.ct.gun_presets["9"].paint;
         assert_eq!(left.paint, 344);
+    }
+
+    #[test]
+    fn la_bundle_source_downloads_when_update_available() {
+        assert_eq!(la_bundle_source(true), LaBundleSource::Download);
+    }
+
+    #[test]
+    fn la_bundle_source_installs_locally_without_update() {
+        assert_eq!(la_bundle_source(false), LaBundleSource::Local);
+    }
+
+    #[test]
+    fn la_bundle_source_follows_the_snapshot_update_flag() {
+        // Mirrors the command's decision input: `snapshot.la_plugins.update_available`.
+        let la_plugins = online_update::UpdateComponentState {
+            current_version: "1.4.3.3".into(),
+            latest_version: Some("1.4.3.4".into()),
+            update_available: true,
+            compatible: true,
+            status: "available".into(),
+            downloaded_bytes: 0,
+            total_bytes: 0,
+            error: None,
+        };
+        assert_eq!(
+            la_bundle_source(la_plugins.update_available),
+            LaBundleSource::Download
+        );
+        let la_plugins = online_update::UpdateComponentState {
+            update_available: false,
+            ..la_plugins
+        };
+        assert_eq!(
+            la_bundle_source(la_plugins.update_available),
+            LaBundleSource::Local
+        );
     }
 }
 
