@@ -1050,7 +1050,9 @@ pub fn install_component(
 }
 
 /// Installs the Local Arena plugin bundle after its dependency preflight (the managed
-/// `BotHiderApi.dll` supplied by the upstream bundle).
+/// `BotHiderApi.dll` supplied by the upstream bundle). The requirements come from
+/// [`crate::component_registry::LA_PLUGIN_BUNDLE`] itself, so the descriptor stays the single
+/// source of truth and cannot drift from the preflight the bundle enforces.
 pub fn install_la_plugins_component(
     payload_root: &Path,
     state_root: &Path,
@@ -1058,7 +1060,7 @@ pub fn install_la_plugins_component(
 ) -> Result<InstallTransactionResult> {
     crate::component_registry::check_requirements(
         target,
-        &[crate::component_registry::Requirement::BotHiderApi],
+        crate::component_registry::LA_PLUGIN_BUNDLE.requires,
     )?;
     install_component(payload_root, state_root, target, "plus")
 }
