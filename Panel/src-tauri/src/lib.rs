@@ -3491,6 +3491,13 @@ fn la_bundle_source(update_available: bool) -> LaBundleSource {
     }
 }
 
+/// Resolves the command's `csgo` argument into the CS2 `csgo` directory and
+/// rejects anything that is not an installation root, game directory or
+/// `game/csgo` directory (F1 review: the invalid-target path was untested).
+fn la_bundle_target(csgo: &str) -> Result<PathBuf> {
+    csgo_path(csgo)
+}
+
 #[tauri::command]
 async fn install_la_plugin_bundle(
     app: AppHandle,
@@ -3498,7 +3505,7 @@ async fn install_la_plugin_bundle(
 ) -> Result<online_update::UpdateResult> {
     tauri::async_runtime::spawn_blocking(move || {
         let _busy = online_update::OperationGuard::acquire()?;
-        let root = csgo_path(&csgo)?;
+        let root = la_bundle_target(&csgo)?;
         ensure_target_not_running(&root)?;
         ensure_steam_app_idle(&root)?;
         let state = local_state_root(&app)?;
@@ -4659,6 +4666,32 @@ mod tests {
             la_bundle_source(la_plugins.update_available),
             LaBundleSource::Local
         );
+    }
+
+    #[test]
+    fn la_bundle_target_rejects_an_empty_and_a_missing_csgo_path() {
+        // The command's first step: an unusable target must fail as a directory
+        // error before any running-process or Steam guard runs.
+        for raw in ["", "   ", "/definitely-not-a-cs2-install-local-arena-28"] {
+            let error = la_bundle_target(raw).unwrap_err();
+            assert_eq!(error.code, "E1101", "unexpected code for {raw:?}");
+            assert_eq!(error.category, "directory", "unexpected category for {raw:?}");
+        }
+    }
+
+    #[test]
+    fn la_bundle_target_returns_the_canonical_csgo_directory() {
+        let root = test_root();
+        let csgo = root.join("game").join("csgo");
+        fs::create_dir_all(csgo.join("cfg")).unwrap();
+        fs::write(csgo.join("gameinfo.gi"), b"gameinfo").unwrap();
+
+        let expected = normalize_windows_canonical(fs::canonicalize(&csgo).unwrap());
+        let resolved = la_bundle_target(csgo.to_str().unwrap()).unwrap();
+        assert_eq!(resolved, expected);
+        assert!(resolved.is_absolute());
+
+        fs::remove_dir_all(root).unwrap();
     }
 }
 
