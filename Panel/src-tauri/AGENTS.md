@@ -3,29 +3,29 @@
 ## OVERVIEW
 Score 17 — the entire backend; distinct domain from the React frontend. Crate
 `cs2-bot-improver-plus-panel` (lib `cs2_bot_improver_plus_panel_lib`, edition 2024).
-Flat `src/`: 25 `.rs` files (24 modules + `main.rs`), ~19.7k LOC; 24 modules carry
-inline `mod tests` (218 `#[test]`s). No `tests/` dir — cross-crate tests live in `core-tests/`.
+Flat `src/`: 25 `.rs` files (`lib.rs` + 23 modules + `main.rs`), 20,152 LOC; 24 of them
+carry inline `mod tests` (229 `#[test]`s). No `tests/` dir — cross-crate tests live in `core-tests/`.
 
 ## WHERE TO LOOK
 | Task | Location |
 |------|----------|
-| Add a Tauri command | `#[tauri::command]` fn (lib.rs 79 / cs2ss_bridge.rs 10 / appearance.rs 4 = 93 total) + register in `generate_handler!` (lib.rs:4602); frontend half in `Panel/src/lib/api.ts` (92 wrappers today — `import_cosmetics_inventory` is unwrapped) |
-| App setup / config / merge | `src/lib.rs` (4640 LOC, largest; tests start 3719) |
-| Install / repair / restore | `src/installer.rs` (2625; copies only `plus-payload-manifest.json` entries) |
-| Component install | `src/installer.rs` — `install_component` (ownership-filtered manifest subset, record-merging, skips identical files, never writes `active-payload.json`) and `install_la_plugins_component` (BotHiderApi preflight + `"plus"` subset) |
-| LA plugin bundle command | `src/lib.rs` `install_la_plugin_bundle` — decides from the update snapshot: with an update available it downloads/verifies/merges via `online_update::prepare_plugin`, otherwise installs from the merged local payload; then BotHiderApi preflight + `install_la_plugins_component` (no archive extraction of its own); api wrapper `api.installLaPluginBundle` |
+| Add a Tauri command | `#[tauri::command]` fn (lib.rs 79 / cs2ss_bridge.rs 10 / appearance.rs 4 = 93 total) + register in `generate_handler!` (lib.rs:4730); frontend half in `Panel/src/lib/api.ts` (92 wrappers today — `import_cosmetics_inventory` is unwrapped) |
+| App setup / config / merge | `src/lib.rs` (4768 LOC, largest; tests start 3784) |
+| Install / repair / restore | `src/installer.rs` (2869; copies only `plus-payload-manifest.json` entries) |
+| Component install | `src/installer.rs` — `install_component` (:1021) runs the ownership-filtered manifest subset through the same locked, journalled transaction, skips identical files, merges into the one per-target record and never writes `active-payload.json`; `install_la_plugins_component` (:1056) checks `LA_PLUGIN_BUNDLE.requires` (the upstream `BotHiderApi.dll`) then installs the `"plus"` subset. Record version rule: only a full-payload install claims `package_version` unconditionally; a component install merges into the existing record and must never let a third-party-only record's tag become the suite version (`is_suite_record` gates the carry-over) — read the comment block above `InstallRecord` in `install_manifest` before touching it |
+| LA plugin bundle command | `src/lib.rs` `install_la_plugin_bundle` (:3502) — decides from the update snapshot: with an update available it downloads/verifies/merges via `online_update::prepare_plugin`, otherwise installs from the merged local payload; then `install_la_plugins_component` (no archive extraction of its own); api wrapper `api.installLaPluginBundle` |
 | Upstream download + merge | `src/upstream_package.rs` (2249; GitHub digest sha256 verify, `.part` resume, cache `.cache/package/`) |
 | Stats telemetry bridge | `src/cs2ss_bridge.rs` (1823; reads `<csgo>/.csbip/cs2ss/telemetry.db`) |
 | Match system | `src/match_system.rs` (889) |
 | Launch modes / gameinfo.gi | `src/mode_files.rs` (`apply_launch_mode` rewrites from current Steam files) |
 | Steam discovery | `src/steam.rs` (cross-platform roots incl. non-Windows) |
-| Online update | `src/online_update.rs`, `update_core.rs` — host platform key selects `la_plugins.{windows,linux}`; a release may publish only one platform |
-| Update manifest schema v2 | `src/update_core.rs` — `components.la_plugins.{windows,linux}`; a v1 `plugin` entry is converted to `la_plugins.windows` by `parse_update_manifest` |
-| Component registry | `src/component_registry.rs` — compiled-in descriptors (upstream / la_plugins / inventory_simulator), `requires` preflight, `VersionScheme` Panel vs UpstreamTag |
-| GitHub release resolution | `src/release_source.rs` — digest-required, trusted GitHub hosts only, `AssetSelector` (`.zip`-only prefix match) |
-| Shared streaming download | `src/download.rs` — `download_with_progress`: cache reuse, `.part` resume, progress + cancel, size/sha256 verify, atomic move |
+| Online update | `src/online_update.rs` (1133) — `snapshot`/`check` read the signed manifest; `host_platform()` keys the LA bundle to `la_plugins.{windows,linux}`, and a release that carries only the other platform errors instead of falling back; `prepare_plugin` downloads + verifies + merges with the cached upstream zip and activates the payload; `client(Duration)` is the one HTTPS-only `reqwest` client every component shares |
+| Update manifest schema v2 | `src/update_core.rs` (719) — `components.la_plugins.{windows,linux}`; `parse_update_manifest` converts a v1 `plugin` entry to `la_plugins.windows` (`linux: None`); `validate_v2` requires at least one platform; sha256/signature helpers + `extract_zip_safely` |
+| Component registry | `src/component_registry.rs` (242) — compiled-in `UPSTREAM_BUNDLE` / `LA_PLUGIN_BUNDLE` / `INVENTORY_SIMULATOR` (`ALL`); `ComponentSource` = `GitHubRelease { repository, asset: AssetName }` or `SignedLatestJson { field }`; `AssetName::selector()` builds the `release_source::AssetSelector`, so the matching rules live only in `release_source`; `Requirement::BotHiderApi` + fail-closed `check_requirements(target, requires)`. `by_id` is production code: `inventory_plugin::registry_source()` returns `Result` and rejects a descriptor whose source is not a GitHub release |
+| GitHub release resolution | `src/release_source.rs` (232) — `resolve_latest` / `resolve_tag`, digest-required, trusted GitHub hosts only, `AssetSelector::{Prefix, ExactName}` |
+| Shared streaming download | `src/download.rs` (596) — `download_with_progress`: cache reuse, `.part` resume, progress + cancel, size/sha256 verify, atomic move |
 | Install health / diagnostics | `src/install_checks.rs`, `diagnostics.rs` |
-| Cosmetics (InventorySimulator) | `src/cosmetics_source.rs` (local↔direct switch), `cosmetics_inventory.rs` (JSON mapping + `_panel` sidecar), `inventory_plugin.rs` (third-party plugin download through `release_source` + `download_with_progress`; the shared transaction installs `.installed.json` as its last entry, so the marker is never ahead of the payload) |
+| Cosmetics (InventorySimulator) | `src/cosmetics_source.rs` (local↔direct switch), `cosmetics_inventory.rs` (JSON mapping + `_panel` sidecar), `inventory_plugin.rs` (562; third-party, never shipped: `registry_source()` resolves repo + selector from the registry, the shared client and `download_with_progress` fill a per-tag cache, `extract_zip_safely` stages it, and one `installer::install_component` transaction writes only its two payload paths — the `.installed.json` marker is a manifest entry, so it lands with the payload instead of ahead of it) |
 | App state root | `src/app_storage.rs` — `.csbip` next to the exe (override `CS2BI_STATE_ROOT`); all writes via `atomic_fs.rs` (temp + replace) |
 | Cross-crate core tests | `core-tests/` (re-includes 11 modules via `#[path]`, separate manifest) |
 
@@ -46,7 +46,7 @@ inline `mod tests` (218 `#[test]`s). No `tests/` dir — cross-crate tests live 
 - Linux `cargo build` needs a temp `icons/icon.png` (only icon.ico is committed) — create it, never commit it.
 - `scripts/verify-workspace.ps1` greps `lib.rs` for literal markers (`aim_supported,`, `.csbip/aim-runtime.json`, `aim_override_count`, `"normal", "less", "off"`) — renaming those strings fails the gate even if behavior is unchanged.
 - Linux test failures are allowlisted by exact test name in `scripts/linux/build.sh` (`KNOWN_WINDOWS_ONLY`, 7 entries) — never widen that list.
-- InventorySimulator (`inventory_plugin.rs`) is third-party: never shipped in the package; the Panel only downloads/installs it (release resolution via `release_source.rs`, `.installed.json` marker, only its two payload paths written).
+- InventorySimulator (`inventory_plugin.rs`) is third-party: never shipped in the package; the Panel only downloads/installs it (release resolution via the registry + `release_source.rs`, one transactional install whose manifest carries the `.installed.json` marker, only its two payload paths written).
 - The managed component set is compiled in `component_registry.rs` — adding a component is a compile-time change; never introduce a shipped `components.json` (second source of truth, editable after install).
 - Never read or derive state from `src-tauri/gen/` (generated Tauri schemas, untracked).
 
