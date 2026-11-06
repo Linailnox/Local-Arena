@@ -1315,17 +1315,22 @@ fn install_manifest(
         installation_id: installation_id(target),
         target: target.to_string_lossy().into_owned(),
         // `package_version` is the suite version `installed_plugin_version` reports and update
-        // detection parses, so only a full-payload install may set it. A component install
-        // merges into an existing record whose version must survive: a third-party manifest
-        // carries its release tag ("3.7.0"), and even the LA bundle installs from a local
-        // payload that can predate the last online update. With no prior record the component's
-        // manifest version is the only version there is; such a record is never read as a suite
-        // version (see `is_suite_record`).
+        // detection parses, so only a full-payload install may set it. A component install merges
+        // into an existing record whose version must survive — but only when that record already
+        // speaks for the suite: the LA bundle installs from a local payload that can predate the
+        // last online update, and its version is the one update detection parses. A
+        // third-party-only record's tag ("3.7.0") is never adopted, because merging `plus`
+        // entries into such a record turns it into a suite record (`is_suite_record`) that would
+        // then report that tag and break the four-part version parse. With no suite record the
+        // component's manifest version is the only version there is.
         package_version: if component_install {
-            old_record.as_ref().map_or_else(
-                || manifest.package_version.clone(),
-                |previous| previous.package_version.clone(),
-            )
+            old_record
+                .as_ref()
+                .filter(|previous| is_suite_record(previous))
+                .map_or_else(
+                    || manifest.package_version.clone(),
+                    |previous| previous.package_version.clone(),
+                )
         } else {
             manifest.package_version.clone()
         },
@@ -2763,6 +2768,102 @@ mod tests {
             fs::read(owned_target(&target, THIRD_PARTY)).unwrap(),
             b"third-party-plugin"
         );
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn a_third_party_tag_never_becomes_the_suite_version_of_a_merged_record() {
+        let base = root("third-party-then-plus");
+        let payload = base.join("payload");
+        let target = base.join("target");
+        let state = base.join("state");
+        fs::create_dir_all(&target).unwrap();
+
+        // The InventorySimulator card installs first on a machine without a suite record, so the
+        // record that exists is third-party-only and carries that component's release tag.
+        third_party_payload(&payload);
+        install_component(&payload, &state, &target, "third-party").unwrap();
+        let directory = installation_dir(&state, &target);
+        assert_eq!(read_record(&directory).unwrap().package_version, "3.7.0");
+
+        // The LA bundle card then merges its `plus` subset into that same record.
+        component_payload(&payload, true);
+        install_component(&payload, &state, &target, "plus").unwrap();
+
+        // The record now speaks for the suite, so it must report the bundle's version, not the
+        // third-party tag it happened to inherit. A four-part parse of "3.7.0" would silently
+        // kill update detection.
+        let record = read_record(&directory).unwrap();
+        assert_eq!(record.package_version, "1.4.3.3");
+        assert!(is_suite_record(&record));
+        assert_eq!(record.entries.len(), 3);
+        assert!(record
+            .entries
+            .iter()
+            .any(|entry| entry.path == THIRD_PARTY && entry.ownership == "third-party"));
+        assert!(record
+            .entries
+            .iter()
+            .any(|entry| entry.path == COMPONENT_PLUS[0] && entry.ownership == "plus"));
+
+        let inspection = inspect_quick(&payload, &state, &target).unwrap();
+        assert!(inspection.installed);
+        assert_eq!(inspection.package_version.as_deref(), Some("1.4.3.3"));
+        assert_eq!(inspection.source, InstallationSource::ManagedPlus);
+        assert_eq!(inspection.source_version.as_deref(), Some("1.4.3.3"));
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn a_suite_record_version_survives_a_plus_component_install() {
+        let base = root("suite-then-plus");
+        let payload = base.join("payload");
+        let target = base.join("target");
+        let state = base.join("state");
+        fixture(&payload, &target);
+        install(&payload, &state, &target, false).unwrap();
+
+        // A local bundle payload can predate the last online update; the suite record's version
+        // is the one update detection parses, so the component install must not downgrade it.
+        component_payload(&payload, true);
+        install_component(&payload, &state, &target, "plus").unwrap();
+
+        let record = read_record(&installation_dir(&state, &target)).unwrap();
+        assert_eq!(record.package_version, "1.4.2.4");
+        assert_eq!(record.entries.len(), 3);
+        let inspection = inspect_quick(&payload, &state, &target).unwrap();
+        assert_eq!(inspection.package_version.as_deref(), Some("1.4.2.4"));
+        assert_eq!(inspection.source, InstallationSource::ManagedPlus);
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn restore_after_a_merge_keeps_the_third_party_component() {
+        let base = root("restore-after-merge");
+        let payload = base.join("payload");
+        let target = base.join("target");
+        let state = base.join("state");
+        fs::create_dir_all(&target).unwrap();
+        third_party_payload(&payload);
+        install_component(&payload, &state, &target, "third-party").unwrap();
+        component_payload(&payload, true);
+        install_component(&payload, &state, &target, "plus").unwrap();
+        let directory = installation_dir(&state, &target);
+        assert!(is_suite_record(&read_record(&directory).unwrap()));
+
+        let result = restore(&payload, &state, &target).unwrap();
+
+        // Only the two suite files the merge added are removed; the component the suite never
+        // installed stays on disk, and the record goes with the suite.
+        assert_eq!(result.restored_files, 0);
+        assert_eq!(result.removed_files, 2);
+        assert!(!owned_target(&target, COMPONENT_PLUS[0]).exists());
+        assert!(!owned_target(&target, COMPONENT_PLUS[1]).exists());
+        assert_eq!(
+            fs::read(owned_target(&target, THIRD_PARTY)).unwrap(),
+            b"third-party-plugin"
+        );
+        assert!(read_record(&directory).is_none());
         fs::remove_dir_all(base).unwrap();
     }
 }
