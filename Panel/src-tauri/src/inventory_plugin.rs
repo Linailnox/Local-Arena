@@ -17,13 +17,14 @@ use tauri::{AppHandle, Emitter};
 
 use crate::component_registry::ComponentSource;
 use crate::installer::PayloadManifest;
-use crate::release_source::{self, AssetSelector};
+use crate::release_source;
 use crate::AppError;
 
 const MARKER_FILE: &str = ".installed.json";
 const PLUGIN_DIR: &str = "addons/counterstrikesharp/plugins/InventorySimulator/";
 const GAMEDATA_FILE: &str = "addons/counterstrikesharp/gamedata/inventory-simulator.json";
 const COMPONENT: &str = "InventorySimulator";
+const COMPONENT_ID: &str = "inventory_simulator";
 const OWNERSHIP: &str = "third-party";
 
 #[derive(Clone, Debug, Serialize)]
@@ -70,20 +71,19 @@ fn client() -> Result<reqwest::blocking::Client, AppError> {
         .map_err(|error| AppError::update(error.to_string()))
 }
 
-fn registry_source() -> (&'static str, &'static str) {
-    // The compiled-in registry is the single source of truth for the repository and the asset
-    // selector; `component_registry` keeps this descriptor's shape guarded by its own tests.
-    match crate::component_registry::INVENTORY_SIMULATOR.source {
-        ComponentSource::GitHubRelease {
-            repository,
-            asset: crate::component_registry::AssetSelector::Prefix(prefix),
-        } => (repository, prefix),
-        other => panic!("inventory_simulator registry source changed: {other:?}"),
+/// The compiled-in registry is the single source of truth for where this component's releases
+/// live. The descriptor is looked up by id — the same id the update-progress events and the
+/// update manifest field names use — so a registry/id mismatch surfaces as an error at the
+/// lookup instead of a panic inside the install task.
+fn registry_source() -> Result<(&'static str, release_source::AssetSelector), AppError> {
+    let descriptor = crate::component_registry::by_id(COMPONENT_ID)
+        .ok_or_else(|| AppError::update(format!("component registry has no {COMPONENT_ID} descriptor")))?;
+    match descriptor.source {
+        ComponentSource::GitHubRelease { repository, asset } => Ok((repository, asset.selector())),
+        ComponentSource::SignedLatestJson { field } => Err(AppError::update(format!(
+            "{COMPONENT_ID} registry source changed: SignedLatestJson({field})"
+        ))),
     }
-}
-
-fn asset_selector() -> AssetSelector {
-    AssetSelector::Prefix(registry_source().1.to_string())
 }
 
 fn update_root() -> Result<PathBuf, AppError> {
@@ -107,8 +107,7 @@ fn staging_root(update_root: &Path, tag: &str) -> PathBuf {
 
 pub fn resolve_release(tag: Option<&str>) -> Result<Release, AppError> {
     let client = client()?;
-    let (repository, _prefix) = registry_source();
-    let selector = asset_selector();
+    let (repository, selector) = registry_source()?;
     let resolved = match tag {
         Some(tag) => release_source::resolve_tag(&client, repository, tag, &selector)?,
         None => release_source::resolve_latest(&client, repository, &selector)?,
@@ -136,9 +135,8 @@ pub fn snapshot(root: &Path) -> InventoryPluginSnapshot {
         needs_install: !plugin_present,
         // Deliberately network-free: `snapshot` cannot know the latest tag, so a live
         // `needs_update` would read as "up to date" whenever there is no network. The
-        // comparison (`component_registry::compare_versions(VersionScheme::UpstreamTag, …)`)
-        // happens where a latest tag exists — the `inventory_plugin_check` command path and
-        // the caller comparing its `Release` against `installed_version` here.
+        // installed-vs-latest comparison happens where a latest tag exists — the frontend
+        // comparing the `inventory_plugin_check` release against `installed_version`.
         needs_update: false,
     }
 }
@@ -281,7 +279,7 @@ pub fn install(
             let _ = app.emit(
                 "update-progress",
                 crate::online_update::UpdateProgress {
-                    component: "inventory_simulator".into(),
+                    component: COMPONENT_ID.into(),
                     stage: "downloading".into(),
                     downloaded_bytes,
                     total_bytes,
@@ -354,7 +352,7 @@ mod tests {
 
     #[test]
     fn picks_only_the_plugin_zip_asset() {
-        let selector = asset_selector();
+        let (_, selector) = registry_source().unwrap();
         assert!(selector.matches("InventorySimulator-v3.7.0.zip"));
         assert!(!selector.matches("source.zip"));
         assert!(!selector.matches("InventorySimulator-v3.7.0.zip.sha256"));
@@ -374,12 +372,8 @@ mod tests {
                 }
             ]
         });
-        let release = release_source::parse_release_value(
-            &value,
-            registry_source().0,
-            &asset_selector(),
-        )
-        .unwrap();
+        let (repository, selector) = registry_source().unwrap();
+        let release = release_source::parse_release_value(&value, repository, &selector).unwrap();
         assert_eq!(release.tag, "3.7.0");
         assert_eq!(release.size, 83_624);
         assert_eq!(
@@ -391,11 +385,12 @@ mod tests {
 
     #[test]
     fn rejects_release_without_digest_or_asset() {
+        let (repository, selector) = registry_source().unwrap();
         assert!(
             release_source::parse_release_value(
                 &serde_json::json!({ "tag_name": "1" }),
-                registry_source().0,
-                &asset_selector()
+                repository,
+                &selector
             )
             .is_err()
         );
@@ -409,8 +404,8 @@ mod tests {
                         "size": 1
                     }]
                 }),
-                registry_source().0,
-                &asset_selector()
+                repository,
+                &selector
             )
             .is_err()
         );
