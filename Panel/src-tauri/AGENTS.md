@@ -3,16 +3,16 @@
 ## OVERVIEW
 Score 17 — the entire backend; distinct domain from the React frontend. Crate
 `cs2-bot-improver-plus-panel` (lib `cs2_bot_improver_plus_panel_lib`, edition 2024).
-Flat `src/`: 25 `.rs` files (`lib.rs` + 23 modules + `main.rs`), 20,152 LOC; 24 of them
-carry inline `mod tests` (229 `#[test]`s). No `tests/` dir — cross-crate tests live in `core-tests/`.
+Flat `src/`: 25 `.rs` files (`lib.rs` + 23 modules + `main.rs`), 20,259 LOC; 24 of them
+carry inline `mod tests` (231 `#[test]`s). No `tests/` dir — cross-crate tests live in `core-tests/`.
 
 ## WHERE TO LOOK
 | Task | Location |
 |------|----------|
 | Add a Tauri command | `#[tauri::command]` fn (lib.rs 79 / cs2ss_bridge.rs 10 / appearance.rs 4 = 93 total) + register in `generate_handler!` (lib.rs:4730); frontend half in `Panel/src/lib/api.ts` (92 wrappers today — `import_cosmetics_inventory` is unwrapped) |
 | App setup / config / merge | `src/lib.rs` (4768 LOC, largest; tests start 3784) |
-| Install / repair / restore | `src/installer.rs` (2869; copies only `plus-payload-manifest.json` entries) |
-| Component install | `src/installer.rs` — `install_component` (:1021) runs the ownership-filtered manifest subset through the same locked, journalled transaction, skips identical files, merges into the one per-target record and never writes `active-payload.json`; `install_la_plugins_component` (:1056) checks `LA_PLUGIN_BUNDLE.requires` (the upstream `BotHiderApi.dll`) then installs the `"plus"` subset. Record version rule: only a full-payload install claims `package_version` unconditionally; a component install merges into the existing record and must never let a third-party-only record's tag become the suite version (`is_suite_record` gates the carry-over) — read the comment block above `InstallRecord` in `install_manifest` before touching it |
+| Install / repair / restore | `src/installer.rs` (2976; copies only `plus-payload-manifest.json` entries) |
+| Component install | `src/installer.rs` — `install_component` (:1021) runs the ownership-filtered manifest subset through the same locked, journalled transaction, skips identical files, merges into the one per-target record and never writes `active-payload.json`; `install_la_plugins_component` (:1063) checks `LA_PLUGIN_BUNDLE.requires` (the upstream `BotHiderApi.dll`) then installs the `"plus"` subset. Record version rule: a full-payload install sets `package_version` from its own manifest; a `"plus"` component install records the freshly installed bundle version unless that would downgrade the existing suite record (`plus_component_package_version`), while a third-party component never lets its tag (`3.7.0`) become the suite version (`is_suite_record` gates the carry-over) — read the comment block above `InstallRecord` in `install_manifest` before touching it |
 | LA plugin bundle command | `src/lib.rs` `install_la_plugin_bundle` (:3502) — decides from the update snapshot: with an update available it downloads/verifies/merges via `online_update::prepare_plugin`, otherwise installs from the merged local payload; then `install_la_plugins_component` (no archive extraction of its own); api wrapper `api.installLaPluginBundle` |
 | Upstream download + merge | `src/upstream_package.rs` (2249; GitHub digest sha256 verify, `.part` resume, cache `.cache/package/`) |
 | Stats telemetry bridge | `src/cs2ss_bridge.rs` (1823; reads `<csgo>/.csbip/cs2ss/telemetry.db`) |
