@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
-import { Boxes, Download, RefreshCw } from "lucide-react";
-import { api, type InventoryPluginRelease, type InventoryPluginSnapshot } from "../lib/api";
+import { Boxes, Download, RefreshCw, X } from "lucide-react";
+import {
+  api,
+  type InventoryPluginRelease,
+  type InventoryPluginSnapshot,
+  type UpdateProgress,
+} from "../lib/api";
 import { useT } from "../i18n";
+import { listenAppEvent } from "../lib/platform";
 import { useToast } from "./Toast";
 import "./InventoryPluginCard.css";
 
@@ -16,6 +22,7 @@ export default function InventoryPluginCard({ csgoPath, onError }: Props) {
   const [snapshot, setSnapshot] = useState<InventoryPluginSnapshot | null>(null);
   const [release, setRelease] = useState<InventoryPluginRelease | null>(null);
   const [busy, setBusy] = useState<"check" | "install" | null>(null);
+  const [progress, setProgress] = useState<UpdateProgress | null>(null);
 
   const refresh = useCallback(() => {
     if (!csgoPath) { setSnapshot(null); return; }
@@ -23,6 +30,19 @@ export default function InventoryPluginCard({ csgoPath, onError }: Props) {
   }, [csgoPath, onError]);
 
   useEffect(refresh, [refresh]);
+
+  // The install runs through the shared downloader, which emits `update-progress` with this
+  // component's registry id — the same event the panel and LA bundle cards listen to.
+  useEffect(() => {
+    const unlisten = listenAppEvent<UpdateProgress>("update-progress", (event) => {
+      if (event.payload.component === "inventory_simulator") {
+        setProgress(event.payload);
+      }
+    });
+    return () => {
+      void unlisten.then((dispose) => dispose());
+    };
+  }, []);
 
   const check = async () => {
     if (busy) return;
@@ -36,15 +56,30 @@ export default function InventoryPluginCard({ csgoPath, onError }: Props) {
   const install = async () => {
     if (!csgoPath || busy) return;
     setBusy("install");
+    setProgress(null);
     try {
       setSnapshot(await api.inventoryPluginInstall(csgoPath, release?.tag ?? null));
       toast.show(t("inventoryPlugin.installed"), "green");
     } catch (error) { onError(error); }
-    finally { setBusy(null); }
+    finally { setBusy(null); setProgress(null); }
+  };
+
+  const cancel = async () => {
+    try {
+      await api.cancelUpdate();
+    } catch (error) {
+      onError(error);
+    } finally {
+      setBusy(null);
+    }
   };
 
   const installed = snapshot?.installed_version ?? null;
   const present = snapshot?.plugin_present ?? false;
+  const installing = busy === "install";
+  const percent = progress && progress.total_bytes
+    ? Math.min(100, Math.round((progress.downloaded_bytes / progress.total_bytes) * 100))
+    : 0;
 
   return <section className="upd-card">
     <div className="upd-card__head">
@@ -58,10 +93,15 @@ export default function InventoryPluginCard({ csgoPath, onError }: Props) {
           <RefreshCw size={14} />{busy === "check" ? t("inventoryPlugin.checking") : t("inventoryPlugin.check")}
         </button>
         <button className="inst-hero__btn" disabled={!csgoPath || !!busy} onClick={() => void install()}>
-          <Download size={14} />{busy === "install"
+          <Download size={14} />{installing
             ? t("inventoryPlugin.installing")
             : present ? t("inventoryPlugin.update") : t("inventoryPlugin.install")}
         </button>
+        {installing && (
+          <button className="inst-hero__btn" onClick={() => void cancel()}>
+            <X size={14} /> {t("update.cancel")}
+          </button>
+        )}
       </div>
     </div>
     <div className="upd-card__versions">
@@ -74,6 +114,14 @@ export default function InventoryPluginCard({ csgoPath, onError }: Props) {
         <strong>{release ? `${release.tag} · ${Math.round(release.size / 1024)} KB` : t("inventoryPlugin.notChecked")}</strong>
       </div>
     </div>
+    {installing && (
+      <div className="update-progress">
+        <div><span style={{ width: `${percent}%` }} /></div>
+        <small>
+          {t("update.downloading", { n: percent })}
+        </small>
+      </div>
+    )}
     <p className="inst-diagnostics-scope">{t("inventoryPlugin.hint")}</p>
   </section>;
 }

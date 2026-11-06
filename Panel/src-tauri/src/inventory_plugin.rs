@@ -63,12 +63,9 @@ fn read_marker(root: &Path) -> Option<Marker> {
     serde_json::from_slice(&bytes).ok()
 }
 
+/// Shared update client (HTTPS-only, 120 s timeout) — the same one the other components use.
 fn client() -> Result<reqwest::blocking::Client, AppError> {
-    reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(120))
-        .user_agent("Local-Arena-Panel")
-        .build()
-        .map_err(|error| AppError::update(error.to_string()))
+    crate::online_update::client(std::time::Duration::from_secs(120))
 }
 
 /// The compiled-in registry is the single source of truth for where this component's releases
