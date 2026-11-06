@@ -1,3 +1,11 @@
+//! Cross-crate harness: the backend modules that hold pure logic are re-included here through
+//! `#[path]`, against the `AppError`/`Result` stand-ins below, so their own `#[test]`s run without
+//! the Tauri app. A module joins this graph only when everything it pulls is already a dependency
+//! of this manifest — `component_registry` (and with it `release_source`) stays out because
+//! `release_source` needs the `reqwest` HTTP client plus the `AppError::update` family;
+//! `cosmetics_source` is the older gap behind the 3 `E0433`s in `app_storage`/`installer`.
+//! Closing either gap means adding that dependency surface here, or splitting the HTTP-free part
+//! (`AssetSelector`) into its own module and including that.
 #![allow(dead_code)]
 
 use serde::Serialize;
