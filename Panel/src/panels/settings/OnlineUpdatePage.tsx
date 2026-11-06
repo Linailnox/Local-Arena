@@ -72,7 +72,7 @@ export function OnlineUpdateSection({ children, toolbarExtra }: { children?: Rea
     : pluginAvailable && blocked ? t("update.closeCs2")
       : pluginIncompatible || panelIncompatible ? t("update.incompatible")
         : null;
-  const installOne = async (component: "panel" | "plugin") => {
+  const installOne = async (component: "panel" | "la_plugins") => {
     setWorking(component);
     setLocalError(null);
     try {
@@ -87,8 +87,8 @@ export function OnlineUpdateSection({ children, toolbarExtra }: { children?: Rea
     }
   };
 
-  const componentSection = (component: "panel" | "plugin") => {
-    const state = snapshot?.[component === "panel" ? "panel" : "la_plugins"];
+  const componentSection = (component: "panel" | "la_plugins") => {
+    const state = snapshot?.[component];
     const progress = state?.total_bytes
       ? Math.min(100, Math.round((state.downloaded_bytes / state.total_bytes) * 100)) : 0;
     const installing = !!snapshot?.busy && ["downloading", "extracting"].includes(state?.status ?? "");
@@ -113,7 +113,7 @@ export function OnlineUpdateSection({ children, toolbarExtra }: { children?: Rea
             <button
               className="upd-mini-btn"
               disabled={!available || !!working || !!snapshot?.busy
-                || (component === "plugin" && (!csgoPath || blocked))}
+                || (component === "la_plugins" && (!csgoPath || blocked))}
               onClick={() => installOne(component)}
             >
               <Download size={13} />{installing ? t("update.updatingAll") : t(component === "panel" ? "update.installPanel" : "update.installPlugin")}
@@ -144,7 +144,7 @@ export function OnlineUpdateSection({ children, toolbarExtra }: { children?: Rea
           </div>
         )}
 
-        {component === "plugin" && blocked && (
+        {component === "la_plugins" && blocked && (
           <p className="upd-note"><AlertTriangle size={14} aria-hidden="true" />{t("update.closeCs2")}</p>
         )}
         {state && !state.compatible && (
@@ -190,13 +190,13 @@ export function OnlineUpdateSection({ children, toolbarExtra }: { children?: Rea
             {working === "all" ? t("update.updatingAll") : hasUpdates ? t("update.installAll") : t("update.current")}
           </button>
           {working === "all" && <button onClick={cancel}><X size={16} />{t("update.cancel")}</button>}
-          {(working === "panel" || working === "plugin") && <button onClick={cancel}><X size={16} />{t("update.cancel")}</button>}
+          {(working === "panel" || working === "la_plugins") && <button onClick={cancel}><X size={16} />{t("update.cancel")}</button>}
         </div>
       </section>
       {blockingNote && <p className="upd-note update-primary-note"><AlertTriangle size={14} aria-hidden="true" />{blockingNote}</p>}
       <div className="upd-grid">
         {componentSection("panel")}
-        {componentSection("plugin")}
+        {componentSection("la_plugins")}
         {children}
       </div>
     </div>

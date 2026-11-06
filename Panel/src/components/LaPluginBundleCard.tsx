@@ -103,7 +103,7 @@ export default function LaPluginBundleCard({ csgoPath, onError }: Props) {
             <Download size={14} />
             {busy === "install" ? t("laBundle.installing") : present ? t("laBundle.update") : t("laBundle.install")}
           </button>
-          {(installing || busy === "install") && (
+          {installing && (
             <button className="inst-hero__btn" onClick={cancel}>
               <X size={14} /> {t("update.cancel")}
             </button>

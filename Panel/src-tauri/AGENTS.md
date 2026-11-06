@@ -13,7 +13,7 @@ inline `mod tests` (218 `#[test]`s). No `tests/` dir — cross-crate tests live 
 | App setup / config / merge | `src/lib.rs` (4640 LOC, largest; tests start 3719) |
 | Install / repair / restore | `src/installer.rs` (2625; copies only `plus-payload-manifest.json` entries) |
 | Component install | `src/installer.rs` — `install_component` (ownership-filtered manifest subset, record-merging, skips identical files, never writes `active-payload.json`) and `install_la_plugins_component` (BotHiderApi preflight + `"plus"` subset) |
-| LA plugin bundle command | `src/lib.rs` `install_la_plugin_bundle` (:3474) — extract archive, preflight, `install_la_plugins_component`; api wrapper `api.installLaPluginBundle` |
+| LA plugin bundle command | `src/lib.rs` `install_la_plugin_bundle` — decides from the update snapshot: with an update available it downloads/verifies/merges via `online_update::prepare_plugin`, otherwise installs from the merged local payload; then BotHiderApi preflight + `install_la_plugins_component` (no archive extraction of its own); api wrapper `api.installLaPluginBundle` |
 | Upstream download + merge | `src/upstream_package.rs` (2249; GitHub digest sha256 verify, `.part` resume, cache `.cache/package/`) |
 | Stats telemetry bridge | `src/cs2ss_bridge.rs` (1823; reads `<csgo>/.csbip/cs2ss/telemetry.db`) |
 | Match system | `src/match_system.rs` (889) |

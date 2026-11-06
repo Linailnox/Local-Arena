@@ -522,14 +522,14 @@ export type OnlineUpdateSnapshot = {
 };
 
 export type UpdateProgress = {
-  component: "panel" | "plugin" | "la_plugins" | "inventory_simulator";
+  component: "panel" | "la_plugins" | "inventory_simulator";
   stage: string;
   downloaded_bytes: number;
   total_bytes: number;
 };
 
 export type UpdateResult = {
-  component: "panel" | "plugin" | "la_plugins" | "inventory_simulator";
+  component: "panel" | "la_plugins" | "inventory_simulator";
   version: string;
   installed: boolean;
   restart_required: boolean;

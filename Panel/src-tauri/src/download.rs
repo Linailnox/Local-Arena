@@ -29,7 +29,8 @@ const CHUNK_BYTES: usize = 128 * 1024;
 ///
 /// A `dest` that already matches `expected_size`/`expected_sha256` is reused
 /// without any network access. The URL is checked against the trusted GitHub
-/// hosts before a request is made.
+/// hosts before a request is made, and whenever a redirect moves the transfer
+/// to a different URL the final URL is re-checked as well.
 pub fn download_with_progress(
     client: &reqwest::blocking::Client,
     url: &str,
@@ -57,7 +58,10 @@ pub fn download_with_progress(
 }
 
 /// The transfer half of [`download_with_progress`]: resume/restart `.part`,
-/// stream, verify, and replace `dest`. The caller has already accepted `url`.
+/// stream, verify, and replace `dest`. The caller has already accepted `url`;
+/// a redirect that lands on a different final URL is re-validated against
+/// the trusted GitHub hosts, so a redirect cannot move the transfer onto an
+/// untrusted host.
 fn download_streaming(
     client: &reqwest::blocking::Client,
     url: &str,
@@ -73,7 +77,8 @@ fn download_streaming(
         ));
     }
     if let Some(parent) = dest.parent() {
-        fs::create_dir_all(parent).map_err(AppError::transaction_io)?;
+        fs::create_dir_all(parent)
+            .map_err(|error| AppError::update(format!("Cannot create the download directory: {error}")))?;
     }
     let part = part_path(dest);
     let mut offset = match fs::metadata(&part) {
@@ -98,6 +103,13 @@ fn download_streaming(
     let mut response = request.send().map_err(|error| {
         AppError::update(format!("Cannot download the update from GitHub: {error}"))
     })?;
+    // A redirect must not land on an untrusted host: the request URL was
+    // already validated by the caller, so only a final URL that differs from
+    // it (a redirect actually happened) needs re-checking.
+    if response.url().as_str() != url {
+        update_core::validate_https_github_url(response.url().as_str())
+            .map_err(AppError::update)?;
+    }
     let status = response.status();
     if !status.is_success() {
         // Keep `.part`: the bytes already on disk remain resumable.
@@ -125,7 +137,7 @@ fn download_streaming(
         .append(resuming)
         .truncate(!resuming)
         .open(&part)
-        .map_err(AppError::transaction_io)?;
+        .map_err(|error| AppError::update(format!("Cannot open the download part file: {error}")))?;
     let mut downloaded = offset;
     let mut buffer = vec![0_u8; CHUNK_BYTES];
     loop {
@@ -145,14 +157,16 @@ fn download_streaming(
         }
         output
             .write_all(&buffer[..count])
-            .map_err(AppError::transaction_io)?;
+            .map_err(|error| AppError::update(format!("Cannot write the downloaded update: {error}")))?;
         progress(downloaded, expected_size);
         if cancel() {
             // Keep `.part`: a cancelled transfer is resumable.
             return Err(AppError::update("Update download was cancelled"));
         }
     }
-    output.sync_all().map_err(AppError::transaction_io)?;
+    output
+        .sync_all()
+        .map_err(|error| AppError::update(format!("Cannot flush the downloaded update: {error}")))?;
     drop(output);
 
     if let Err(error) = update_core::verify_component_file(&part, expected_size, expected_sha256) {
@@ -160,7 +174,8 @@ fn download_streaming(
         let _ = fs::remove_file(&part);
         return Err(AppError::update(error));
     }
-    atomic_fs::replace(&part, dest).map_err(AppError::transaction_io)?;
+    atomic_fs::replace(&part, dest)
+        .map_err(|error| AppError::update(format!("Cannot move the downloaded update into place: {error}")))?;
     Ok(expected_size)
 }
 
@@ -526,6 +541,56 @@ mod tests {
             "untrusted hosts must be rejected: {error:?}"
         );
         assert!(!dest.exists());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn redirect_to_an_untrusted_host_is_rejected() {
+        let dir = temp_dir("redirect");
+        let body = b"redirect-target-body".repeat(64);
+        let digest = sha256_hex(&body);
+        // The first request is answered with a 302 to a same-server path, so
+        // reqwest follows it to a final URL that is not a trusted GitHub host.
+        let mut server = TestServer::start({
+            let body = body.clone();
+            move |stream, request| {
+                if request.starts_with("GET /asset.zip") {
+                    let head =
+                        "HTTP/1.1 302 Found\r\nLocation: /evil.zip\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+                    stream.write_all(head.as_bytes()).unwrap();
+                    stream.flush().unwrap();
+                } else {
+                    respond(stream, "200 OK", body.len(), &body);
+                }
+            }
+        });
+        let dest = dir.join("payload.zip");
+        let error = download_streaming(
+            &test_client(),
+            &server.url("/asset.zip"),
+            body.len() as u64,
+            &digest,
+            &dest,
+            |_, _| {},
+            || false,
+        )
+        .unwrap_err();
+
+        assert!(
+            format!("{error:?}").contains("HTTPS"),
+            "a redirect to an untrusted host must be rejected: {error:?}"
+        );
+        assert!(
+            server
+                .requests()
+                .iter()
+                .any(|request| request.contains("GET /evil.zip")),
+            "the redirect must have been followed before rejection: {:?}",
+            server.requests()
+        );
+        assert!(!part_path(&dest).exists());
+        assert!(!dest.exists());
+        server.shutdown();
         let _ = fs::remove_dir_all(&dir);
     }
 }
