@@ -1006,7 +1006,7 @@ pub fn install(
     let _transaction_lock = acquire_transaction_lock(target)?;
     recover_incomplete_locked(state_root, target)?;
     let manifest = read_manifest_for_target(payload_root, target)?;
-    install_manifest(&manifest, payload_root, state_root, target, repaired, false)
+    install_manifest(&manifest, payload_root, state_root, target, repaired, None)
 }
 
 /// Installs only the manifest entries whose `ownership` matches `ownership_filter` (`"plus"` is
@@ -1043,7 +1043,14 @@ pub fn install_component(
     }
     // `repaired` selects the skip-identical branch, which is what an incremental component
     // install needs: only missing or differing files are replaced.
-    let mut result = install_manifest(&filtered, payload_root, state_root, target, true, true)?;
+    let mut result = install_manifest(
+        &filtered,
+        payload_root,
+        state_root,
+        target,
+        true,
+        Some(ownership_filter),
+    )?;
     // A single component is never the full-package first install the welcome story narrates.
     result.welcome_story_eligible = false;
     Ok(result)
@@ -1065,18 +1072,42 @@ pub fn install_la_plugins_component(
     install_component(payload_root, state_root, target, "plus")
 }
 
+/// `package_version` a `plus` component install records.
+///
+/// The LA bundle card installs through this path, so the bundle's own version is the one update
+/// detection must see; only a downgrade against the previous suite record is refused (see
+/// [`install_manifest`]). A version that fails to parse on either side must not block recording,
+/// so the manifest version wins there.
+fn plus_component_package_version(
+    previous: Option<&InstallRecord>,
+    manifest_version: &str,
+) -> String {
+    let Some(previous) = previous.filter(|record| is_suite_record(record)) else {
+        return manifest_version.to_string();
+    };
+    match (
+        crate::update_core::DisplayVersion::parse(manifest_version),
+        crate::update_core::DisplayVersion::parse(&previous.package_version),
+    ) {
+        (Ok(installed), Ok(recorded)) if installed < recorded => previous.package_version.clone(),
+        _ => manifest_version.to_string(),
+    }
+}
+
 /// Transaction body shared by [`install`] and [`install_component`]. Callers hold the target
 /// transaction lock and have already recovered any interrupted transaction.
 ///
-/// `component_install` marks a subset install: it merges into the existing record without
-/// claiming the suite's `package_version`, which only a full-payload install may set.
+/// `component_ownership` marks a subset install: its entries belong to one ownership class
+/// (`"plus"` for the LA bundle card, `"third-party"` for InventorySimulator) and merge into the
+/// existing record. `None` is a full-payload install. The recorded `package_version` follows
+/// that ownership class — see the record write at the end of the transaction.
 fn install_manifest(
     manifest: &PayloadManifest,
     payload_root: &Path,
     state_root: &Path,
     target: &Path,
     repaired: bool,
-    component_install: bool,
+    component_ownership: Option<&str>,
 ) -> Result<InstallTransactionResult> {
     let detection = detect_source(state_root, target);
     if !detection.can_install {
@@ -1315,24 +1346,31 @@ fn install_manifest(
         installation_id: installation_id(target),
         target: target.to_string_lossy().into_owned(),
         // `package_version` is the suite version `installed_plugin_version` reports and update
-        // detection parses, so only a full-payload install may set it. A component install merges
-        // into an existing record whose version must survive — but only when that record already
-        // speaks for the suite: the LA bundle installs from a local payload that can predate the
-        // last online update, and its version is the one update detection parses. A
-        // third-party-only record's tag ("3.7.0") is never adopted, because merging `plus`
-        // entries into such a record turns it into a suite record (`is_suite_record`) that would
-        // then report that tag and break the four-part version parse. With no suite record the
-        // component's manifest version is the only version there is.
-        package_version: if component_install {
-            old_record
+        // detection parses. A full-payload install sets it from its own manifest. A component
+        // install depends on which ownership it carries:
+        //
+        // * `"plus"` is the LA bundle card's path, so the freshly installed bundle's version must
+        //   be recorded — preserving the previous one would leave detection at the old version and
+        //   the card offering the same update forever. Only a downgrade is refused: the bundle can
+        //   install from a local payload that predates the last online update, and recording that
+        //   older version would roll update detection backwards.
+        // * a third-party component (InventorySimulator) never speaks for the suite. Its tag
+        //   ("3.7.0") would break the four-part version parse, so an existing suite record keeps
+        //   its version. With no suite record the component's manifest version is the only version
+        //   there is; merging `plus` entries into such a record later replaces it (see
+        //   `is_suite_record`).
+        package_version: match component_ownership {
+            None => manifest.package_version.clone(),
+            Some("plus") => {
+                plus_component_package_version(old_record.as_ref(), &manifest.package_version)
+            }
+            Some(_) => old_record
                 .as_ref()
                 .filter(|previous| is_suite_record(previous))
                 .map_or_else(
                     || manifest.package_version.clone(),
                     |previous| previous.package_version.clone(),
-                )
-        } else {
-            manifest.package_version.clone()
+                ),
         },
         installed_at: unix_time(),
         source: old_record
@@ -2814,8 +2852,15 @@ mod tests {
         fs::remove_dir_all(base).unwrap();
     }
 
+    /// Rewrites only the manifest's package version, leaving every entry (and its hash) intact.
+    fn set_manifest_version(payload: &Path, version: &str) {
+        let mut manifest = read_manifest_document(payload).unwrap();
+        manifest.package_version = version.to_string();
+        write_json_atomic(&payload.join(MANIFEST_FILE), &manifest).unwrap();
+    }
+
     #[test]
-    fn a_suite_record_version_survives_a_plus_component_install() {
+    fn a_plus_component_install_records_the_bundle_version() {
         let base = root("suite-then-plus");
         let payload = base.join("payload");
         let target = base.join("target");
@@ -2823,18 +2868,80 @@ mod tests {
         fixture(&payload, &target);
         install(&payload, &state, &target, false).unwrap();
 
-        // A local bundle payload can predate the last online update; the suite record's version
-        // is the one update detection parses, so the component install must not downgrade it.
+        // The bundle card installs through this path, so the newly installed bundle's version is
+        // the one update detection must report; keeping the older suite version would leave the
+        // card offering the same update forever.
         component_payload(&payload, true);
         install_component(&payload, &state, &target, "plus").unwrap();
 
         let record = read_record(&installation_dir(&state, &target)).unwrap();
-        assert_eq!(record.package_version, "1.4.2.4");
+        assert_eq!(record.package_version, "1.4.3.3");
         assert_eq!(record.entries.len(), 3);
         let inspection = inspect_quick(&payload, &state, &target).unwrap();
-        assert_eq!(inspection.package_version.as_deref(), Some("1.4.2.4"));
+        assert_eq!(inspection.package_version.as_deref(), Some("1.4.3.3"));
         assert_eq!(inspection.source, InstallationSource::ManagedPlus);
         fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn a_plus_component_install_never_records_a_downgrade() {
+        let base = root("plus-version-downgrade");
+        let payload = base.join("payload");
+        let target = base.join("target");
+        let state = base.join("state");
+        fs::create_dir_all(&target).unwrap();
+
+        // An online update already brought the suite to 1.4.3.3.
+        component_payload(&payload, false);
+        set_manifest_version(&payload, "1.4.3.3");
+        install(&payload, &state, &target, false).unwrap();
+
+        // The bundle payload installed locally is older: recording it would roll update
+        // detection backwards, so the record keeps the newer suite version.
+        component_payload(&payload, true);
+        set_manifest_version(&payload, "1.4.2.4");
+        install_component(&payload, &state, &target, "plus").unwrap();
+
+        let record = read_record(&installation_dir(&state, &target)).unwrap();
+        assert_eq!(record.package_version, "1.4.3.3");
+        let inspection = inspect_quick(&payload, &state, &target).unwrap();
+        assert_eq!(inspection.package_version.as_deref(), Some("1.4.3.3"));
+        assert_eq!(inspection.source, InstallationSource::ManagedPlus);
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn a_plus_component_install_records_a_version_it_cannot_compare() {
+        let record = InstallRecord {
+            schema_version: 2,
+            installation_id: "test".to_string(),
+            target: "target".to_string(),
+            package_version: "legacy-tag".to_string(),
+            installed_at: 0,
+            source: InstallationSource::ManagedPlus,
+            restore_baseline: RestoreBaseline::ExistingRecord,
+            migrated_from_version: None,
+            entries: vec![InstallRecordEntry {
+                path: "cfg/test.cfg".to_string(),
+                original_existed: true,
+                original_sha256: None,
+                original_backup: None,
+                installed_sha256: String::new(),
+                ownership: "plus".to_string(),
+                restore_policy: "restore".to_string(),
+            }],
+        };
+
+        // A version that fails to parse on either side must not block recording: the manifest
+        // version wins instead of the record keeping a version nothing can compare.
+        assert_eq!(
+            plus_component_package_version(Some(&record), "1.4.3.3"),
+            "1.4.3.3"
+        );
+        assert_eq!(
+            plus_component_package_version(Some(&record), "also-not-a-version"),
+            "also-not-a-version"
+        );
     }
 
     #[test]
