@@ -1806,7 +1806,7 @@
   color: var(--c-accent);
   background: var(--c-accent-soft);
 }
-.upd-card__icon--plugin {
+.upd-card__icon--la_plugins {
   color: var(--st-green);
   background: var(--st-green-soft);
 }

@@ -1081,6 +1081,40 @@ mod tests {
     }
 
     #[test]
+    fn snapshot_platform_keying_reports_the_host_archive_version() {
+        // Pins the platform keying `snapshot()` composes for la_plugins:
+        // `manifest.and_then(host_la_plugins)` -> `la_plugins_for(_, host_platform())`
+        // -> `component_state`, exactly as in the production snapshot body.
+        // The manifest itself cannot enter `snapshot()` from a test: the cache
+        // is signature-verified against the release public key, whose private
+        // half only exists as the CI secret `CSBIP_UPDATE_SIGNING_KEY`. So
+        // every link of the chain is asserted with the values `snapshot()`
+        // passes, including `host_platform()` itself — hardcoding it to
+        // `"windows"` would fail here on a Linux host.
+        assert_eq!(host_platform(), if cfg!(windows) { "windows" } else { "linux" });
+        let manifest = v2_manifest(Some("1.4.3.10"), Some("1.4.3.20"));
+        let expected = if cfg!(windows) { "1.4.3.10" } else { "1.4.3.20" };
+        assert_eq!(
+            host_la_plugins(&manifest).map(|value| value.version.as_str()),
+            Some(expected)
+        );
+        // This is the snapshot body's la_plugins composition, verbatim:
+        // `cached.as_ref().map(...)` is Option<&manifest> there.
+        let cached: Option<&update_core::RemoteUpdateManifestV2> = Some(&manifest);
+        let plugin_current_version =
+            la_plugins_current(Some("1.4.3.1")).unwrap_or_default();
+        let state = component_state(
+            &plugin_current_version,
+            cached.and_then(host_la_plugins),
+            None,
+            None,
+        );
+        assert_eq!(state.latest_version.as_deref(), Some(expected));
+        assert_eq!(state.current_version, "1.4.3.1");
+        assert!(state.update_available);
+    }
+
+    #[test]
     fn cleanup_keeps_only_active_and_one_previous_payload() {
         let _guard = app_storage::TEST_STATE_ENV_LOCK.lock().unwrap_or_else(|error| error.into_inner());
         let base = test_root("cs2bi-update-cleanup");
