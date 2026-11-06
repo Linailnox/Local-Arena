@@ -14,6 +14,10 @@ export default function LaPluginBundleCard({ csgoPath, onError }: Props) {
   const t = useT();
   const [state, setState] = useState<UpdateComponentState | null>(null);
   const [busy, setBusy] = useState<"check" | "install" | null>(null);
+  // The backend snapshot keeps reporting the last download counters after a cancel or a failure,
+  // which would leave the progress bar on screen and the cancel button visible but inert. The
+  // tracker is cleared locally once the attempt ends and re-armed by the next live progress event.
+  const [progressCleared, setProgressCleared] = useState(false);
 
   const refresh = useCallback(() => {
     api
@@ -26,6 +30,7 @@ export default function LaPluginBundleCard({ csgoPath, onError }: Props) {
     void refresh();
     const unlisten = listenAppEvent<UpdateProgress>("update-progress", (event) => {
       if (event.payload.component === "la_plugins") {
+        setProgressCleared(false);
         void refresh();
       }
     });
@@ -36,8 +41,9 @@ export default function LaPluginBundleCard({ csgoPath, onError }: Props) {
 
   const installed = state?.current_version || null;
   const present = !!installed;
-  const progress = state && state.total_bytes ? Math.min(100, Math.round((state.downloaded_bytes / state.total_bytes) * 100)) : 0;
-  const installing = !!state && ["downloading", "extracting"].includes(state.status);
+  const progress = state && state.total_bytes && !progressCleared ? Math.min(100, Math.round((state.downloaded_bytes / state.total_bytes) * 100)) : 0;
+  const downloaded = progressCleared ? 0 : state?.downloaded_bytes ?? 0;
+  const installing = !progressCleared && !!state && ["downloading", "extracting"].includes(state.status);
 
   const check = async () => {
     if (busy) return;
@@ -55,6 +61,7 @@ export default function LaPluginBundleCard({ csgoPath, onError }: Props) {
   const install = async () => {
     if (!csgoPath || busy) return;
     setBusy("install");
+    setProgressCleared(false);
     try {
       await api.installLaPluginBundle(csgoPath);
       const snap = await api.getUpdateSnapshot();
@@ -63,6 +70,7 @@ export default function LaPluginBundleCard({ csgoPath, onError }: Props) {
       onError?.(error);
     } finally {
       setBusy(null);
+      setProgressCleared(true);
     }
   };
 
@@ -73,6 +81,7 @@ export default function LaPluginBundleCard({ csgoPath, onError }: Props) {
       onError?.(error);
     } finally {
       setBusy(null);
+      setProgressCleared(true);
     }
   };
 
@@ -120,7 +129,7 @@ export default function LaPluginBundleCard({ csgoPath, onError }: Props) {
           <strong>{state?.latest_version ?? t("laBundle.notChecked")}</strong>
         </div>
       </div>
-      {(installing || !!state?.downloaded_bytes) && (
+      {(installing || downloaded > 0) && (
         <div className="update-progress">
           <div><span style={{ width: `${progress}%` }} /></div>
           <small>
