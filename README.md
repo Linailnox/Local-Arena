@@ -139,7 +139,7 @@ Three components are published and installed separately, and each has its own ca
 
 The Linux archive is a Local Arena-only bundle: PlusMatchCoordinator, TeamLineupInjector and OfflineMatchTelemetry, the two bot cfg overlays (`cfg/my_bot_ffa_config.cfg`, `cfg/my_bot_normal_config.cfg`), and a `plus-payload-manifest.json` that lists only Local Arena-owned entries. It contains no upstream runtime, no `gameinfo.gi`, no `backup/` tree and no InventorySimulator, so it can be extracted over an existing manual install to update just Local Arena's plugins
 
-The Windows archive keeps the complete payload, because the Panel installs the upstream runtime and the Local Arena overlay from the same asset
+The Windows archive keeps the complete Local Arena payload — the three plugins, the two bot cfg overlays and the full `plus-payload-manifest.json` — but no upstream runtime: the upstream suite is downloaded separately by the Panel and merged with the Local Arena payload at install time, so the Windows full package is just the Panel executable plus Local Arena's own content, and only the Linux full package bakes the pinned upstream base in, with the natively built Panel binary shipped beside it when available
 
 Installing the plugin archive on its own requires the upstream suite: the Local Arena plugins link against `BotHiderApi.dll`, which only the upstream payload ships, and the Panel refuses the install with a preflight error when that file is missing
 

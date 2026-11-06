@@ -139,7 +139,7 @@ Local Arena 自身的包只有几 MB，约 73 MB 的上游运行时会在安装�
 
 Linux 压缩包是仅含 Local Arena 内容的插件包：PlusMatchCoordinator、TeamLineupInjector、OfflineMatchTelemetry 三个插件，两份人机 cfg 覆盖文件（`cfg/my_bot_ffa_config.cfg`、`cfg/my_bot_normal_config.cfg`），以及一份只列出 Local Arena 自有条目的 `plus-payload-manifest.json`。它不含上游运行时、不含 `gameinfo.gi`、不含 `backup/` 目录、也不含 InventorySimulator，因此可以直接解压覆盖到已有的手动安装上，只更新 Local Arena 自己的插件
 
-Windows 压缩包保留完整负载，因为面板从同一资产安装上游运行时与 Local Arena 覆盖层
+Windows 压缩包保留 Local Arena 的全部负载——三个插件、两份人机 cfg 覆盖文件与完整的 `plus-payload-manifest.json`——但不含上游运行时：上游套件由面板单独下载，并在安装时与 Local Arena 负载合并；因此 Windows 完整包仅含面板可执行文件与 Local Arena 自有内容，只有 Linux 完整包才内置钉版的上游基底，构成自包含的手动安装，原生构建的面板二进制在可用时会随包一并发布
 
 单独安装插件压缩包需要先有上游套件：Local Arena 插件链接的是 `BotHiderApi.dll`，该文件只由上游负载提供，缺失时面板会在预检阶段拒绝安装
 
