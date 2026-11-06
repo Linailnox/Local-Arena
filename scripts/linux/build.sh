@@ -90,7 +90,7 @@ raw = b''.join(b'\x00' + b'\x40\x70\xc0\xff' * w for _ in range(h))
 png = b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 6, 0, 0, 0)) + chunk(b'IDAT', zlib.compress(raw)) + chunk(b'IEND', b'')
 pathlib.Path('Panel/src-tauri/icons/icon.png').write_bytes(png)
 EOF
-    echo "created temp Panel/src-tauri/icons/icon.png (Linux cargo workaround, do not commit)"
+    echo "restored Panel/src-tauri/icons/icon.png (tracked asset missing; regenerate with 'tauri icon')"
   fi
 }
 
