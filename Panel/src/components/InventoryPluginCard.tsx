@@ -9,6 +9,7 @@ import {
 import { useT } from "../i18n";
 import { listenAppEvent } from "../lib/platform";
 import { useToast } from "./Toast";
+import UpdateCard, { formatBytes } from "./UpdateCard";
 import "./InventoryPluginCard.css";
 
 type Props = {
@@ -81,47 +82,49 @@ export default function InventoryPluginCard({ csgoPath, onError }: Props) {
     ? Math.min(100, Math.round((progress.downloaded_bytes / progress.total_bytes) * 100))
     : 0;
 
-  return <section className="upd-card">
-    <div className="upd-card__head">
-      <span className="upd-card__icon upd-card__icon--plugin"><Boxes size={20} /></span>
-      <div>
-        <strong>{t("inventoryPlugin.title")}</strong>
-        <small>{t("inventoryPlugin.desc")}</small>
-      </div>
-      <div className="upd-card__actions">
-        <button className="inst-hero__btn" disabled={!csgoPath || !!busy} onClick={() => void check()}>
-          <RefreshCw size={14} />{busy === "check" ? t("inventoryPlugin.checking") : t("inventoryPlugin.check")}
-        </button>
-        <button className="inst-hero__btn" disabled={!csgoPath || !!busy} onClick={() => void install()}>
-          <Download size={14} />{installing
-            ? t("inventoryPlugin.installing")
-            : present ? t("inventoryPlugin.update") : t("inventoryPlugin.install")}
-        </button>
-        {installing && (
-          <button className="inst-hero__btn" onClick={() => void cancel()}>
-            <X size={14} /> {t("update.cancel")}
+  const updateAvailable = !!release && release.tag !== installed;
+
+  return (
+    <UpdateCard
+      tone="plugin"
+      icon={<Boxes size={20} />}
+      title={t("inventoryPlugin.title")}
+      description={t("inventoryPlugin.desc")}
+      status={{
+        label: present
+          ? updateAvailable ? t("update.available") : t("update.current")
+          : t("inventoryPlugin.notInstalled"),
+        tone: present && !updateAvailable ? "current" : "available",
+      }}
+      actions={
+        <>
+          <button className="upd-mini-btn" disabled={!csgoPath || !!busy} onClick={() => void check()}>
+            <RefreshCw size={13} />{busy === "check" ? t("inventoryPlugin.checking") : t("inventoryPlugin.check")}
           </button>
-        )}
-      </div>
-    </div>
-    <div className="upd-card__versions">
-      <div>
-        <small>{t("inventoryPlugin.installedVersion")}</small>
-        <strong>{present ? installed ?? t("inventoryPlugin.unknownVersion") : t("inventoryPlugin.notInstalled")}</strong>
-      </div>
-      <div>
-        <small>{t("inventoryPlugin.latestVersion")}</small>
-        <strong>{release ? `${release.tag} · ${Math.round(release.size / 1024)} KB` : t("inventoryPlugin.notChecked")}</strong>
-      </div>
-    </div>
-    {installing && (
-      <div className="update-progress">
-        <div><span style={{ width: `${percent}%` }} /></div>
-        <small>
-          {t("update.downloading", { n: percent })}
-        </small>
-      </div>
-    )}
-    <p className="inst-diagnostics-scope">{t("inventoryPlugin.hint")}</p>
-  </section>;
+          <button className="upd-mini-btn" disabled={!csgoPath || !!busy} onClick={() => void install()}>
+            <Download size={13} />{installing
+              ? t("inventoryPlugin.installing")
+              : present ? t("inventoryPlugin.update") : t("inventoryPlugin.install")}
+          </button>
+          {installing && (
+            <button className="upd-mini-btn" onClick={() => void cancel()}>
+              <X size={13} /> {t("update.cancel")}
+            </button>
+          )}
+        </>
+      }
+      current={{
+        label: t("inventoryPlugin.installedVersion"),
+        value: present ? installed ?? t("inventoryPlugin.unknownVersion") : t("inventoryPlugin.notInstalled"),
+      }}
+      latest={{
+        label: t("inventoryPlugin.latestVersion"),
+        value: release ? release.tag : t("inventoryPlugin.notChecked"),
+        highlight: updateAvailable,
+      }}
+      size={{ label: t("update.size"), value: formatBytes(release?.size ?? 0) }}
+      progress={installing ? { percent, label: t("update.downloading", { n: percent }) } : null}
+      footnote={<p className="inst-diagnostics-scope">{t("inventoryPlugin.hint")}</p>}
+    />
+  );
 }
