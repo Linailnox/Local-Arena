@@ -43,7 +43,7 @@ carry inline `mod tests` (231 `#[test]`s). No `tests/` dir — cross-crate tests
 - A merge must never consume its own output as the LA overlay source (`la_payload_source`, lib.rs:935).
 - `SUITE_OWNED_FILES` (installer.rs:68) = 6 vdf/ini + 5 `cfg/bot_*|my_bot_*` entries — NOT `cfg/gamemode_*`: restore must run against the merged payload root or upstream gamemode cfgs leak.
 - `backup/{Online,WithBots}/gameinfo.gi` is machine state — never distribute.
-- Linux `cargo build` needs a temp `icons/icon.png` (only icon.ico is committed) — create it, never commit it.
+- Linux `cargo build` needs `icons/icon.png`: `tauri-codegen` picks a PNG from `bundle.icon` and, on non-Windows targets, falls back to the hardcoded `icons/icon.png`, panicking if it is missing. The full desktop icon set (including `icon.png`) is committed, so a clean checkout builds; `scripts/linux/build.sh::ensure_icon` only regenerates a 16x16 stub if someone deletes it.
 - `scripts/verify-workspace.ps1` greps `lib.rs` for literal markers (`aim_supported,`, `.csbip/aim-runtime.json`, `aim_override_count`, `"normal", "less", "off"`) — renaming those strings fails the gate even if behavior is unchanged.
 - Linux test failures are allowlisted by exact test name in `scripts/linux/build.sh` (`KNOWN_WINDOWS_ONLY`, 7 entries) — never widen that list.
 - InventorySimulator (`inventory_plugin.rs`) is third-party: never shipped in the package; the Panel only downloads/installs it (release resolution via the registry + `release_source.rs`, one transactional install whose manifest carries the `.installed.json` marker, only its two payload paths written).

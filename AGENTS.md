@@ -73,7 +73,7 @@ Local-Arena/
 - NEVER edit `cfg/` or `overrides/` — upstream-identical trees are deletable only.
 - NEVER let an upstream path into the package — whitelist inversion; any layout change must update `verify-workspace.ps1` allowlists.
 - NEVER add new UI libs in `Panel/src/components/` — compose existing primitives.
-- NEVER commit temp `Panel/src-tauri/icons/icon.png` or `.local-build.ps1` — both local-only.
+- NEVER delete the committed desktop icon set in `Panel/src-tauri/icons/` — `tauri-codegen` needs `icons/icon.png` for any non-Windows target and panics without it; `.local-build.ps1` stays local-only.
 - NEVER hand-edit generated catalogs (`stickerCatalog.json`, `stickerWeaponIds.json`, `cosmeticPlacements.json`) — regenerate via `scripts/generate-*.mjs`; verify pins sha256/counts.
 - Moving/renaming anything under `addons/` is a cross-repo change — paths hardcoded in ~10 files (`installer/lib/match_system/mode_layout/install_checks.rs`, `installCheckLocalization.ts`, `scripts/*`).
 
