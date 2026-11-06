@@ -480,7 +480,7 @@ fn managed_path(target: &Path, raw: &str) -> Option<PathBuf> {
 
 fn detect_source(state_root: &Path, target: &Path) -> SourceDetection {
     let directory = installation_dir(state_root, target);
-    if let Some(record) = read_record(&directory) {
+    if let Some(record) = read_record(&directory).filter(is_suite_record) {
         return SourceDetection {
             source: InstallationSource::ManagedPlus,
             version: Some(record.package_version),
@@ -647,6 +647,23 @@ fn read_record(directory: &Path) -> Option<InstallRecord> {
     serde_json::from_slice(&fs::read(directory.join("record.json")).ok()?).ok()
 }
 
+/// Whether an install record speaks for the Local Arena suite (`plus`/`shared` entries) or was
+/// written only by a third-party component install (InventorySimulator on a clean machine).
+///
+/// A third-party-only record's `package_version` is the component's own release tag
+/// ("3.7.0"), so treating it as the suite record would report that tag as the installed suite
+/// version: `installed_plugin_version` would hand it to update detection, whose four-part
+/// parse fails, and `detect_source` would claim `ManagedPlus` for a machine that never had the
+/// suite. Such records exist so the component's entries stay in the one record per target; they
+/// never describe the suite. Removing third-party files is `restore_pristine`'s job
+/// (via `SUITE_OWNED_ROOTS`), not evidence of a suite install.
+fn is_suite_record(record: &InstallRecord) -> bool {
+    record
+        .entries
+        .iter()
+        .any(|entry| entry.ownership != "third-party")
+}
+
 pub fn inspect(
     payload_root: &Path,
     state_root: &Path,
@@ -670,7 +687,9 @@ fn inspect_impl(
     verify_hashes: bool,
 ) -> Result<InstallationInspection> {
     let directory = installation_dir(state_root, target);
-    let record = read_record(&directory);
+    // A third-party-only record is not a suite install: filtering it keeps `installed`,
+    // `package_version`, and `restore_available` describing the suite (see `is_suite_record`).
+    let record = read_record(&directory).filter(is_suite_record);
     let detection = detect_source(state_root, target);
     let manifest = if verify_hashes {
         read_manifest_for_target(payload_root, target).ok()
@@ -987,7 +1006,7 @@ pub fn install(
     let _transaction_lock = acquire_transaction_lock(target)?;
     recover_incomplete_locked(state_root, target)?;
     let manifest = read_manifest_for_target(payload_root, target)?;
-    install_manifest(&manifest, payload_root, state_root, target, repaired)
+    install_manifest(&manifest, payload_root, state_root, target, repaired, false)
 }
 
 /// Installs only the manifest entries whose `ownership` matches `ownership_filter` (`"plus"` is
@@ -1024,7 +1043,7 @@ pub fn install_component(
     }
     // `repaired` selects the skip-identical branch, which is what an incremental component
     // install needs: only missing or differing files are replaced.
-    let mut result = install_manifest(&filtered, payload_root, state_root, target, true)?;
+    let mut result = install_manifest(&filtered, payload_root, state_root, target, true, true)?;
     // A single component is never the full-package first install the welcome story narrates.
     result.welcome_story_eligible = false;
     Ok(result)
@@ -1046,12 +1065,16 @@ pub fn install_la_plugins_component(
 
 /// Transaction body shared by [`install`] and [`install_component`]. Callers hold the target
 /// transaction lock and have already recovered any interrupted transaction.
+///
+/// `component_install` marks a subset install: it merges into the existing record without
+/// claiming the suite's `package_version`, which only a full-payload install may set.
 fn install_manifest(
     manifest: &PayloadManifest,
     payload_root: &Path,
     state_root: &Path,
     target: &Path,
     repaired: bool,
+    component_install: bool,
 ) -> Result<InstallTransactionResult> {
     let detection = detect_source(state_root, target);
     if !detection.can_install {
@@ -1289,7 +1312,21 @@ fn install_manifest(
         schema_version: 2,
         installation_id: installation_id(target),
         target: target.to_string_lossy().into_owned(),
-        package_version: manifest.package_version.clone(),
+        // `package_version` is the suite version `installed_plugin_version` reports and update
+        // detection parses, so only a full-payload install may set it. A component install
+        // merges into an existing record whose version must survive: a third-party manifest
+        // carries its release tag ("3.7.0"), and even the LA bundle installs from a local
+        // payload that can predate the last online update. With no prior record the component's
+        // manifest version is the only version there is; such a record is never read as a suite
+        // version (see `is_suite_record`).
+        package_version: if component_install {
+            old_record.as_ref().map_or_else(
+                || manifest.package_version.clone(),
+                |previous| previous.package_version.clone(),
+            )
+        } else {
+            manifest.package_version.clone()
+        },
         installed_at: unix_time(),
         source: old_record
             .as_ref()
@@ -1378,6 +1415,12 @@ pub fn restore(payload_root: &Path, state_root: &Path, target: &Path) -> Result<
     let outcome = (|| -> Result<()> {
         if let Some(record) = &previous_record {
             for entry in record.entries.iter().rev() {
+                // Third-party components are not part of the suite: "restore previous" returns
+                // the game to its pre-suite state without deleting a plugin the suite never
+                // installed. Removing them is `restore_pristine`'s job (via `SUITE_OWNED_ROOTS`).
+                if entry.ownership == "third-party" {
+                    continue;
+                }
                 let relative = safe_relative(&entry.path)?;
                 let destination = target.join(&relative);
                 if entry.original_existed {
@@ -1806,6 +1849,8 @@ mod tests {
         "addons/counterstrikesharp/plugins/PlusMatchCoordinator/PlusMatchCoordinator.dll",
         "addons/counterstrikesharp/plugins/TeamLineupInjector/TeamLineupInjector.dll",
     ];
+    const THIRD_PARTY: &str =
+        "addons/counterstrikesharp/plugins/InventorySimulator/InventorySimulator.dll";
 
     fn write_owned_entry(
         payload: &Path,
@@ -1876,6 +1921,20 @@ mod tests {
     /// itself uses on every platform, so tests must not assume `/` becomes `\\` here.
     fn owned_target(target: &Path, raw: &str) -> PathBuf {
         target.join(safe_relative(raw).unwrap())
+    }
+
+    /// A synthetic third-party component payload, shaped like the manifest
+    /// `inventory_plugin::synthetic_manifest` commits: its `package_version` is the component's
+    /// own release tag, never a suite version.
+    fn third_party_payload(payload: &Path) -> PayloadManifest {
+        let mut manifest = PayloadManifest {
+            schema_version: 1,
+            package_version: "3.7.0".to_string(),
+            entries: Vec::new(),
+        };
+        write_owned_entry(payload, &mut manifest, THIRD_PARTY, b"third-party-plugin", "third-party");
+        write_json_atomic(&payload.join(MANIFEST_FILE), &manifest).unwrap();
+        manifest
     }
 
     #[test]
@@ -2620,6 +2679,88 @@ mod tests {
         assert_eq!(fs::read(&shared).unwrap(), b"steam-original");
         assert!(!directory.join("journal.json").exists());
         assert!(!transaction.exists());
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn component_install_preserves_the_suite_record_version() {
+        let base = root("component-suite-version");
+        let payload = base.join("payload");
+        let target = base.join("target");
+        let state = base.join("state");
+        fixture(&payload, &target);
+        install(&payload, &state, &target, false).unwrap();
+        third_party_payload(&payload);
+
+        let result = install_component(&payload, &state, &target, "third-party").unwrap();
+
+        // The transaction installed the component's tag ...
+        assert_eq!(result.package_version, "3.7.0");
+        // ... but the merged record still speaks for the suite.
+        let record = read_record(&installation_dir(&state, &target)).unwrap();
+        assert_eq!(record.package_version, "1.4.2.4");
+        assert_eq!(record.entries.len(), 2);
+        let inspection = inspect_quick(&payload, &state, &target).unwrap();
+        assert_eq!(inspection.package_version.as_deref(), Some("1.4.2.4"));
+        assert_eq!(inspection.source, InstallationSource::ManagedPlus);
+        assert_eq!(inspection.source_version.as_deref(), Some("1.4.2.4"));
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn restore_leaves_third_party_files_in_place() {
+        let base = root("restore-third-party");
+        let payload = base.join("payload");
+        let target = base.join("target");
+        let state = base.join("state");
+        fixture(&payload, &target);
+        install(&payload, &state, &target, false).unwrap();
+        third_party_payload(&payload);
+        install_component(&payload, &state, &target, "third-party").unwrap();
+        let third_party = owned_target(&target, THIRD_PARTY);
+
+        let result = restore(&payload, &state, &target).unwrap();
+
+        // The suite file returns to its Steam bytes; only that file was touched.
+        assert_eq!(fs::read(target.join("cfg/test.cfg")).unwrap(), b"steam");
+        assert_eq!(fs::read(&third_party).unwrap(), b"third-party-plugin");
+        assert_eq!(result.restored_files, 1);
+        assert_eq!(result.removed_files, 0);
+        assert!(read_record(&installation_dir(&state, &target)).is_none());
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn a_third_party_only_record_is_not_a_managed_suite_installation() {
+        let base = root("third-party-only-record");
+        let payload = base.join("payload");
+        let target = base.join("target");
+        let state = base.join("state");
+        fs::create_dir_all(&target).unwrap();
+        third_party_payload(&payload);
+        install_component(&payload, &state, &target, "third-party").unwrap();
+
+        // The component install wrote the only record there is, carrying its own tag.
+        let record = read_record(&installation_dir(&state, &target)).unwrap();
+        assert_eq!(record.package_version, "3.7.0");
+        assert!(record.entries.iter().all(|entry| entry.ownership == "third-party"));
+
+        // Detection must not sell that tag as an installed suite version.
+        let inspection = inspect_quick(&payload, &state, &target).unwrap();
+        assert!(!inspection.installed);
+        assert_eq!(inspection.package_version, None);
+        assert_eq!(inspection.source, InstallationSource::Clean);
+        assert_eq!(inspection.source_version, None);
+        assert!(inspection.can_install);
+
+        // And a restore is a no-op that still leaves the third-party files alone.
+        let result = restore(&payload, &state, &target).unwrap();
+        assert_eq!(result.restored_files, 0);
+        assert_eq!(result.removed_files, 0);
+        assert_eq!(
+            fs::read(owned_target(&target, THIRD_PARTY)).unwrap(),
+            b"third-party-plugin"
+        );
         fs::remove_dir_all(base).unwrap();
     }
 }
