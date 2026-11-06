@@ -58,7 +58,7 @@ Local-Arena/
 | `release_source` | mod | `Panel/src-tauri/src/release_source.rs` | `inventory_plugin.rs` | digest-required GitHub release resolution; trusted hosts only; `AssetSelector` |
 | `download` | mod | `Panel/src-tauri/src/download.rs` | update pipeline | shared streaming downloader: cache reuse, `.part` resume, progress + cancel, size/sha256 verify, atomic move |
 | `assemble-update-manifest.ps1` | script | `scripts/` | release | builds schema v2 `latest.json` from `artifacts/` by naming convention — panel + `la_plugins.windows` required, `la_plugins.linux` optional |
-| LA plugin bundle | artifact | `artifacts/LocalArena-plugin-<tag>-{windows,linux}.zip` | `latest.json`, `-PluginBundleRoot` gate | Windows = complete payload; Linux = LA-only (3 plugins + 2 bot cfg overlays + plus-only manifest) |
+| LA plugin bundle | artifact | `artifacts/LocalArena-plugin-<tag>-{windows,linux}.zip` | `latest.json`, `-PluginBundleRoot` gate | Windows = full Local Arena payload (3 plugins + 2 bot cfg overlays + full manifest; no upstream runtime — the Panel downloads upstream at install time); Linux = LA-only (3 plugins + 2 bot cfg overlays + plus-only manifest) |
 | `LaPluginBundleCard` | tsx | `Panel/src/components/LaPluginBundleCard.tsx` | `InstallationPage` | third of the three peer cards (upstream cache section / `InventoryPluginCard` / this one); `la_plugins` progress events, `install_la_plugin_bundle` command, `laBundle.*` i18n keys |
 
 ## CONVENTIONS
