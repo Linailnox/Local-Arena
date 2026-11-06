@@ -27,7 +27,7 @@ carry inline `mod tests` (231 `#[test]`s). No `tests/` dir — cross-crate tests
 | Install health / diagnostics | `src/install_checks.rs`, `diagnostics.rs` |
 | Cosmetics (InventorySimulator) | `src/cosmetics_source.rs` (local↔direct switch), `cosmetics_inventory.rs` (JSON mapping + `_panel` sidecar), `inventory_plugin.rs` (562; third-party, never shipped: `registry_source()` resolves repo + selector from the registry, the shared client and `download_with_progress` fill a per-tag cache, `extract_zip_safely` stages it, and one `installer::install_component` transaction writes only its two payload paths — the `.installed.json` marker is a manifest entry, so it lands with the payload instead of ahead of it) |
 | App state root | `src/app_storage.rs` — `.csbip` next to the exe (override `CS2BI_STATE_ROOT`); all writes via `atomic_fs.rs` (temp + replace) |
-| Cross-crate core tests | `core-tests/` (re-includes 11 modules via `#[path]`, separate manifest) |
+| Cross-crate core tests | `core-tests/` (re-includes 11 modules via `#[path]`, separate manifest; it does NOT cover `component_registry`/`release_source` — they need `reqwest`, absent from the harness manifest — so the crate currently fails to compile with 5 `E0433`s: 3 pre-existing `cosmetics_source`, 2 added by the component refactor; no gate compiles it, see the `//!` header of `core-tests/src/lib.rs`) |
 
 ## CONVENTIONS
 - All modules private `mod` in lib.rs — crate root is the only public surface.
