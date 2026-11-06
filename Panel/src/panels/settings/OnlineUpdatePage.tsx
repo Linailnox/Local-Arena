@@ -1,16 +1,10 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { AlertTriangle, ArrowRight, Download, ExternalLink, PackageCheck, RefreshCw, X } from "lucide-react";
+import { AlertTriangle, Download, ExternalLink, RefreshCw, X } from "lucide-react";
 import { api, toAppError, type OnlineUpdateSnapshot, type UpdateProgress } from "../../lib/api";
 import { useStore } from "../../state/store";
 import { useT } from "../../i18n";
 import { listenAppEvent, openExternalUrl } from "../../lib/platform";
-
-function formatBytes(value: number) {
-  if (!value) return "0 B";
-  const units = ["B", "KB", "MB", "GB"];
-  const index = Math.min(Math.floor(Math.log(value) / Math.log(1024)), units.length - 1);
-  return `${(value / 1024 ** index).toFixed(index ? 1 : 0)} ${units[index]}`;
-}
+import UpdateCard, { formatBytes } from "../../components/UpdateCard";
 
 function formatTime(value: number | null) {
   return value ? new Date(value * 1000).toLocaleString() : "--";
@@ -72,12 +66,11 @@ export function OnlineUpdateSection({ children, toolbarExtra }: { children?: Rea
     : pluginAvailable && blocked ? t("update.closeCs2")
       : pluginIncompatible || panelIncompatible ? t("update.incompatible")
         : null;
-  const installOne = async (component: "panel" | "la_plugins") => {
-    setWorking(component);
+  const installPanel = async () => {
+    setWorking("panel");
     setLocalError(null);
     try {
-      if (component === "panel") await api.installPanelUpdate();
-      else await api.installPluginUpdate(csgoPath!);
+      await api.installPanelUpdate();
       await refreshSnapshot();
     } catch (error) {
       setLocalError(toAppError(error).detail);
@@ -87,73 +80,67 @@ export function OnlineUpdateSection({ children, toolbarExtra }: { children?: Rea
     }
   };
 
-  const componentSection = (component: "panel" | "la_plugins") => {
-    const state = snapshot?.[component];
-    const progress = state?.total_bytes
-      ? Math.min(100, Math.round((state.downloaded_bytes / state.total_bytes) * 100)) : 0;
-    const installing = !!snapshot?.busy && ["downloading", "extracting"].includes(state?.status ?? "");
-    const available = !!state?.update_available;
-    return (
-      <section className="upd-card" key={component}>
-        <div className="upd-card__head">
-          <span className={`upd-card__icon upd-card__icon--${component}`}>
-            {component === "panel" ? <Download size={20} /> : <PackageCheck size={20} />}
-          </span>
-          <div>
-            <strong>{component === "panel" ? t("update.panel") : t("update.plugin")}</strong>
-            <small>{component === "panel" ? t("update.panelDesc") : t("update.pluginDesc")}</small>
-          </div>
-          <div className="upd-card__actions">
-            <span className={`update-status update-status--${state?.status ?? "idle"}`}>
-              {available ? t("update.available") : t("update.current")}
-            </span>
-            <button className="upd-mini-btn" disabled={!!working || !!snapshot?.busy} onClick={check} title={t("update.check") as string}>
-              <RefreshCw size={13} />{working === "check" ? t("update.checking") : t("update.check")}
-            </button>
-            <button
-              className="upd-mini-btn"
-              disabled={!available || !!working || !!snapshot?.busy
-                || (component === "la_plugins" && (!csgoPath || blocked))}
-              onClick={() => installOne(component)}
-            >
-              <Download size={13} />{installing ? t("update.updatingAll") : t(component === "panel" ? "update.installPanel" : "update.installPlugin")}
-            </button>
-          </div>
-        </div>
+  const panelState = snapshot?.panel;
+  const panelProgress = panelState?.total_bytes
+    ? Math.min(100, Math.round((panelState.downloaded_bytes / panelState.total_bytes) * 100)) : 0;
+  const panelInstalling =
+    !!snapshot?.busy && ["downloading", "extracting"].includes(panelState?.status ?? "");
 
-        <div className="upd-card__versions">
-          <span className="upd-ver">
-            <small>{t("update.currentVersion")}</small>
-            <strong>{state?.current_version ?? "--"}</strong>
-          </span>
-          <ArrowRight size={18} className={`upd-arrow ${available ? "is-hot" : ""}`} aria-hidden="true" />
-          <span className="upd-ver">
-            <small>{t("update.latestVersion")}</small>
-            <strong className={available ? "is-new" : ""}>{state?.latest_version ?? "--"}</strong>
-          </span>
-          <span className="upd-ver upd-ver--size">
-            <small>{t("update.size")}</small>
-            <strong>{formatBytes(state?.total_bytes ?? 0)}</strong>
-          </span>
-        </div>
-
-        {(installing || !!state?.downloaded_bytes) && (
-          <div className="update-progress">
-            <div><span style={{ width: `${progress}%` }} /></div>
-            <small>{state?.status === "extracting" ? t("update.extracting") : t("update.downloading", { n: progress })}</small>
-          </div>
-        )}
-
-        {component === "la_plugins" && blocked && (
-          <p className="upd-note"><AlertTriangle size={14} aria-hidden="true" />{t("update.closeCs2")}</p>
-        )}
-        {state && !state.compatible && (
-          <p className="upd-note"><AlertTriangle size={14} aria-hidden="true" />{t("update.panelRequired")}</p>
-        )}
-
-      </section>
-    );
-  };
+  const panelCard = () => (
+    <UpdateCard
+      tone="panel"
+      icon={<Download size={20} />}
+      title={t("update.panel")}
+      description={t("update.panelDesc")}
+      status={{
+        label: panelAvailable ? t("update.available") : t("update.current"),
+        tone: panelAvailable ? "available" : "current",
+      }}
+      actions={
+        <>
+          <button
+            className="upd-mini-btn"
+            disabled={!!working || !!snapshot?.busy}
+            onClick={check}
+            title={t("update.check") as string}
+          >
+            <RefreshCw size={13} />{working === "check" ? t("update.checking") : t("update.check")}
+          </button>
+          <button
+            className="upd-mini-btn"
+            disabled={!panelAvailable || !!working || !!snapshot?.busy}
+            onClick={installPanel}
+          >
+            <Download size={13} />{panelInstalling ? t("update.updatingAll") : t("update.installPanel")}
+          </button>
+        </>
+      }
+      current={{ label: t("update.currentVersion"), value: panelState?.current_version ?? "--" }}
+      latest={{
+        label: t("update.latestVersion"),
+        value: panelState?.latest_version ?? "--",
+        highlight: panelAvailable,
+      }}
+      size={{ label: t("update.size"), value: formatBytes(panelState?.total_bytes ?? 0) }}
+      progress={
+        panelInstalling || !!panelState?.downloaded_bytes
+          ? {
+              percent: panelProgress,
+              label: panelState?.status === "extracting"
+                ? t("update.extracting")
+                : t("update.downloading", { n: panelProgress }),
+            }
+          : null
+      }
+      notes={
+        panelState && !panelState.compatible ? (
+          <p className="upd-note">
+            <AlertTriangle size={14} aria-hidden="true" />{t("update.panelRequired")}
+          </p>
+        ) : null
+      }
+    />
+  );
 
   return (
     <section className="inst-group">
@@ -190,13 +177,12 @@ export function OnlineUpdateSection({ children, toolbarExtra }: { children?: Rea
             {working === "all" ? t("update.updatingAll") : hasUpdates ? t("update.installAll") : t("update.current")}
           </button>
           {working === "all" && <button onClick={cancel}><X size={16} />{t("update.cancel")}</button>}
-          {(working === "panel" || working === "la_plugins") && <button onClick={cancel}><X size={16} />{t("update.cancel")}</button>}
+          {(working === "panel") && <button onClick={cancel}><X size={16} />{t("update.cancel")}</button>}
         </div>
       </section>
       {blockingNote && <p className="upd-note update-primary-note"><AlertTriangle size={14} aria-hidden="true" />{blockingNote}</p>}
       <div className="upd-grid">
-        {componentSection("panel")}
-        {componentSection("la_plugins")}
+        {panelCard()}
         {children}
       </div>
     </div>

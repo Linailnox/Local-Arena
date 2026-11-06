@@ -3,6 +3,7 @@ import { Boxes, Download, RefreshCw, X } from "lucide-react";
 import { api, type UpdateComponentState, type UpdateProgress } from "../lib/api";
 import { useT } from "../i18n";
 import { listenAppEvent } from "../lib/platform";
+import UpdateCard, { formatBytes } from "./UpdateCard";
 import "./LaPluginBundleCard.css";
 
 type Props = {
@@ -85,59 +86,56 @@ export default function LaPluginBundleCard({ csgoPath, onError }: Props) {
     }
   };
 
+  const updateAvailable = !!state?.update_available;
+
   return (
-    <section className="upd-card">
-      <div className="upd-card__head">
-        <span className="upd-card__icon upd-card__icon--la_bundle">
-          <Boxes size={20} />
-        </span>
-        <div>
-          <strong>{t("laBundle.title")}</strong>
-          <small>{t("laBundle.desc")}</small>
-        </div>
-        <div className="upd-card__actions">
-          <button
-            className="inst-hero__btn"
-            disabled={!csgoPath || !!busy}
-            onClick={() => void check()}
-          >
-            <RefreshCw size={14} />
-            {busy === "check" ? t("laBundle.checking") : t("laBundle.check")}
+    <UpdateCard
+      tone="la_bundle"
+      icon={<Boxes size={20} />}
+      title={t("laBundle.title")}
+      description={t("laBundle.desc")}
+      status={{
+        label: updateAvailable ? t("update.available") : t("update.current"),
+        tone: updateAvailable ? "available" : "current",
+      }}
+      actions={
+        <>
+          <button className="upd-mini-btn" disabled={!csgoPath || !!busy} onClick={() => void check()}>
+            <RefreshCw size={13} />{busy === "check" ? t("laBundle.checking") : t("laBundle.check")}
           </button>
-          <button
-            className="inst-hero__btn"
-            disabled={!csgoPath || !!busy}
-            onClick={() => void install()}
-          >
-            <Download size={14} />
-            {busy === "install" ? t("laBundle.installing") : present ? t("laBundle.update") : t("laBundle.install")}
+          <button className="upd-mini-btn" disabled={!csgoPath || !!busy} onClick={() => void install()}>
+            <Download size={13} />{busy === "install"
+              ? t("laBundle.installing")
+              : present ? t("laBundle.update") : t("laBundle.install")}
           </button>
           {installing && (
-            <button className="inst-hero__btn" onClick={cancel}>
-              <X size={14} /> {t("update.cancel")}
+            <button className="upd-mini-btn" onClick={cancel}>
+              <X size={13} /> {t("update.cancel")}
             </button>
           )}
-        </div>
-      </div>
-      <div className="upd-card__versions">
-        <div>
-          <small>{t("laBundle.installedVersion")}</small>
-          <strong>{present ? installed ?? t("laBundle.unknownVersion") : t("laBundle.notInstalled")}</strong>
-        </div>
-        <div>
-          <small>{t("laBundle.latestVersion")}</small>
-          <strong>{state?.latest_version ?? t("laBundle.notChecked")}</strong>
-        </div>
-      </div>
-      {(installing || downloaded > 0) && (
-        <div className="update-progress">
-          <div><span style={{ width: `${progress}%` }} /></div>
-          <small>
-            {state?.status === "extracting" ? t("update.extracting") : t("update.downloading", { n: progress })}
-          </small>
-        </div>
-      )}
-      <p className="inst-diagnostics-scope">{t("laBundle.hint")}</p>
-    </section>
+        </>
+      }
+      current={{
+        label: t("laBundle.installedVersion"),
+        value: present ? installed ?? t("laBundle.unknownVersion") : t("laBundle.notInstalled"),
+      }}
+      latest={{
+        label: t("laBundle.latestVersion"),
+        value: state?.latest_version ?? t("laBundle.notChecked"),
+        highlight: updateAvailable,
+      }}
+      size={{ label: t("update.size"), value: formatBytes(state?.total_bytes ?? 0) }}
+      progress={
+        installing || downloaded > 0
+          ? {
+              percent: progress,
+              label: state?.status === "extracting"
+                ? t("update.extracting")
+                : t("update.downloading", { n: progress }),
+            }
+          : null
+      }
+      footnote={<p className="inst-diagnostics-scope">{t("laBundle.hint")}</p>}
+    />
   );
 }
