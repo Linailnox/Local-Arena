@@ -1984,6 +1984,37 @@ pub fn uninstall_component(
     Ok(result)
 }
 
+/// Removes every component the install record speaks for, one transaction per component in
+/// reverse install order, and totals the per-component results.
+///
+/// The command layer keeps the pre-flight (target idle, logging) and delegates the removal
+/// itself here, so the order that gets tested is the order that ships. Reverse order unwinds the
+/// dependency [`INSTALL_ORDER`] encodes: InventorySimulator, then the LA bundle, then upstream.
+pub fn restore_all_components(state_root: &Path, target: &Path) -> Result<RestoreResult> {
+    let steps = [
+        ComponentId::InventorySimulator,
+        ComponentId::LaPlugins,
+        ComponentId::Upstream,
+    ];
+    let results = run_component_steps(&steps, |component| {
+        uninstall_component(state_root, target, component)
+    })?;
+    let mut total = RestoreResult {
+        restored_files: 0,
+        removed_files: 0,
+        preserved_files: 0,
+        presets_backup: None,
+        steam_verify_uri: "steam://validate/730".to_string(),
+        result_kind: "restore_all_components".to_string(),
+    };
+    for result in results {
+        total.restored_files += result.restored_files;
+        total.removed_files += result.removed_files;
+        total.preserved_files += result.preserved_files;
+    }
+    Ok(total)
+}
+
 fn collect_tree_files(
     root: &Path,
     target: &Path,
@@ -4545,6 +4576,478 @@ mod tests {
         } else {
             println!("task6_manual_qa_dump: QA_DUMP unset, skipped dump");
         }
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Todo 13: the cross-component regression layer. The earlier waves tested their own units;
+    // these tests pin the invariants that only hold when all three components share one record
+    // and one target. Every assertion reads the filesystem or the record bytes on disk.
+    // ---------------------------------------------------------------------------------------
+
+    #[test]
+    fn record_v2_migrates_legacy_and_is_idempotent() {
+        let base = root("task13-record-v2-idempotent");
+        let directory = base.join("installation");
+        write_v1_record(&directory, "1.4.3.3");
+
+        // First read through the production path triggers the migration and writes it back.
+        let migrated = read_record(&directory).expect("a legacy record must stay readable");
+        assert_eq!(migrated.schema_version, 2);
+        assert_eq!(migrated.components.len(), 3);
+        let doc = read_record_document(&directory);
+        assert_eq!(
+            doc["components"]["la_plugins"]["version"].as_str(),
+            Some("1.4.3.3"),
+            "the one known suite version maps to la_plugins"
+        );
+        assert_eq!(
+            doc["components"]["upstream"]["version"].as_str(),
+            Some(UNKNOWN_VERSION)
+        );
+        assert_eq!(
+            doc["components"]["upstream"]["source"].as_str(),
+            Some("unknown")
+        );
+        assert_eq!(
+            doc["components"]["inventory_simulator"]["version"].as_str(),
+            Some(UNKNOWN_VERSION)
+        );
+        assert_eq!(
+            doc["components"]["inventory_simulator"]["source"].as_str(),
+            Some("unknown")
+        );
+        assert_eq!(doc["package_version"].as_str(), Some("1.4.3.3"));
+
+        // Mark the bytes on disk: any rewrite of a migrated record would drop this sentinel.
+        let mut sentinel = read_record_document(&directory);
+        sentinel["components"]["upstream"]["source"] = serde_json::json!("sentinel-from-disk");
+        let sentinel_bytes = serde_json::to_vec_pretty(&sentinel).unwrap();
+        fs::write(directory.join("record.json"), &sentinel_bytes).unwrap();
+
+        for round in 0..2 {
+            let reread = read_record(&directory).expect("a migrated record must stay readable");
+            assert_eq!(reread.components.len(), 3, "round {round}");
+            assert_eq!(
+                reread
+                    .components
+                    .get(&ComponentId::Upstream)
+                    .unwrap()
+                    .source,
+                "sentinel-from-disk",
+                "round {round}: the read must come from disk, not a cached object"
+            );
+            assert_eq!(
+                fs::read(directory.join("record.json")).unwrap(),
+                sentinel_bytes,
+                "round {round}: a migrated record must never be rewritten"
+            );
+        }
+        assert_no_temp_files(&directory);
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn three_components_coexist_in_one_record() {
+        let base = root("task13-three-components-one-record");
+        let target = base.join("target");
+        let state = base.join("state");
+        fs::create_dir_all(&target).unwrap();
+        let payloads = component_payloads(&base);
+        let directory = installation_dir(&state, &target);
+
+        // Three separate transactions, one per component, in dependency order.
+        for component in INSTALL_ORDER {
+            install_component(&payloads[&component], &state, &target, component).unwrap();
+        }
+
+        let doc = read_record_document(&directory);
+        let components = doc["components"].as_object().expect("components map");
+        assert_eq!(components.len(), 3, "{components:?}");
+        assert_eq!(components["upstream"]["version"].as_str(), Some("1.4.3.3"));
+        assert_eq!(
+            components["la_plugins"]["version"].as_str(),
+            Some("1.4.4.0")
+        );
+        assert_eq!(
+            components["inventory_simulator"]["version"].as_str(),
+            Some("3.7.0")
+        );
+        // The suite-level version speaks for the LA bundle only: it is never written over a
+        // component's own row, and no component's tag becomes the suite version.
+        assert_eq!(doc["package_version"].as_str(), Some("1.4.4.0"));
+        assert_ne!(
+            components["upstream"]["version"].as_str(),
+            doc["package_version"].as_str()
+        );
+        assert_ne!(
+            components["inventory_simulator"]["version"].as_str(),
+            doc["package_version"].as_str()
+        );
+
+        let mut ownership: Vec<&str> = doc["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|entry| entry["ownership"].as_str().unwrap())
+            .collect();
+        ownership.sort_unstable();
+        assert_eq!(
+            ownership,
+            vec!["plus", "plus", "shared", "shared", "third-party"]
+        );
+
+        // One record file per target: components merge, they never fork a record.
+        let mut names: Vec<String> = fs::read_dir(&directory)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        assert_eq!(names, vec!["record.json".to_string()]);
+        assert_no_temp_files(&directory);
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn conflict_blocks_write_and_lists_every_path() {
+        let base = root("task13-conflict-every-path");
+        let payload = base.join("payload");
+        let target = base.join("target");
+        let state = base.join("state");
+        fs::create_dir_all(&target).unwrap();
+
+        // The bundle's dependency gate runs before the conflict scan, so the upstream DLL has to
+        // be present; it is not part of the plus payload and can never be one of the conflicts.
+        let dll = owned_target(&target, COMPONENT_SHARED[1]);
+        fs::create_dir_all(dll.parent().unwrap()).unwrap();
+        fs::write(&dll, b"shared-bothider-api").unwrap();
+
+        versioned_component_payload(&payload, "1.4.4.0", (b"pmc", b"tli"));
+        let mut manifest = read_manifest_document(&payload).unwrap();
+        let non_conflicting = "addons/counterstrikesharp/plugins/PlusMatchCoordinator/extra.json";
+        write_owned_entry(&payload, &mut manifest, non_conflicting, b"extra", "plus");
+        write_json_atomic(&payload.join(MANIFEST_FILE), &manifest).unwrap();
+
+        // Two unmanaged files already occupy payload paths with different bytes.
+        for raw in COMPONENT_PLUS {
+            let destination = owned_target(&target, raw);
+            fs::create_dir_all(destination.parent().unwrap()).unwrap();
+            fs::write(&destination, b"foreign-build").unwrap();
+        }
+        let before = snapshot_target(&target);
+
+        let error = install_component(&payload, &state, &target, ComponentId::LaPlugins)
+            .expect_err("a payload colliding with unmanaged files must abort");
+
+        assert_eq!(error.code, "E1403");
+        assert_eq!(error.category, "installation");
+        let listed: Vec<&str> = error
+            .detail
+            .lines()
+            .filter(|line| line.starts_with("path: "))
+            .collect();
+        assert_eq!(
+            listed.len(),
+            2,
+            "one `path:` line per conflicting path, got: {}",
+            error.detail
+        );
+        assert_eq!(
+            listed,
+            vec![
+                format!("path: {}", COMPONENT_PLUS[0]),
+                format!("path: {}", COMPONENT_PLUS[1]),
+            ]
+        );
+        // mid-operation interrupts: a refused install writes nothing at all.
+        assert_eq!(snapshot_target(&target), before);
+        assert!(!owned_target(&target, non_conflicting).exists());
+        assert!(!installation_dir(&state, &target).exists());
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn component_update_is_not_a_conflict() {
+        let base = root("task13-component-update");
+        let payload = base.join("payload");
+        let target = base.join("target");
+        let state = base.join("state");
+        fs::create_dir_all(&target).unwrap();
+        let dll = owned_target(&target, COMPONENT_SHARED[1]);
+        fs::create_dir_all(dll.parent().unwrap()).unwrap();
+        fs::write(&dll, b"shared-bothider-api").unwrap();
+
+        versioned_component_payload(&payload, "1.4.4.0", (b"pmc-v1", b"tli-v1"));
+        install_component(&payload, &state, &target, ComponentId::LaPlugins).unwrap();
+        let first_sha = sha256(&owned_target(&target, COMPONENT_PLUS[0])).unwrap();
+
+        // Same component, new bytes: its own registered paths are an update, never a conflict.
+        versioned_component_payload(&payload, "1.4.5.0", (b"pmc-v2", b"tli-v2"));
+        let updated = install_component(&payload, &state, &target, ComponentId::LaPlugins)
+            .expect("a component update must not be reported as E1403");
+
+        assert_eq!(updated.installed_files, 2);
+        assert_eq!(
+            fs::read(owned_target(&target, COMPONENT_PLUS[0])).unwrap(),
+            b"pmc-v2"
+        );
+        assert_eq!(
+            fs::read(owned_target(&target, COMPONENT_PLUS[1])).unwrap(),
+            b"tli-v2"
+        );
+        assert_ne!(
+            sha256(&owned_target(&target, COMPONENT_PLUS[0])).unwrap(),
+            first_sha
+        );
+        let doc = read_record_document(&installation_dir(&state, &target));
+        assert_eq!(
+            doc["components"]["la_plugins"]["version"].as_str(),
+            Some("1.4.5.0")
+        );
+        assert_eq!(doc["package_version"].as_str(), Some("1.4.5.0"));
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn missing_upstream_dependency_reports_E1404() {
+        let base = root("task13-missing-upstream-dependency");
+        let payload = base.join("payload");
+        let target = base.join("target");
+        let state = base.join("state");
+        fs::create_dir_all(&target).unwrap();
+        versioned_component_payload(&payload, "1.4.4.0", (b"pmc", b"tli"));
+
+        let error = install_component(&payload, &state, &target, ComponentId::LaPlugins)
+            .expect_err("the LA bundle must refuse to install without its upstream dependency");
+
+        assert_eq!(error.code, "E1404");
+        assert_eq!(error.category, "installation");
+        assert!(error.detail.contains("BotHiderApi"), "{}", error.detail);
+        // Zero writes: no payload file, no state directory, no record row to read back.
+        assert!(fs::read_dir(&target).unwrap().next().is_none());
+        assert!(!installation_dir(&state, &target).exists());
+        assert_eq!(
+            component_version(&state, &target, ComponentId::LaPlugins),
+            None
+        );
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn uninstall_removes_only_its_own_rows() {
+        let base = root("task13-uninstall-one-of-three");
+        let target = base.join("target");
+        let state = base.join("state");
+        fs::create_dir_all(&target).unwrap();
+        let payloads = component_payloads(&base);
+        for component in INSTALL_ORDER {
+            install_component(&payloads[&component], &state, &target, component).unwrap();
+        }
+        let directory = installation_dir(&state, &target);
+
+        let removed = uninstall_component(&state, &target, ComponentId::Upstream).unwrap();
+
+        assert_eq!(removed.removed_files, 2);
+        assert!(!owned_target(&target, COMPONENT_SHARED[0]).exists());
+        assert!(!owned_target(&target, COMPONENT_SHARED[1]).exists());
+        // The other two components keep their files and their record rows.
+        assert!(owned_target(&target, COMPONENT_PLUS[0]).is_file());
+        assert!(owned_target(&target, COMPONENT_PLUS[1]).is_file());
+        assert!(owned_target(&target, THIRD_PARTY).is_file());
+        let doc = read_record_document(&directory);
+        let components = doc["components"].as_object().unwrap();
+        assert_eq!(components.len(), 2, "{components:?}");
+        assert!(!components.contains_key("upstream"));
+        assert_eq!(
+            components["la_plugins"]["version"].as_str(),
+            Some("1.4.4.0")
+        );
+        assert_eq!(
+            components["inventory_simulator"]["version"].as_str(),
+            Some("3.7.0")
+        );
+        let mut ownership: Vec<&str> = doc["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|entry| entry["ownership"].as_str().unwrap())
+            .collect();
+        ownership.sort_unstable();
+        assert_eq!(ownership, vec!["plus", "plus", "third-party"]);
+        assert_no_temp_files(&directory);
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn restore_all_removes_all_three() {
+        let base = root("task13-restore-all");
+        let target = base.join("target");
+        let state = base.join("state");
+        fs::create_dir_all(&target).unwrap();
+        let payloads = component_payloads(&base);
+        for component in INSTALL_ORDER {
+            install_component(&payloads[&component], &state, &target, component).unwrap();
+        }
+        // A file no component manages must survive the whole teardown.
+        let unmanaged = target.join("cfg").join("user_notes.cfg");
+        fs::create_dir_all(unmanaged.parent().unwrap()).unwrap();
+        fs::write(&unmanaged, b"unmanaged").unwrap();
+        let directory = installation_dir(&state, &target);
+
+        let restored = restore_all_components(&state, &target).unwrap();
+
+        assert_eq!(restored.removed_files, 5);
+        assert_eq!(restored.restored_files, 0);
+        assert_eq!(restored.result_kind, "restore_all_components");
+        for raw in COMPONENT_SHARED
+            .iter()
+            .chain(COMPONENT_PLUS.iter())
+            .chain(std::iter::once(&THIRD_PARTY))
+        {
+            assert!(
+                !owned_target(&target, raw).exists(),
+                "{raw} must be removed"
+            );
+        }
+        assert_eq!(fs::read(&unmanaged).unwrap(), b"unmanaged");
+        assert!(!directory.join("record.json").exists());
+        assert!(!directory.join("journal.json").exists());
+        assert_no_temp_files(&directory);
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn install_all_stops_on_first_failure() {
+        let base = root("task13-install-all-stops");
+        let target = base.join("target");
+        let state = base.join("state");
+        fs::create_dir_all(&target).unwrap();
+        let payloads = component_payloads(&base);
+        let directory = installation_dir(&state, &target);
+
+        // Upstream lands first; then an unmanaged file makes the LA transaction conflict, so the
+        // inventory component that follows must never be attempted.
+        install_component(
+            &payloads[&ComponentId::Upstream],
+            &state,
+            &target,
+            ComponentId::Upstream,
+        )
+        .unwrap();
+        let blocked = owned_target(&target, COMPONENT_PLUS[0]);
+        fs::create_dir_all(blocked.parent().unwrap()).unwrap();
+        fs::write(&blocked, b"unmanaged-plus-path").unwrap();
+        let before = snapshot_target(&target);
+
+        let error = run_component_steps(&INSTALL_ORDER, |component| {
+            install_component(&payloads[&component], &state, &target, component)
+        })
+        .expect_err("the run must abort at the LA component");
+
+        assert_eq!(error.code, "E1403", "{}", error.detail);
+        // The failing transaction wrote nothing and the inventory component was never started.
+        assert_eq!(snapshot_target(&target), before);
+        assert!(!owned_target(&target, THIRD_PARTY).exists());
+        assert!(!owned_target(&target, COMPONENT_PLUS[1]).exists());
+        let versions = component_versions(&directory);
+        assert_eq!(versions.len(), 1, "{versions:?}");
+        assert_eq!(versions.get("upstream").map(String::as_str), Some("1.4.3.3"));
+        assert!(!versions.contains_key("inventory_simulator"));
+        assert_no_temp_files(&directory);
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    /// Final-wave surface test (plan row F3): drives the real entry points through a full
+    /// install -> uninstall -> restore-all lifecycle and reads back only the filesystem and the
+    /// record bytes on disk. Each phase prints a one-line PASS marker for a human reader.
+    #[test]
+    fn f3_surface_end_to_end() {
+        let base = root("task13-f3-surface");
+        let target = base.join("target");
+        let state = base.join("state");
+        fs::create_dir_all(&target).unwrap();
+        let payloads = component_payloads(&base);
+        let directory = installation_dir(&state, &target);
+        let unmanaged = target.join("cfg").join("user_notes.cfg");
+        fs::create_dir_all(unmanaged.parent().unwrap()).unwrap();
+        fs::write(&unmanaged, b"unmanaged-user-file").unwrap();
+
+        // Phase 1: three independent component transactions land exactly their own files.
+        for component in INSTALL_ORDER {
+            let result = install_component(&payloads[&component], &state, &target, component)
+                .unwrap_or_else(|error| panic!("{component:?} install failed: {error:?}"));
+            assert!(result.installed_files >= 1, "{component:?}");
+        }
+        let mut expected: BTreeMap<String, String> = BTreeMap::new();
+        for raw in COMPONENT_SHARED
+            .iter()
+            .chain(COMPONENT_PLUS.iter())
+            .chain(std::iter::once(&THIRD_PARTY))
+        {
+            expected.insert((*raw).to_string(), sha256(&owned_target(&target, raw)).unwrap());
+        }
+        expected.insert(
+            "cfg/user_notes.cfg".to_string(),
+            sha256(&unmanaged).unwrap(),
+        );
+        assert_eq!(
+            snapshot_target(&target),
+            expected,
+            "the target must hold exactly the union of the three payloads plus the unmanaged file"
+        );
+        let doc = read_record_document(&directory);
+        let components = doc["components"].as_object().unwrap();
+        assert_eq!(components.len(), 3);
+        assert_eq!(
+            components["la_plugins"]["version"].as_str(),
+            Some("1.4.4.0")
+        );
+        println!(
+            "PHASE 1 PASS install: files={} versions={:?}",
+            expected.len(),
+            component_versions(&directory)
+        );
+
+        // Phase 2: uninstalling one component removes only that component's files.
+        let removed = uninstall_component(&state, &target, ComponentId::LaPlugins).unwrap();
+        assert_eq!(removed.removed_files, 2);
+        assert!(!owned_target(&target, COMPONENT_PLUS[0]).exists());
+        assert!(!owned_target(&target, COMPONENT_PLUS[1]).exists());
+        assert!(owned_target(&target, COMPONENT_SHARED[0]).is_file());
+        assert!(owned_target(&target, COMPONENT_SHARED[1]).is_file());
+        assert!(owned_target(&target, THIRD_PARTY).is_file());
+        assert_eq!(fs::read(&unmanaged).unwrap(), b"unmanaged-user-file");
+        let after_uninstall = snapshot_target(&target);
+        assert_eq!(after_uninstall.len(), 4, "{after_uninstall:?}");
+        let doc = read_record_document(&directory);
+        assert_eq!(doc["components"].as_object().unwrap().len(), 2);
+        println!(
+            "PHASE 2 PASS uninstall: removed={} remaining={:?}",
+            removed.removed_files,
+            after_uninstall.keys().collect::<Vec<_>>()
+        );
+
+        // Phase 3: restore-all clears every managed file and leaves unmanaged content alone.
+        let restored = restore_all_components(&state, &target).unwrap();
+        assert_eq!(restored.removed_files, 3);
+        assert_eq!(restored.result_kind, "restore_all_components");
+        let remaining = snapshot_target(&target);
+        assert_eq!(
+            remaining.keys().collect::<Vec<_>>(),
+            vec!["cfg/user_notes.cfg"],
+            "only the unmanaged file may survive restore-all"
+        );
+        assert_eq!(fs::read(&unmanaged).unwrap(), b"unmanaged-user-file");
+        assert!(!directory.join("record.json").exists());
+        assert!(!directory.join("journal.json").exists());
+        assert_no_temp_files(&directory);
+        println!(
+            "PHASE 3 PASS restore-all: removed={} remaining={:?}",
+            restored.removed_files,
+            remaining.keys().collect::<Vec<_>>()
+        );
+        println!("f3_surface_end_to_end: PASS");
         fs::remove_dir_all(base).unwrap();
     }
 }

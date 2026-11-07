@@ -3573,27 +3573,7 @@ async fn restore_all_components(app: AppHandle, csgo: String) -> Result<RestoreR
         ensure_steam_app_idle(&root)?;
         let state = local_state_root(&app)?;
         logging::append(&state, "INFO", "restore_all.started", &root.to_string_lossy());
-        let steps = [
-            ComponentId::InventorySimulator,
-            ComponentId::LaPlugins,
-            ComponentId::Upstream,
-        ];
-        let results = installer::run_component_steps(&steps, |component| {
-            installer::uninstall_component(&state, &root, component)
-        })?;
-        let mut total = RestoreResult {
-            restored_files: 0,
-            removed_files: 0,
-            preserved_files: 0,
-            presets_backup: None,
-            steam_verify_uri: "steam://validate/730".to_string(),
-            result_kind: "restore_all_components".to_string(),
-        };
-        for result in results {
-            total.restored_files += result.restored_files;
-            total.removed_files += result.removed_files;
-            total.preserved_files += result.preserved_files;
-        }
+        let total = installer::restore_all_components(&state, &root)?;
         logging::append(
             &state,
             "INFO",
@@ -4905,6 +4885,85 @@ mod tests {
         fs::remove_dir_all(base).unwrap();
     }
 
+    /// The snapshot's LA version comes from `record.components.la_plugins.version`: the
+    /// InventorySimulator tag has its own row and can never surface as the bundle version.
+    #[test]
+    fn installed_plugin_version_reads_la_component_only() {
+        let _guard = app_storage::TEST_STATE_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let base = scratch("task13-la-component-version");
+        let state = base.join("state");
+        let target = base.join("target");
+        fs::create_dir_all(&target).unwrap();
+        unsafe {
+            std::env::set_var("CS2BI_STATE_ROOT", &state);
+        }
+
+        // Nothing installed: there is no LA version to report, and the snapshot shows the empty
+        // "not installed" marker rather than a fabricated version.
+        assert_eq!(
+            installer::component_version(&state, &target, ComponentId::LaPlugins),
+            None
+        );
+        assert_eq!(
+            online_update::snapshot(None)
+                .unwrap()
+                .la_plugins
+                .current_version,
+            ""
+        );
+
+        let upstream =
+            payload_fixture(&base, "upstream", UPSTREAM_DLL, b"bothider", "shared", "1.4.3.3");
+        installer::install_component(&upstream, &state, &target, ComponentId::Upstream).unwrap();
+        let la = payload_fixture(&base, "la", LA_DLL, b"pmc", "plus", "1.4.4.0");
+        installer::install_component(&la, &state, &target, ComponentId::LaPlugins).unwrap();
+        let simulator = payload_fixture(
+            &base,
+            "simulator",
+            SIMULATOR_DLL,
+            b"simulator",
+            "third-party",
+            "3.7.0",
+        );
+        installer::install_component(
+            &simulator,
+            &state,
+            &target,
+            ComponentId::InventorySimulator,
+        )
+        .unwrap();
+
+        // The reported version is exactly the LA row on disk, read through the same helper
+        // `installed_plugin_version` calls.
+        let record = record_of(&state);
+        let on_disk = record["components"]["la_plugins"]["version"]
+            .as_str()
+            .expect("the LA row must be on disk");
+        let reported = installer::component_version(&state, &target, ComponentId::LaPlugins);
+        assert_eq!(reported.as_deref(), Some(on_disk));
+        assert_eq!(reported.as_deref(), Some("1.4.4.0"));
+
+        // The third-party tag stays in its own row and never leaks into the LA version.
+        let simulator_version =
+            installer::component_version(&state, &target, ComponentId::InventorySimulator);
+        assert_eq!(simulator_version.as_deref(), Some("3.7.0"));
+        assert_ne!(reported, simulator_version);
+        let snapshot = online_update::snapshot(reported.as_deref()).unwrap();
+        assert_eq!(snapshot.la_plugins.current_version, "1.4.4.0");
+        assert_ne!(snapshot.la_plugins.current_version, "3.7.0");
+        println!(
+            "installed_plugin_version_reads_la_component_only: la={:?} simulator={:?}",
+            reported, simulator_version
+        );
+
+        fs::remove_dir_all(&base).unwrap();
+        unsafe {
+            std::env::remove_var("CS2BI_STATE_ROOT");
+        }
+    }
+
     fn scratch(name: &str) -> PathBuf {
         let path = std::env::temp_dir().join(format!(
             "cs2bi-usa8-{name}-{}-{}",
@@ -4952,6 +5011,8 @@ mod tests {
     const UPSTREAM_DLL: &str = "addons/counterstrikesharp/shared/BotHiderApi/BotHiderApi.dll";
     const LA_DLL: &str =
         "addons/counterstrikesharp/plugins/PlusMatchCoordinator/PlusMatchCoordinator.dll";
+    const SIMULATOR_DLL: &str =
+        "addons/counterstrikesharp/plugins/InventorySimulator/InventorySimulator.dll";
 
     fn record_of(state: &Path) -> serde_json::Value {
         let installations = state.join("installations");
