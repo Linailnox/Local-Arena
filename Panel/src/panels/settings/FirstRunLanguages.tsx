@@ -96,14 +96,15 @@ export default function FirstRunLanguages() {
     try {
       const selected = directory?.selected ?? null;
       if (!selected) return;
-      const results = await api.installAllComponents(selected);
-      if (results) {
-        // install_all_components returns a batch result; the welcome story is no longer
-        // gated on a per-install flag here (todo 9 replaced install_payload).
-        const saved = await updateConfig({ first_run_step: "complete" });
-        setStep("complete");
-        if (saved) setStoryOpen(false);
-      }
+      await api.installAllComponents(selected);
+      // install_all_components returns a batch result; the per-install welcome_story_eligible
+      // flag no longer exists (todo 9 replaced install_payload). Welcome story intentionally
+      // retired — first run now completes directly.
+      const saved = await updateConfig({ first_run_step: "complete" });
+      setStep("complete");
+      if (saved) setStoryOpen(false);
+    } catch (error) {
+      reportError(error);
     } finally { setWorking(false); }
   };
 

@@ -158,21 +158,13 @@ export type InstallPlan = {
   can_install: boolean;
 };
 
-export type InstallTransactionResult = {
-  package_version: string;
-  installed_files: number;
-  backup_path: string;
-  repaired: boolean;
-  welcome_story_eligible: boolean;
-};
-
 export type RestoreResult = {
   restored_files: number;
   removed_files: number;
   preserved_files: number;
   presets_backup: string | null;
   steam_verify_uri: string;
-  result_kind: "restore_previous" | "pristine";
+  result_kind: "restore_previous" | "pristine" | "component_uninstall" | "restore_all_components";
 };
 
 export type DiagnosticReport = {
@@ -859,11 +851,11 @@ export const api = {
     invoke<InstallationInspection>("inspect_installation", { csgo }),
   getInstallPlan: (csgo: string) => invoke<InstallPlan>("get_install_plan", { csgo }),
   installComponent: (csgo: string, component: string) =>
-    invoke<UpdateResult>("install_component_by_id", { csgo, component_id: component }),
+    invoke<UpdateResult>("install_component_by_id", { csgo, componentId: component }),
   repairComponent: (csgo: string, component: string) =>
-    invoke<UpdateResult>("repair_component", { csgo, component_id: component }),
+    invoke<UpdateResult>("repair_component", { csgo, componentId: component }),
   uninstallComponent: (csgo: string, component: string) =>
-    invoke<RestoreResult>("uninstall_component", { csgo, component_id: component }),
+    invoke<RestoreResult>("uninstall_component", { csgo, componentId: component }),
   installAllComponents: (csgo: string) =>
     invoke<UpdateResult[]>("install_all_components", { csgo }),
   restoreAllComponents: (csgo: string) =>
