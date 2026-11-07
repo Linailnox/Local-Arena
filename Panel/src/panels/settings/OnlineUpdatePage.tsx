@@ -39,7 +39,7 @@ export function OnlineUpdateSection({ children, toolbarExtra }: { children?: Rea
     setWorking("all");
     setLocalError(null);
     try {
-      await api.installAllUpdates(snapshot?.la_plugins.update_available ? csgoPath : null);
+      await api.installAllUpdates(csgoPath ?? null);
       await refreshSnapshot();
     } catch (error) {
       setLocalError(toAppError(error).detail);
@@ -56,13 +56,15 @@ export function OnlineUpdateSection({ children, toolbarExtra }: { children?: Rea
   const panelAvailable = !!snapshot?.panel.update_available;
   const pluginAvailable = !!snapshot?.la_plugins.update_available;
   const hasUpdates = panelAvailable || pluginAvailable;
-  const pluginNeedsDirectory = pluginAvailable && !csgoPath;
+  // install_all_updates always installs the components too, so every update path
+  // (panel-only included) needs the CS2 directory.
+  const needsDirectory = hasUpdates && !csgoPath;
   const pluginIncompatible = pluginAvailable && snapshot?.la_plugins.compatible === false;
   const panelIncompatible = panelAvailable && snapshot?.panel.compatible === false;
   const canInstallAll = hasUpdates && !snapshot?.busy && !working
-    && !pluginNeedsDirectory && !(pluginAvailable && blocked)
+    && !needsDirectory && !(pluginAvailable && blocked)
     && !pluginIncompatible && !panelIncompatible;
-  const blockingNote = pluginNeedsDirectory ? t("update.selectDirectory")
+  const blockingNote = needsDirectory ? t("update.selectDirectory")
     : pluginAvailable && blocked ? t("update.closeCs2")
       : pluginIncompatible || panelIncompatible ? t("update.incompatible")
         : null;
