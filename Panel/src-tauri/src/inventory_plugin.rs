@@ -20,7 +20,6 @@ use crate::installer::PayloadManifest;
 use crate::release_source;
 use crate::AppError;
 
-const MARKER_FILE: &str = ".installed.json";
 const PLUGIN_DIR: &str = "addons/counterstrikesharp/plugins/InventorySimulator/";
 const GAMEDATA_FILE: &str = "addons/counterstrikesharp/gamedata/inventory-simulator.json";
 const COMPONENT: &str = "InventorySimulator";
@@ -44,23 +43,6 @@ pub struct Release {
     pub url: String,
     pub size: u64,
     pub sha256: String,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-struct Marker {
-    tag: String,
-    sha256: String,
-    asset: String,
-    installed_at: String,
-}
-
-fn marker_path(root: &Path) -> PathBuf {
-    root.join(PLUGIN_DIR).join(MARKER_FILE)
-}
-
-fn read_marker(root: &Path) -> Option<Marker> {
-    let bytes = fs::read(marker_path(root)).ok()?;
-    serde_json::from_slice(&bytes).ok()
 }
 
 /// Shared update client (HTTPS-only, 120 s timeout) — the same one the other components use.
@@ -102,6 +84,35 @@ fn staging_root(update_root: &Path, tag: &str) -> PathBuf {
         .join(tag)
 }
 
+/// The staged InventorySimulator payload the shared transaction commits from.
+///
+/// This component deletes its staging tree as soon as an install commits, so the resolver answers
+/// "what is staged right now" and never pretends a staged tree outlives the install: with nothing
+/// staged it reports the install action rather than a stale layout path.
+pub fn latest_staging_root() -> Result<PathBuf, AppError> {
+    let root = update_root()?
+        .join("staging")
+        .join("inventory-simulator");
+    let mut staged: Vec<PathBuf> = fs::read_dir(&root)
+        .map_err(|_| {
+            AppError::payload(
+                "The InventorySimulator payload has not been staged; install the component first",
+            )
+        })?
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.is_dir() && path.join(crate::installer::MANIFEST_FILE).is_file()
+        })
+        .collect();
+    staged.sort();
+    staged.pop().ok_or_else(|| {
+        AppError::payload(
+            "The InventorySimulator payload has not been staged; install the component first",
+        )
+    })
+}
+
 pub fn resolve_release(tag: Option<&str>) -> Result<Release, AppError> {
     let client = client()?;
     let (repository, selector) = registry_source()?;
@@ -118,15 +129,23 @@ pub fn resolve_release(tag: Option<&str>) -> Result<Release, AppError> {
     })
 }
 
-pub fn snapshot(root: &Path) -> InventoryPluginSnapshot {
+/// The installed version, read from the component record those same transactions write.
+///
+/// Nothing is read out of the game directory to derive a version: a legacy `.installed.json` a
+/// previous Panel left behind is not a source any more, and this component's own version lives in
+/// `record.components["inventory_simulator"]` like every other component's.
+pub fn snapshot(state_root: &Path, root: &Path) -> InventoryPluginSnapshot {
     let plugin_present = root
         .join(PLUGIN_DIR)
         .join("InventorySimulator.dll")
         .is_file();
-    let marker = read_marker(root);
     InventoryPluginSnapshot {
         plugin_present,
-        installed_version: marker.as_ref().map(|marker| marker.tag.clone()),
+        installed_version: crate::installer::component_version(
+            state_root,
+            root,
+            crate::installer::ComponentId::InventorySimulator,
+        ),
         latest_version: None,
         latest_size: 0,
         needs_install: !plugin_present,
@@ -201,15 +220,13 @@ fn collect_relative_files(dir: &Path, staging: &Path, collected: &mut Vec<String
     Ok(())
 }
 
-/// Writes the install marker into the staging root and builds the synthetic payload manifest
-/// the shared transaction will commit: one entry per surviving whitelisted file plus the
-/// marker entry last. The transaction therefore installs the marker atomically as its last
-/// file — no separate write to the game directory happens.
-fn synthetic_manifest(
-    staging: &Path,
-    tag: &str,
-    marker_bytes: &[u8],
-) -> Result<PayloadManifest, AppError> {
+/// Builds the synthetic payload manifest the shared transaction commits: one entry per surviving
+/// whitelisted file, and nothing else.
+///
+/// The component's installed version is not a file in the game directory — the transaction records
+/// the release tag under `record.components["inventory_simulator"]`, so a marker file (with its own
+/// timestamp, kept in step with the payload by hand) is no longer needed.
+fn synthetic_manifest(staging: &Path, tag: &str) -> Result<PayloadManifest, AppError> {
     let mut relative_paths = Vec::new();
     collect_relative_files(staging, staging, &mut relative_paths)?;
     relative_paths.retain(|relative| whitelist_staged(relative));
@@ -230,23 +247,6 @@ fn synthetic_manifest(
         )?);
     }
 
-    let marker_relative = format!("{PLUGIN_DIR}{MARKER_FILE}");
-    let marker_path = staging.join(&marker_relative);
-    if let Some(parent) = marker_path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    fs::write(&marker_path, marker_bytes)?;
-    entries.push(
-        serde_json::from_value::<crate::installer::PayloadEntry>(serde_json::json!({
-            "path": marker_relative,
-            "size": marker_bytes.len() as u64,
-            "sha256": crate::update_core::sha256_file(&marker_path)?,
-            "component": COMPONENT,
-            "ownership": OWNERSHIP,
-            "restore_policy": "restore",
-        }))?,
-    );
-
     Ok(PayloadManifest {
         schema_version: 1,
         package_version: tag.to_string(),
@@ -259,6 +259,10 @@ pub fn install(
     root: &Path,
     tag: Option<&str>,
 ) -> Result<InventoryPluginSnapshot, AppError> {
+    // A peer component writes into the game directory under the same rules as the others: never
+    // while CS2 holds the files and never while Steam is replacing them.
+    crate::ensure_target_not_running(root)?;
+    crate::ensure_steam_app_idle(root)?;
     let release = resolve_release(tag)?;
     let update_root = update_root()?;
 
@@ -288,17 +292,19 @@ pub fn install(
     )?;
 
     let staging = staging_root(&update_root, &release.tag);
-    let result = stage_and_install(&staging, &archive, root, &release);
+    let state_root = crate::app_storage::root()?;
+    let result = stage_and_install(&staging, &archive, root, &state_root, &release);
     let _ = fs::remove_dir_all(&staging);
     result?;
 
-    Ok(snapshot(root))
+    Ok(snapshot(&state_root, root))
 }
 
 fn stage_and_install(
     staging: &Path,
     archive: &Path,
     root: &Path,
+    state_root: &Path,
     release: &Release,
 ) -> Result<(), AppError> {
     let _ = fs::remove_dir_all(staging);
@@ -313,39 +319,31 @@ fn stage_and_install(
             "InventorySimulator archive contained none of the expected files",
         ));
     }
+    commit_staged(staging, state_root, root, &release.tag)
+}
 
-    let marker = Marker {
-        tag: release.tag.clone(),
-        sha256: release.sha256.clone(),
-        asset: release.asset_name.clone(),
-        installed_at: chrono_like_now(),
-    };
-    let marker_bytes = serde_json::to_vec_pretty(&marker)?;
-    let manifest = synthetic_manifest(staging, &release.tag, &marker_bytes)?;
+/// Writes the synthetic manifest for a pruned staging tree and commits it through the shared
+/// component transaction — the same locked, journalled install every other component uses. The
+/// transaction records the tag under `record.components["inventory_simulator"]`, which is the only
+/// place this component's installed version is kept.
+fn commit_staged(
+    staging: &Path,
+    state_root: &Path,
+    root: &Path,
+    tag: &str,
+) -> Result<(), AppError> {
+    let manifest = synthetic_manifest(staging, tag)?;
     fs::write(
         staging.join(crate::installer::MANIFEST_FILE),
         serde_json::to_vec_pretty(&manifest)?,
     )?;
-
-    let staging_dir = staging.to_path_buf();
-    let state_root = crate::app_storage::root()?;
-    // One locked, journalled transaction installs every manifest entry — payload files and
-    // the marker — into the game directory and merges the install record. It never touches
-    // `active-payload.json`, which belongs to full-package installs.
     crate::installer::install_component(
-        &staging_dir,
-        &state_root,
+        staging,
+        state_root,
         root,
         crate::installer::ComponentId::InventorySimulator,
     )?;
     Ok(())
-}
-
-fn chrono_like_now() -> String {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|duration| duration.as_secs().to_string())
-        .unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -413,30 +411,45 @@ mod tests {
         );
     }
 
+    fn temp_root(suffix: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("la-inv-root-{}-{suffix}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// A pruned staging tree holding exactly the two whitelisted files.
+    fn staged_tree(suffix: &str) -> PathBuf {
+        let staging = temp_staging(suffix);
+        let dll = staging.join(PLUGIN_DIR).join("InventorySimulator.dll");
+        fs::create_dir_all(dll.parent().unwrap()).unwrap();
+        fs::write(&dll, b"plugin").unwrap();
+        let gamedata = staging.join(GAMEDATA_FILE);
+        fs::create_dir_all(gamedata.parent().unwrap()).unwrap();
+        fs::write(&gamedata, b"gamedata").unwrap();
+        assert_eq!(prune_staging(&staging).unwrap(), 2);
+        staging
+    }
+
     #[test]
-    fn snapshot_reports_install_state_from_marker() {
-        let root = std::env::temp_dir().join(format!("la-inv-snapshot-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(root.join(PLUGIN_DIR)).unwrap();
-        let empty = snapshot(&root);
+    fn snapshot_reports_install_state_from_the_record() {
+        let root = temp_root("snapshot-target");
+        let state = temp_root("snapshot-state");
+        let empty = snapshot(&state, &root);
         assert!(!empty.plugin_present);
         assert!(empty.needs_install);
         assert!(empty.installed_version.is_none());
 
-        fs::write(root.join(PLUGIN_DIR).join("InventorySimulator.dll"), b"dll").unwrap();
-        fs::write(
-            marker_path(&root),
-            serde_json::to_vec(&serde_json::json!({
-                "tag": "3.7.0", "sha256": "abc", "asset": "a.zip", "installed_at": "1"
-            }))
-            .unwrap(),
-        )
-        .unwrap();
-        let installed = snapshot(&root);
+        let staging = staged_tree("snapshot");
+        commit_staged(&staging, &state, &root, "3.7.0").unwrap();
+        let installed = snapshot(&state, &root);
         assert!(installed.plugin_present);
         assert!(!installed.needs_install);
         assert_eq!(installed.installed_version.as_deref(), Some("3.7.0"));
+
         fs::remove_dir_all(&root).unwrap();
+        fs::remove_dir_all(&state).unwrap();
+        fs::remove_dir_all(&staging).unwrap();
     }
 
     fn temp_staging(suffix: &str) -> PathBuf {
@@ -482,7 +495,7 @@ mod tests {
     }
 
     #[test]
-    fn synthetic_manifest_carries_exactly_the_whitelisted_files_and_marker() {
+    fn synthetic_manifest_carries_exactly_the_whitelisted_files() {
         let staging = temp_staging("manifest");
         let plugin_dll = staging.join(PLUGIN_DIR).join("InventorySimulator.dll");
         fs::create_dir_all(plugin_dll.parent().unwrap()).unwrap();
@@ -493,14 +506,16 @@ mod tests {
         let unrelated = staging.join("Unrelated.dll");
         fs::write(&unrelated, b"unrelated").unwrap();
 
-        let marker_bytes = b"{}marker-bytes";
-        let marker_relative = format!("{PLUGIN_DIR}{MARKER_FILE}");
         let dll_relative = format!("{PLUGIN_DIR}InventorySimulator.dll");
-        let manifest = synthetic_manifest(&staging, "3.7.0", marker_bytes).unwrap();
+        let manifest = synthetic_manifest(&staging, "3.7.0").unwrap();
 
         assert_eq!(manifest.schema_version, 1);
         assert_eq!(manifest.package_version, "3.7.0");
-        assert_eq!(manifest.entries.len(), 3);
+        assert_eq!(
+            manifest.entries.len(),
+            2,
+            "one entry per whitelisted file, and nothing else"
+        );
         let paths: Vec<&str> = manifest
             .entries
             .iter()
@@ -508,12 +523,15 @@ mod tests {
             .collect();
         assert_eq!(
             paths,
-            vec![
-                GAMEDATA_FILE,
-                dll_relative.as_str(),
-                marker_relative.as_str(),
-            ],
-            "the manifest covers exactly the whitelisted files plus the marker"
+            vec![GAMEDATA_FILE, dll_relative.as_str()],
+            "the manifest covers exactly the whitelisted files"
+        );
+        assert!(
+            manifest
+                .entries
+                .iter()
+                .all(|entry| !entry.path.contains(".installed.json")),
+            "the retired marker is not a manifest entry any more"
         );
         for entry in &manifest.entries {
             assert_eq!(entry.ownership, "third-party");
@@ -528,26 +546,163 @@ mod tests {
         fs::remove_dir_all(&staging).unwrap();
     }
 
+    fn record_path(state: &Path) -> PathBuf {
+        let installations = state.join("installations");
+        let mut dirs: Vec<PathBuf> = fs::read_dir(&installations)
+            .unwrap()
+            .flatten()
+            .map(|entry| entry.path())
+            .collect();
+        dirs.sort();
+        dirs.pop().unwrap().join("record.json")
+    }
+
     #[test]
-    fn marker_entry_is_last_and_matches_marker_bytes() {
-        let staging = temp_staging("marker");
-        let gamedata = staging.join(GAMEDATA_FILE);
-        fs::create_dir_all(gamedata.parent().unwrap()).unwrap();
-        fs::write(&gamedata, b"gamedata").unwrap();
+    fn is_version_comes_from_record() {
+        // A `.installed.json` an older Panel left behind is not a version source: only the
+        // component record is.
+        let root = temp_root("version-source-target");
+        let state = temp_root("version-source-state");
+        let staging = staged_tree("version-source");
+        commit_staged(&staging, &state, &root, "3.7.0").unwrap();
 
-        let marker_bytes = serde_json::to_vec_pretty(&serde_json::json!({
-            "tag": "3.7.2", "sha256": "abc", "asset": "a.zip", "installed_at": "1"
-        }))
+        let legacy_marker = root.join(PLUGIN_DIR).join(".installed.json");
+        fs::write(
+            &legacy_marker,
+            serde_json::to_vec(&serde_json::json!({"tag": "9.9.9"})).unwrap(),
+        )
         .unwrap();
-        let manifest =
-            synthetic_manifest(&staging, "3.7.2", &marker_bytes).unwrap();
+        assert_eq!(
+            snapshot(&state, &root).installed_version.as_deref(),
+            Some("3.7.0"),
+            "the record wins over a leftover marker"
+        );
 
-        let last = manifest.entries.last().unwrap();
-        assert_eq!(last.path, format!("{PLUGIN_DIR}{MARKER_FILE}"));
-        assert_eq!(last.sha256, sha256_bytes(&marker_bytes));
-        assert_eq!(last.size, marker_bytes.len() as u64);
-        let staged_marker = fs::read(staging.join(PLUGIN_DIR).join(MARKER_FILE)).unwrap();
-        assert_eq!(staged_marker, marker_bytes);
+        let other_state = temp_root("version-source-state-empty");
+        assert_eq!(
+            snapshot(&other_state, &root).installed_version,
+            None,
+            "without a record the leftover marker reports nothing at all"
+        );
+
+        fs::remove_dir_all(&root).unwrap();
+        fs::remove_dir_all(&state).unwrap();
+        fs::remove_dir_all(&other_state).unwrap();
+        fs::remove_dir_all(&staging).unwrap();
+    }
+
+    #[test]
+    fn task7_happy() {
+        let root = temp_root("task7-happy-target");
+        let state = temp_root("task7-happy-state");
+        let staging = staged_tree("task7-happy");
+
+        commit_staged(&staging, &state, &root, "3.7.2").unwrap();
+
+        assert!(root.join(PLUGIN_DIR).join("InventorySimulator.dll").is_file());
+        assert!(root.join(GAMEDATA_FILE).is_file());
+        assert!(!root.join(PLUGIN_DIR).join(".installed.json").exists());
+        assert_eq!(
+            crate::installer::component_version(
+                &state,
+                &root,
+                crate::installer::ComponentId::InventorySimulator
+            )
+            .as_deref(),
+            Some("3.7.2")
+        );
+        assert_eq!(
+            snapshot(&state, &root).installed_version.as_deref(),
+            Some("3.7.2")
+        );
+        println!(
+            "task7_happy: installed_version={:?} plugin_present={}",
+            snapshot(&state, &root).installed_version,
+            snapshot(&state, &root).plugin_present
+        );
+        fs::remove_dir_all(&root).unwrap();
+        fs::remove_dir_all(&state).unwrap();
+        fs::remove_dir_all(&staging).unwrap();
+    }
+
+    #[test]
+    fn task7_failure() {
+        // (a) A staging tree with nothing whitelisted never reaches the game directory.
+        let root = temp_root("task7-failure-empty-target");
+        let state = temp_root("task7-failure-empty-state");
+        let staging = temp_staging("task7-empty");
+        fs::write(staging.join("Unrelated.dll"), b"unrelated").unwrap();
+        assert_eq!(prune_staging(&staging).unwrap(), 0);
+        let empty = commit_staged(&staging, &state, &root, "3.7.0").unwrap_err();
+        assert_eq!(empty.code, "E1301", "{}", empty.detail);
+        assert!(!root.join(PLUGIN_DIR).join("InventorySimulator.dll").exists());
+        assert!(snapshot(&state, &root).installed_version.is_none());
+        fs::remove_dir_all(&root).unwrap();
+        fs::remove_dir_all(&state).unwrap();
+        fs::remove_dir_all(&staging).unwrap();
+
+        // (b) A conflicting file in the game directory aborts before any write.
+        let root = temp_root("task7-failure-conflict-target");
+        let state = temp_root("task7-failure-conflict-state");
+        let staging = staged_tree("task7-conflict");
+        let occupied = root.join(PLUGIN_DIR).join("InventorySimulator.dll");
+        fs::create_dir_all(occupied.parent().unwrap()).unwrap();
+        fs::write(&occupied, b"another-build").unwrap();
+        let conflict = commit_staged(&staging, &state, &root, "3.7.0").unwrap_err();
+        assert_eq!(conflict.code, "E1403", "{}", conflict.detail);
+        assert_eq!(fs::read(&occupied).unwrap(), b"another-build");
+        assert!(snapshot(&state, &root).installed_version.is_none());
+        println!(
+            "task7_failure: empty={} conflict={} lines={}",
+            empty.code,
+            conflict.code,
+            conflict.detail.lines().count()
+        );
+        fs::remove_dir_all(&root).unwrap();
+        fs::remove_dir_all(&state).unwrap();
+        fs::remove_dir_all(&staging).unwrap();
+    }
+
+    #[test]
+    fn task7_manual_qa_dump() {
+        let root = temp_root("task7-qa-target");
+        let state = temp_root("task7-qa-state");
+        let staging = staged_tree("task7-qa");
+        commit_staged(&staging, &state, &root, "3.7.0").unwrap();
+
+        let bytes = fs::read(record_path(&state)).unwrap();
+        let doc: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(
+            doc["components"]["inventory_simulator"]["version"].as_str(),
+            Some("3.7.0")
+        );
+        assert_eq!(
+            doc["components"]["inventory_simulator"]["ownership"].as_str(),
+            Some("third-party")
+        );
+        let paths: Vec<&str> = doc["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|entry| entry["path"].as_str().unwrap())
+            .collect();
+        assert!(
+            paths.iter().all(|path| !path.contains(".installed.json")),
+            "no marker path in the install record: {paths:?}"
+        );
+        if let Ok(dump) = std::env::var("QA_DUMP") {
+            fs::write(&dump, &bytes).unwrap();
+            println!(
+                "task7_manual_qa_dump: wrote {} bytes to {} (paths={:?})",
+                bytes.len(),
+                dump,
+                paths
+            );
+        } else {
+            println!("task7_manual_qa_dump: QA_DUMP unset, skipped dump");
+        }
+        fs::remove_dir_all(&root).unwrap();
+        fs::remove_dir_all(&state).unwrap();
         fs::remove_dir_all(&staging).unwrap();
     }
 
