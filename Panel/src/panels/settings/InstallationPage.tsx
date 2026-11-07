@@ -41,7 +41,7 @@ function formatBytes(value: number) {
 
 export default function InstallationPage() {
   const {
-    csgoPath, installation, process, directory, chooseDirectory, verifyInstallation,
+    csgoPath, installation, process, directory, chooseDirectory, verifyInstallation, refreshAll,
     restorePayload, restorePristineCs2, exportDiagnostics, reportError, config, updateConfig,
   } = useStore();
   const t = useT();
@@ -216,6 +216,7 @@ export default function InstallationPage() {
       try {
         await api.installAllComponents(csgoPath);
         await refreshUpstream();
+        await refreshAll();
       } catch (error) {
         reportError(error);
       }
@@ -228,6 +229,7 @@ export default function InstallationPage() {
       try {
         await api.uninstallComponent(csgoPath, componentId);
         await refreshUpstream();
+        await refreshAll();
       } catch (error) {
         reportError(error);
       }
@@ -240,6 +242,7 @@ export default function InstallationPage() {
       try {
         await api.restoreAllComponents(csgoPath);
         await refreshUpstream();
+        await refreshAll();
       } catch (error) {
         reportError(error);
       }
