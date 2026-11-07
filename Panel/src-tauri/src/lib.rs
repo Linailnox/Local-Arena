@@ -1371,7 +1371,7 @@ fn prepare_and_launch_match(app: AppHandle, csgo: String, input: PrepareMatchInp
     apply_launch_mode(&root, LaunchMode::Bots).map_err(AppError::invalid)?;
     mode_layout::set_preview(&state, &root, false)?;
     let preparation = (|| -> Result<()> {
-        let report = collect_install_checks(&payload, &state, &root, Some(&input.map_id))?;
+        let report = collect_component_checks(ComponentId::Upstream, &payload, &state, &root, Some(&input.map_id))?;
         ensure_install_checks_pass(&report)?;
         ensure_match_components_pass(&report)
     })();
@@ -1818,19 +1818,50 @@ fn cs2ss_last_completed(csgo: String) -> Result<Option<match_system::CompletedMa
 #[tauri::command]
 fn run_install_checks(app: AppHandle, csgo: String, selected_map: Option<String>) -> Result<InstallCheckReport> {
     let root = csgo_path(&csgo)?;
-    collect_install_checks(&component_payload_root(ComponentId::Upstream)?, &local_state_root(&app)?, &root, selected_map.as_deref())
+    let payload = component_payload_root(ComponentId::Upstream)?;
+    collect_component_checks(
+        ComponentId::Upstream,
+        &payload,
+        &local_state_root(&app)?,
+        &root,
+        selected_map.as_deref(),
+    )
 }
 
-fn collect_install_checks(payload: &Path, state: &Path, root: &Path, selected_map: Option<&str>) -> Result<InstallCheckReport> {
+/// The value a component is addressed by in the record, the update-progress events, the command
+/// arguments and the diagnostics log — one spelling everywhere.
+fn component_key(component: ComponentId) -> &'static str {
+    match component {
+        ComponentId::Upstream => "upstream",
+        ComponentId::LaPlugins => "la_plugins",
+        ComponentId::InventorySimulator => "inventory_simulator",
+    }
+}
+
+/// Run the install checks against one component's own payload root.
+///
+/// The checks themselves are target/environment health plus the managed-file comparison against
+/// `record.json`, so they are the same code for every component; the component decides which
+/// payload the package-side checks read, and tags every persisted line so the diagnostics bundle
+/// shows which install produced it.
+fn collect_component_checks(
+    component: ComponentId,
+    payload: &Path,
+    state: &Path,
+    root: &Path,
+    selected_map: Option<&str>,
+) -> Result<InstallCheckReport> {
     let process = inspect_cs2_process(Some(root));
     let report = install_checks::run(payload, state, root, process.running, selected_map)?;
     let report_path = install_checks::persist(state, &report)?;
+    let component = component_key(component);
     logging::append(
         state,
         if report.can_proceed { "INFO" } else { "ERROR" },
         "install.preflight",
         &format!(
-            "target={}, pass={}, warn={}, fail={}, blocking_fail={}, can_proceed={}, report={}",
+            "component={}, target={}, pass={}, warn={}, fail={}, blocking_fail={}, can_proceed={}, report={}",
+            component,
             report.target,
             report.pass_count,
             report.warn_count,
@@ -1846,8 +1877,8 @@ fn collect_install_checks(payload: &Path, state: &Path, root: &Path, selected_ma
             if check.status == install_checks::CheckStatus::Fail { "ERROR" } else { "WARN" },
             "install.preflight.item",
             &format!(
-                "code={}, blocking={}, title={}, evidence={}, cause={}, action={}",
-                check.code, check.blocking, check.title, check.evidence, check.cause, check.action
+                "component={}, code={}, blocking={}, title={}, evidence={}, cause={}, action={}",
+                component, check.code, check.blocking, check.title, check.evidence, check.cause, check.action
             ),
         );
     }
@@ -3301,7 +3332,7 @@ fn install_upstream_blocking(
     ensure_target_not_running(root)?;
     ensure_steam_app_idle(root)?;
     let payload = upstream_package::stage_upstream_only()?;
-    let report = collect_install_checks(&payload, state, root, None)?;
+    let report = collect_component_checks(ComponentId::Upstream, &payload, state, root, None)?;
     ensure_install_checks_pass(&report)?;
     logging::append(state, "INFO", "install.upstream_started", &format!("tag={tag}"));
     let result = with_canonical_layout(state, root, restore_preview, || {
@@ -3376,7 +3407,7 @@ fn install_la_blocking(
             (component_payload_root(ComponentId::LaPlugins)?, None)
         }
     };
-    let report = collect_install_checks(&payload, state, root, None)?;
+    let report = collect_component_checks(ComponentId::LaPlugins, &payload, state, root, None)?;
     ensure_install_checks_pass(&report)?;
     let result = with_canonical_layout(state, root, restore_preview, || {
         installer::install_la_plugins_component(&payload, state, root)
@@ -3658,9 +3689,11 @@ fn restore_payload_impl(app: &AppHandle, csgo: &str, pristine: bool) -> Result<R
 fn installed_plugin_version(app: &AppHandle) -> Option<String> {
     let config = read_config(app).ok()?;
     let root = csgo_path(config.csgo_path.as_deref()?).ok()?;
-    installer::inspect_quick(&component_payload_root(ComponentId::LaPlugins).ok()?, &local_state_root(app).ok()?, &root)
-        .ok()?
-        .package_version
+    installer::component_version(
+        &local_state_root(app).ok()?,
+        &root,
+        ComponentId::LaPlugins,
+    )
 }
 
 #[tauri::command]
