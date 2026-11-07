@@ -997,7 +997,7 @@ export const EN = {
   "update.allDesc": "Update every available component in the safe order: plugin first, then Panel and automatic restart.",
   "update.installAll": "Update all",
   "update.updatingAll": "Updating…",
-  "update.selectDirectory": "Select the CS2 game/csgo directory before updating the plugin.",
+  "update.selectDirectory": "Select the CS2 game/csgo directory before updating.",
   "update.incompatible": "This release needs a newer updater baseline and cannot be installed in one step.",
   "update.cancel": "Cancel",
   "update.closeCs2": "Close the selected CS2 installation before updating the plugin.",

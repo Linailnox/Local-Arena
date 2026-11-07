@@ -23,7 +23,7 @@ Local-Arena/
 | Task | Location | Notes |
 |------|----------|-------|
 | Install/update behavior | `Panel/src-tauri/src/installer.rs`, `upstream_package.rs` | manifest-driven; only manifest entries get copied. Full installs copy the whole `plus-payload-manifest.json`; `install_component` copies only entries whose `ownership` matches, through the same locked transaction |
-| Add backend command | `Panel/src-tauri/src/lib.rs` `generate_handler!` (lib.rs:4602) | add matching invoke wrapper in `Panel/src/lib/api.ts` (no `invoke(` outside it) |
+| Add backend command | `Panel/src-tauri/src/lib.rs` `generate_handler!` (lib.rs:5216) | add matching invoke wrapper in `Panel/src/lib/api.ts` (no `invoke(` outside it); invoke payload keys must be camelCase (`component_id` -> `componentId`), which `tsc` cannot catch |
 | Panel UI | `Panel/src/panels/`, `Panel/src/components/` | settings subpages under `panels/settings/` |
 | Match rosters | `addons/.../PlusMatchCoordinator/match_catalog.json` | parsed by `Panel/src-tauri/src/match_system.rs`; one edit fans out to install_checks.rs, mode_layout.rs, installer.rs |
 | Generated data catalogs | `Panel/src/data/`, `scripts/generate-*.mjs` | generator output pinned by verify — regenerate, never hand-edit |
@@ -45,10 +45,10 @@ Local-Arena/
 | `upstream_package` | mod | `Panel/src-tauri/src/upstream_package.rs` | deps pin | GitHub digest verify, .part resume, merged payload root |
 | `update_core` | mod | `Panel/src-tauri/src/update_core.rs` | `online_update.rs` | `latest.json` schema v2 (`components.la_plugins.{windows,linux}`); `parse_update_manifest` converts a v1 `plugin` entry into `la_plugins.windows` |
 | `online_update` | mod | `Panel/src-tauri/src/online_update.rs` | component updates | host platform key selects the `la_plugins` archive; a release may publish only one platform |
-| `inventory_plugin` | mod | `Panel/src-tauri/src/inventory_plugin.rs` | InventorySimulator | third-party download via `release_source` + `download::download_with_progress`, installed by the shared transaction with `.installed.json` written as its last entry |
+| `inventory_plugin` | mod | `Panel/src-tauri/src/inventory_plugin.rs` | InventorySimulator | third-party download via `release_source` + `download::download_with_progress`, installed by the shared transaction; the installed version lives in `record.components["inventory_simulator"]` (the old `.installed.json` marker is gone) |
 | `match_system.rs` | mod | `Panel/src-tauri/src/` | catalog | parses match_catalog.json (`CATALOG_RELATIVE`) |
 | `apply_launch_mode` | fn | `Panel/src-tauri/src/mode_files.rs` | launch modes | rewrites gameinfo.gi from current Steam files |
-| `api.ts` | ts | `Panel/src/lib/api.ts` | 92 invoke wrappers | single invoke boundary; `generate_handler!` registers 93 commands (lib.rs 79 + cs2ss_bridge 10 + appearance 4) — `import_cosmetics_inventory` currently has no wrapper |
+| `api.ts` | ts | `Panel/src/lib/api.ts` | 94 invoke wrappers | single invoke boundary; `generate_handler!` registers 95 commands (lib.rs 81 + cs2ss_bridge 10 + appearance 4) — `import_cosmetics_inventory` currently has no wrapper |
 | `BotHiderApi` | C# api | `addons/BotHider` (submodule) | PMC/TLI ProjectReference | never edit inside; gitlink pin is the version signal |
 | `MatchCore` | C# lib | `addons/counterstrikesharp/shared/` | MatchCore.Tests only | `MatchRules` is tests-only now; production MR12 lives in PMC convars (PlusMatchCoordinator.cs:267) |
 | `match_catalog.json` | data | `PlusMatchCoordinator/` | schema_version 1 | plugin↔Panel contract, frozen HLTV top-20 |

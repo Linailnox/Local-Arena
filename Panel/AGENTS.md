@@ -9,7 +9,7 @@ Rust backend (`src-tauri/`, crate `cs2-bot-improver-plus-panel`). Frameless wind
 | Task | Location |
 |------|----------|
 | Add a view | `src/panels/`, then mount in `src/App.tsx` (imports every panel) |
-| Add/rename a Rust command | `src-tauri/src/lib.rs` command fn + `generate_handler!`, then `src/lib/api.ts` |
+| Add/rename a Rust command | `src-tauri/src/lib.rs` command fn + `generate_handler!`, then `src/lib/api.ts` — and the `invoke` payload keys must be camelCase (`component_id` -> `componentId`); `tsc` and `bun run build` cannot catch a snake_case key, only the running app can |
 | Frontend↔backend contract | `src/lib/api.ts` — the only `invoke` boundary |
 | Global UI state | `src/state/store.tsx` (`useStore`, `AppStateProvider`; `AppStatePreviewProvider` renders panels without Tauri) |
 | Theme state | `src/state/appearance.tsx` (`useAppearance`) |
