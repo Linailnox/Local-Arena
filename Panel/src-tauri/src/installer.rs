@@ -5050,4 +5050,281 @@ mod tests {
         println!("f3_surface_end_to_end: PASS");
         fs::remove_dir_all(base).unwrap();
     }
+
+    /// Asserts the observable F3 surface: the target holds exactly the three staged payloads,
+    /// and the record bytes on disk name three distinct component versions.
+    fn assert_three_component_surface(
+        target: &Path,
+        state: &Path,
+        payloads: &BTreeMap<ComponentId, PathBuf>,
+    ) -> BTreeMap<String, String> {
+        let expected: BTreeMap<String, String> = [
+            (COMPONENT_SHARED[0], ComponentId::Upstream),
+            (COMPONENT_SHARED[1], ComponentId::Upstream),
+            (COMPONENT_PLUS[0], ComponentId::LaPlugins),
+            (COMPONENT_PLUS[1], ComponentId::LaPlugins),
+            (THIRD_PARTY, ComponentId::InventorySimulator),
+        ]
+        .into_iter()
+        .map(|(raw, component)| {
+            let staged = payloads[&component].join(safe_relative(raw).unwrap());
+            (raw.to_string(), sha256(&staged).unwrap())
+        })
+        .collect();
+        assert_eq!(
+            snapshot_target(target),
+            expected,
+            "the target must hold exactly the union of the three component payloads"
+        );
+
+        let record_path = installation_dir(state, target).join("record.json");
+        let bytes = fs::read(&record_path).unwrap();
+        let doc: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        let components = doc["components"].as_object().expect("record components map");
+        assert_eq!(components.len(), 3, "{components:?}");
+        let versions: BTreeMap<String, String> = components
+            .iter()
+            .map(|(id, row)| {
+                (
+                    id.clone(),
+                    row["version"].as_str().unwrap_or_default().to_string(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            versions,
+            BTreeMap::from([
+                ("inventory_simulator".to_string(), "3.7.0".to_string()),
+                ("la_plugins".to_string(), "1.4.4.0".to_string()),
+                ("upstream".to_string(), "1.4.3.3".to_string()),
+            ]),
+            "the record bytes must hold each component's own version"
+        );
+        assert_eq!(
+            versions.values().collect::<BTreeSet<_>>().len(),
+            3,
+            "the three component versions must be distinct"
+        );
+        versions
+    }
+
+    /// F3 surface QA: all six install permutations plus the shipped install-all and conflict
+    /// refusal legs. Every fixture is fresh; verdicts come from target/record bytes on disk.
+    #[test]
+    fn f3_surface_all_orders() {
+        use ComponentId::{InventorySimulator, LaPlugins, Upstream};
+
+        const ORDERS: [([ComponentId; 3], bool); 6] = [
+            ([Upstream, LaPlugins, InventorySimulator], true),
+            ([Upstream, InventorySimulator, LaPlugins], true),
+            ([InventorySimulator, Upstream, LaPlugins], true),
+            ([LaPlugins, Upstream, InventorySimulator], false),
+            ([LaPlugins, InventorySimulator, Upstream], false),
+            ([InventorySimulator, LaPlugins, Upstream], false),
+        ];
+        assert_eq!(
+            ORDERS
+                .iter()
+                .map(|(order, _)| *order)
+                .collect::<BTreeSet<_>>()
+                .len(),
+            6,
+            "the table must cover six distinct orders"
+        );
+        for (order, _) in ORDERS {
+            assert_eq!(
+                order.iter().copied().collect::<BTreeSet<_>>().len(),
+                3,
+                "each row must install each component exactly once: {order:?}"
+            );
+        }
+
+        let mut fixture_paths = BTreeSet::new();
+        let mut success_count = 0;
+        let mut e1404_count = 0;
+        for (index, (order, expect_success)) in ORDERS.iter().enumerate() {
+            let base = root(&format!("task15-f3-order-{index}"));
+            assert!(
+                fixture_paths.insert(base.clone()),
+                "fixture path reused for order {index}"
+            );
+            let target = base.join("target");
+            let state = base.join("state");
+            fs::create_dir_all(&target).unwrap();
+            let payloads = component_payloads(&base);
+            let directory = installation_dir(&state, &target);
+            assert!(!state.exists(), "order {index} must start with fresh state");
+            assert!(
+                !directory.exists(),
+                "order {index} must start with no install record"
+            );
+            assert!(
+                fs::read_dir(&target).unwrap().next().is_none(),
+                "order {index} must start with an empty target"
+            );
+            assert!(
+                snapshot_target(&target).is_empty(),
+                "order {index} must start with an empty target snapshot"
+            );
+
+            let upstream_at = order.iter().position(|component| *component == Upstream).unwrap();
+            let la_at = order.iter().position(|component| *component == LaPlugins).unwrap();
+            assert_eq!(
+                upstream_at < la_at, *expect_success,
+                "table row {index} must encode the dependency rule"
+            );
+
+            if *expect_success {
+                for &component in order {
+                    let result =
+                        install_component(&payloads[&component], &state, &target, component)
+                            .unwrap_or_else(|error| {
+                                panic!("order {index}: {component:?} install failed: {error:?}")
+                            });
+                    assert!(
+                        result.installed_files >= 1,
+                        "order {index}: {component:?} wrote no files"
+                    );
+                }
+                assert_three_component_surface(&target, &state, &payloads);
+                success_count += 1;
+                println!("ORDER {index} {order:?} -> SUCCESS");
+            } else {
+                let mut la_error = None;
+                for &component in order {
+                    if component != LaPlugins {
+                        install_component(&payloads[&component], &state, &target, component)
+                            .unwrap_or_else(|error| {
+                                panic!("order {index}: {component:?} install failed: {error:?}")
+                            });
+                        continue;
+                    }
+                    let before = snapshot_target(&target);
+                    let record_before = fs::read(directory.join("record.json")).ok();
+                    let error = install_component(&payloads[&component], &state, &target, component)
+                        .expect_err("LA before upstream must return E1404");
+                    assert_eq!(error.code, "E1404", "{}", error.detail);
+                    assert_eq!(error.category, "installation");
+                    assert!(error.detail.contains("BotHiderApi"), "{}", error.detail);
+                    assert_eq!(
+                        snapshot_target(&target),
+                        before,
+                        "order {index}: a refused LA install must write zero bytes to the target"
+                    );
+                    assert_eq!(
+                        fs::read(directory.join("record.json")).ok(),
+                        record_before,
+                        "order {index}: a refused LA install must leave record bytes unchanged"
+                    );
+                    assert_eq!(
+                        component_version(&state, &target, LaPlugins),
+                        None,
+                        "order {index}: no LA version may be recorded"
+                    );
+                    assert_no_temp_files(&target);
+                    if directory.exists() {
+                        assert_no_temp_files(&directory);
+                        assert!(
+                            !directory.join("journal.json").exists(),
+                            "order {index}: no partial journal may survive"
+                        );
+                    }
+                    la_error = Some(error);
+                    break;
+                }
+                assert!(la_error.is_some(), "order {index} never attempted LaPlugins");
+                e1404_count += 1;
+                println!("ORDER {index} {order:?} -> E1404_ZERO_WRITE");
+            }
+            fs::remove_dir_all(&base).unwrap();
+        }
+        assert_eq!(success_count, 3, "three upstream-first orders must succeed");
+        assert_eq!(e1404_count, 3, "three LA-first orders must refuse with E1404");
+        assert_eq!(fixture_paths.len(), 6, "each order needs its own fixture");
+
+        // install_components_blocking drives this production orchestrator; f3_surface_end_to_end
+        // uses the same INSTALL_ORDER one transaction at a time.
+        let base = root("task15-f3-install-all");
+        let target = base.join("target");
+        let state = base.join("state");
+        fs::create_dir_all(&target).unwrap();
+        let payloads = component_payloads(&base);
+        let results = run_component_steps(&INSTALL_ORDER, |component| {
+            install_component(&payloads[&component], &state, &target, component)
+        })
+        .expect("the production install-all orchestration must install all three components");
+        assert_eq!(results.len(), 3);
+        let versions = assert_three_component_surface(&target, &state, &payloads);
+        println!("INSTALL_ALL PASS versions={versions:?}");
+        fs::remove_dir_all(&base).unwrap();
+
+        // A path recorded under InventorySimulator collides with a staged LA entry: the refusal
+        // must leave the target and the record bytes exactly as they were.
+        let base = root("task15-f3-conflict");
+        let target = base.join("target");
+        let state = base.join("state");
+        fs::create_dir_all(&target).unwrap();
+        let payloads = component_payloads(&base);
+        install_component(&payloads[&Upstream], &state, &target, Upstream).unwrap();
+        install_component(
+            &payloads[&InventorySimulator],
+            &state,
+            &target,
+            InventorySimulator,
+        )
+        .unwrap();
+        let directory = installation_dir(&state, &target);
+        let owner_bytes = fs::read(directory.join("record.json")).unwrap();
+        let owner_document: serde_json::Value = serde_json::from_slice(&owner_bytes).unwrap();
+        assert!(
+            owner_document["entries"].as_array().unwrap().iter().any(|entry| {
+                entry["path"].as_str() == Some(THIRD_PARTY)
+                    && entry["ownership"].as_str() == Some("third-party")
+            }),
+            "the colliding file must be owned by InventorySimulator in the record bytes"
+        );
+        let mut manifest = read_manifest_document(&payloads[&LaPlugins]).unwrap();
+        write_owned_entry(
+            &payloads[&LaPlugins],
+            &mut manifest,
+            THIRD_PARTY,
+            b"la-owned-collision",
+            "plus",
+        );
+        write_json_atomic(&payloads[&LaPlugins].join(MANIFEST_FILE), &manifest).unwrap();
+        let before = snapshot_target(&target);
+        let record_before = fs::read(directory.join("record.json")).unwrap();
+        let error = install_component(&payloads[&LaPlugins], &state, &target, LaPlugins)
+            .expect_err("a path owned by another component must return E1403");
+        assert_eq!(error.code, "E1403", "{}", error.detail);
+        assert_eq!(error.category, "installation");
+        assert_eq!(
+            error
+                .detail
+                .lines()
+                .filter(|line| line.starts_with("path: "))
+                .collect::<Vec<_>>(),
+            vec![format!("path: {THIRD_PARTY}")],
+            "{}",
+            error.detail
+        );
+        assert_eq!(
+            snapshot_target(&target),
+            before,
+            "a refused conflict install must write zero bytes to the target"
+        );
+        assert_eq!(
+            fs::read(directory.join("record.json")).unwrap(),
+            record_before,
+            "a refused conflict install must leave record bytes unchanged"
+        );
+        assert_eq!(component_version(&state, &target, LaPlugins), None);
+        assert_no_temp_files(&target);
+        assert_no_temp_files(&directory);
+        assert!(!directory.join("journal.json").exists());
+        println!("CONFLICT_ZERO_WRITE PASS code={} path={}", error.code, THIRD_PARTY);
+        fs::remove_dir_all(&base).unwrap();
+
+        println!("F3_SIX_ORDERS PASS");
+    }
 }
