@@ -34,10 +34,32 @@ pub const MERGED_EVENT: &str = "upstream://merged";
 const MERGE_STATE_FILE: &str = "merge-state.json";
 const SOURCE_FILE: &str = "source.json";
 const INSTALLED_STATE_FILE: &str = "upstream-install.json";
+
+/// Standalone upstream component staging lives under
+/// `<updates>/upstream-only/<tag>/`, deliberately separate from `merged/`.
+const UPSTREAM_ONLY_DIR: &str = "upstream-only";
+const UPSTREAM_ONLY_STATE_FILE: &str = "upstream-only-state.json";
+const UPSTREAM_UNAVAILABLE: &str =
+    "Upstream package is not available; download it in Installation Management";
+
+/// Paths owned by the LA plugin bundle. `scripts/package.ps1` marks exactly
+/// these three plugin directories plus these two cfg overlays as `plus`; every
+/// other path in the upstream zip (including upstream `cfg/my_bot_*` such as
+/// `cfg/my_bot_rush_config.cfg`) is upstream-owned and must be staged.
+const LA_PLUGIN_PREFIXES: [&str; 3] = [
+    "addons/counterstrikesharp/plugins/PlusMatchCoordinator/",
+    "addons/counterstrikesharp/plugins/TeamLineupInjector/",
+    "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/",
+];
+const LA_CFG_OVERLAYS: [&str; 2] = [
+    "cfg/my_bot_ffa_config.cfg",
+    "cfg/my_bot_normal_config.cfg",
+];
 const PROGRESS_EMIT_INTERVAL: Duration = Duration::from_millis(250);
 const DOWNLOAD_BUFFER: usize = 128 * 1024;
 
 static MERGE_MUTEX: Mutex<()> = Mutex::new(());
+static UPSTREAM_ONLY_MUTEX: Mutex<()> = Mutex::new(());
 static RELEASE_INFO: OnceLock<Mutex<Option<CachedReleaseInfo>>> = OnceLock::new();
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -132,6 +154,15 @@ struct SourceRecord {
     schema_version: u8,
     source: String,
     saved_at: u64,
+}
+
+/// Freshness of a standalone upstream staging tree, keyed by the cached zip's
+/// sha256 (not by mtime/size, which can change without a content change).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct UpstreamOnlyState {
+    schema_version: u8,
+    tag: String,
+    upstream_zip_sha256: String,
 }
 
 fn unix_time() -> u64 {
@@ -877,9 +908,7 @@ pub fn ensure_cached(app: &AppHandle) -> Result<CachedUpstream> {
             zip,
         });
     }
-    Err(AppError::payload(
-        "Upstream package is not available; download it in Installation Management",
-    ))
+    Err(AppError::payload(UPSTREAM_UNAVAILABLE))
 }
 
 pub fn import_local(app: &AppHandle, source: &str) -> Result<UpstreamRelease> {
@@ -1382,6 +1411,167 @@ fn generate_merged_manifest(
         package_version: la_manifest.package_version.clone(),
         entries,
     })
+}
+
+/// Stages the cached upstream release as a standalone component payload.
+///
+/// Unlike `merge`, this never reads the LA payload: only files extracted from
+/// the upstream zip are staged, and the generated manifest describes exactly
+/// those files. `active-payload.json` is never written here.
+pub fn stage_upstream_only() -> Result<PathBuf> {
+    let selected = select_cached_upstream()?;
+    stage_upstream_only_with_selection(
+        selected,
+        &online_update::update_root()?,
+        &exe_parent_dir()?,
+    )
+}
+
+/// Testable seam: the caller supplies the cache selection and the roots, so no
+/// write escapes a fixture directory.
+fn stage_upstream_only_with_selection(
+    selected: Option<(String, PathBuf)>,
+    updates_root: &Path,
+    exe_dir: &Path,
+) -> Result<PathBuf> {
+    let (tag, zip) = selected.ok_or_else(|| AppError::payload(UPSTREAM_UNAVAILABLE))?;
+    let _stage_lock = UPSTREAM_ONLY_MUTEX
+        .lock()
+        .map_err(|_| AppError::payload("Upstream-only staging lock is poisoned"))?;
+    validate_tag(&tag)?;
+    let zip_sha256 = update_core::sha256_file(&zip).map_err(AppError::transaction_io)?;
+    let staging_root = updates_root.join(UPSTREAM_ONLY_DIR).join(&tag);
+    if upstream_only_is_current(&staging_root, &tag, &zip_sha256) {
+        return Ok(staging_root);
+    }
+    if let Err(error) =
+        build_upstream_only_staging(&staging_root, &tag, &zip, exe_dir, &zip_sha256)
+    {
+        // A failed extract/manifest must never leave a partial staging root.
+        let _ = fs::remove_dir_all(&staging_root);
+        return Err(error);
+    }
+    Ok(staging_root)
+}
+
+fn upstream_only_is_current(staging_root: &Path, tag: &str, zip_sha256: &str) -> bool {
+    let Ok(bytes) = fs::read(staging_root.join(UPSTREAM_ONLY_STATE_FILE)) else {
+        return false;
+    };
+    let Ok(state) = serde_json::from_slice::<UpstreamOnlyState>(&bytes) else {
+        return false;
+    };
+    state.schema_version == 1
+        && state.tag == tag
+        && state.upstream_zip_sha256.eq_ignore_ascii_case(zip_sha256)
+        && installer::verify_payload(staging_root).is_ok()
+}
+
+fn build_upstream_only_staging(
+    staging_root: &Path,
+    tag: &str,
+    zip: &Path,
+    exe_dir: &Path,
+    zip_sha256: &str,
+) -> Result<()> {
+    online_update::clear_directory(staging_root)?;
+    let zip_file = File::open(zip).map_err(|error| {
+        AppError::payload(format!(
+            "Cannot open the cached upstream package ({}): {error}",
+            zip.display()
+        ))
+    })?;
+    update_core::extract_zip_safely(zip_file, staging_root).map_err(AppError::payload)?;
+    let payload_dir = locate_payload_dir(staging_root)
+        .ok_or_else(|| AppError::payload("Could not locate the upstream game/csgo payload"))?;
+    if payload_dir != staging_root {
+        flatten_payload_dir(staging_root, &payload_dir)?;
+    }
+    apply_staging_filters(staging_root, exe_dir)?;
+    let relative_paths = upstream_only_relative_files(staging_root)?;
+    if relative_paths.is_empty() {
+        return Err(AppError::payload(
+            "The upstream package has no addons, cfg, or overrides payload files",
+        ));
+    }
+    write_upstream_only_manifest(staging_root, tag, &relative_paths)?;
+    let state = UpstreamOnlyState {
+        schema_version: 1,
+        tag: tag.to_string(),
+        upstream_zip_sha256: zip_sha256.to_string(),
+    };
+    let state_bytes =
+        serde_json::to_vec_pretty(&state).map_err(|error| AppError::io(error.to_string()))?;
+    atomic_fs::write_replace(&staging_root.join(UPSTREAM_ONLY_STATE_FILE), &state_bytes)
+        .map_err(AppError::transaction_io)?;
+    Ok(())
+}
+
+/// Mirrors `inventory_plugin::synthetic_manifest`: collect the whitelisted
+/// staged files, drop LA-owned paths from both the staging tree and the
+/// manifest, sort, and let the caller compute size/sha256 at staging time.
+fn upstream_only_relative_files(staging_root: &Path) -> Result<Vec<String>> {
+    let mut relative_paths = Vec::new();
+    for top in ["addons", "cfg", "overrides"] {
+        let root = staging_root.join(top);
+        if !root.is_dir() {
+            continue;
+        }
+        let mut files = Vec::new();
+        walk_files(&root, &mut files).map_err(AppError::transaction_io)?;
+        for file in files {
+            let relative = format!(
+                "{top}/{}",
+                file.strip_prefix(&root)
+                    .map_err(|_| AppError::payload("Upstream staging path escaped its root"))?
+                    .to_string_lossy()
+                    .replace('\\', "/")
+            );
+            if is_la_owned_upstream_path(&relative) {
+                fs::remove_file(&file).map_err(AppError::transaction_io)?;
+                continue;
+            }
+            relative_paths.push(relative);
+        }
+    }
+    relative_paths.sort();
+    Ok(relative_paths)
+}
+
+fn is_la_owned_upstream_path(relative: &str) -> bool {
+    LA_PLUGIN_PREFIXES
+        .iter()
+        .any(|prefix| relative.starts_with(prefix))
+        || LA_CFG_OVERLAYS.contains(&relative)
+}
+
+fn write_upstream_only_manifest(
+    staging_root: &Path,
+    tag: &str,
+    relative_paths: &[String],
+) -> Result<installer::PayloadManifest> {
+    let mut entries = Vec::with_capacity(relative_paths.len());
+    for relative in relative_paths {
+        let file = staging_root.join(relative);
+        entries.push(installer::PayloadEntry {
+            path: relative.clone(),
+            size: fs::metadata(&file).map_err(AppError::transaction_io)?.len(),
+            sha256: update_core::sha256_file(&file).map_err(AppError::transaction_io)?,
+            component: upstream_component_for(relative),
+            ownership: "shared".into(),
+            restore_policy: upstream_restore_policy(relative),
+        });
+    }
+    let manifest = installer::PayloadManifest {
+        schema_version: 1,
+        package_version: tag.to_string(),
+        entries,
+    };
+    let bytes =
+        serde_json::to_vec_pretty(&manifest).map_err(|error| AppError::io(error.to_string()))?;
+    atomic_fs::write_replace(&staging_root.join(installer::MANIFEST_FILE), &bytes)
+        .map_err(AppError::transaction_io)?;
+    Ok(manifest)
 }
 
 pub fn read_installed_state() -> Result<Option<UpstreamInstalledState>> {
@@ -2245,5 +2435,571 @@ mod tests {
         );
         assert_eq!(zip_payload_prefix(&["addons/a".into()]), None);
         assert_eq!(zip_payload_prefix(&["wrap/addons/a".into(), "other/cfg/b".into()]), None);
+    }
+
+    // ---- Task 2: standalone upstream staging ---------------------------------
+
+    const TASK2_TAG: &str = "v1.4.5";
+    const TASK2_BOT_AI: &str = "addons/counterstrikesharp/plugins/BotAI/BotAI.dll";
+    const TASK2_UPSTREAM_MY_BOT: &str = "cfg/my_bot_rush_config.cfg";
+
+    fn task2_root(label: &str) -> PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "usa-task2-{label}-{}-{}",
+            std::process::id(),
+            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        fs::create_dir_all(&path).unwrap();
+        path
+    }
+
+    /// Fixture shaped like a real upstream zip: upstream runtime/cfg/overrides,
+    /// the two LA-owned cfg overlays, all three LA plugin directories, plus an
+    /// upstream-owned `cfg/my_bot_*` that must survive the staging walk.
+    fn task2_fixture_zip(path: &Path, bot_ai: &[u8], extra: Option<(&str, &[u8])>) {
+        let mut entries: Vec<(&str, &[u8])> = vec![
+            ("Panel v1.4.5.exe", b"panel-exe"),
+            ("gameinfo.gi", b"root-gameinfo"),
+            ("addons/metamod/RayTrace.vdf", b"raytrace"),
+            (TASK2_BOT_AI, bot_ai),
+            ("addons/BotHider/readme.txt", b"bothider"),
+            (
+                "addons/counterstrikesharp/plugins/PlusMatchCoordinator/PlusMatchCoordinator.dll",
+                b"la-pmc",
+            ),
+            (
+                "addons/counterstrikesharp/plugins/TeamLineupInjector/TeamLineupInjector.dll",
+                b"la-tli",
+            ),
+            (
+                "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/OfflineMatchTelemetry.dll",
+                b"la-omt",
+            ),
+            ("cfg/gamemode_deathmatch.cfg", b"gamemode"),
+            (TASK2_UPSTREAM_MY_BOT, b"upstream-rush"),
+            ("cfg/my_bot_ffa_config.cfg", b"la-ffa"),
+            ("cfg/my_bot_normal_config.cfg", b"la-normal"),
+            ("overrides/botprofile.vpk", b"botprofile"),
+            ("backup/Online/gameinfo.gi", b"backup-gameinfo"),
+        ];
+        if let Some(entry) = extra {
+            entries.push(entry);
+        }
+        write_zip(path, &entries);
+    }
+
+    struct Task2Fixture {
+        base: PathBuf,
+        zip: PathBuf,
+        updates: PathBuf,
+        exe_dir: PathBuf,
+    }
+
+    fn task2_fixture(label: &str, bot_ai: &[u8]) -> Task2Fixture {
+        let base = task2_root(label);
+        let zip = base.join("upstream.zip");
+        task2_fixture_zip(&zip, bot_ai, None);
+        let updates = base.join("updates");
+        let exe_dir = base.join("panel-dir");
+        fs::create_dir_all(&exe_dir).unwrap();
+        Task2Fixture { base, zip, updates, exe_dir }
+    }
+
+    fn stage_task2(fixture: &Task2Fixture) -> PathBuf {
+        stage_upstream_only_with_selection(
+            Some((TASK2_TAG.to_string(), fixture.zip.clone())),
+            &fixture.updates,
+            &fixture.exe_dir,
+        )
+        .unwrap()
+    }
+
+    fn manifest_from_disk(staging: &Path) -> installer::PayloadManifest {
+        let bytes = fs::read(staging.join(installer::MANIFEST_FILE))
+            .expect("the staged manifest must exist on disk");
+        serde_json::from_slice(&bytes).expect("the staged manifest must be valid JSON")
+    }
+
+    /// Files under `addons|cfg|overrides` that survive staging: exactly the set
+    /// the generated manifest is allowed to describe.
+    fn whitelisted_staged_files(staging: &Path) -> Vec<String> {
+        let mut files = Vec::new();
+        for top in ["addons", "cfg", "overrides"] {
+            let root = staging.join(top);
+            if !root.is_dir() {
+                continue;
+            }
+            let mut found = Vec::new();
+            walk_files(&root, &mut found).unwrap();
+            for file in found {
+                files.push(format!(
+                    "{top}/{}",
+                    file.strip_prefix(&root)
+                        .unwrap()
+                        .to_string_lossy()
+                        .replace('\\', "/")
+                ));
+            }
+        }
+        files.sort();
+        files
+    }
+
+    /// The adjudicated exclusion set, not a blanket `my_bot_*` filter:
+    /// exactly the three LA plugin dirs plus the two LA cfg overlays.
+    fn is_excluded_la_path(path: &str) -> bool {
+        LA_PLUGIN_PREFIXES.iter().any(|prefix| path.starts_with(prefix))
+            || LA_CFG_OVERLAYS.contains(&path)
+    }
+
+    fn assert_no_excluded_paths(manifest: &installer::PayloadManifest) {
+        for entry in &manifest.entries {
+            assert!(
+                !is_excluded_la_path(&entry.path),
+                "LA-owned path leaked into the upstream-only manifest: {}",
+                entry.path
+            );
+        }
+    }
+
+    #[test]
+    fn upstream_only_manifest_has_no_plus_entries() {
+        let fixture = task2_fixture("no-plus", b"botai-v1");
+        let staging = stage_task2(&fixture);
+        // Read the file from disk, not an in-memory struct.
+        let manifest = manifest_from_disk(&staging);
+        let staged = whitelisted_staged_files(&staging);
+
+        assert_eq!(manifest.schema_version, 1);
+        assert_eq!(manifest.package_version, TASK2_TAG);
+        assert_eq!(
+            manifest.entries.len(),
+            staged.len(),
+            "every whitelisted staged file needs exactly one manifest entry"
+        );
+        let paths: Vec<&str> = manifest.entries.iter().map(|entry| entry.path.as_str()).collect();
+        assert_eq!(paths, staged.iter().map(String::as_str).collect::<Vec<_>>());
+        for entry in &manifest.entries {
+            assert_eq!(entry.ownership, "shared", "ownership for {}", entry.path);
+            assert_eq!(entry.component, upstream_component_for(&entry.path));
+            assert_eq!(entry.restore_policy, upstream_restore_policy(&entry.path));
+        }
+        assert_no_excluded_paths(&manifest);
+        println!(
+            "upstream_only_manifest_has_no_plus_entries: entries={} staged={} all_shared=true",
+            manifest.entries.len(),
+            staged.len()
+        );
+        fs::remove_dir_all(&fixture.base).unwrap();
+    }
+
+    #[test]
+    fn upstream_only_keeps_upstream_my_bot_configs() {
+        // Adjudication lock: upstream-owned cfg/my_bot_* MUST survive as shared,
+        // while only the two LA-owned cfg overlays are excluded.
+        let fixture = task2_fixture("my-bot-survives", b"botai-v1");
+        let staging = stage_task2(&fixture);
+        let manifest = manifest_from_disk(&staging);
+
+        let rush = manifest
+            .entries
+            .iter()
+            .find(|entry| entry.path == TASK2_UPSTREAM_MY_BOT)
+            .expect("upstream cfg/my_bot_rush_config.cfg must survive staging");
+        assert_eq!(rush.ownership, "shared");
+        assert_eq!(rush.component, "configuration");
+        assert_eq!(rush.restore_policy, "restore");
+        assert!(staging.join(TASK2_UPSTREAM_MY_BOT).is_file());
+        for overlay in LA_CFG_OVERLAYS {
+            assert!(!manifest.entries.iter().any(|entry| entry.path == overlay));
+            assert!(!staging.join(overlay).exists(), "LA overlay {overlay} must be dropped");
+        }
+        for prefix in LA_PLUGIN_PREFIXES {
+            assert!(!manifest.entries.iter().any(|entry| entry.path.starts_with(prefix)));
+        }
+        assert_no_excluded_paths(&manifest);
+        println!(
+            "upstream_only_keeps_upstream_my_bot_configs: {} ownership={} size={}",
+            rush.path, rush.ownership, rush.size
+        );
+        fs::remove_dir_all(&fixture.base).unwrap();
+    }
+
+    #[test]
+    fn upstream_only_manifest_verifies() {
+        let fixture = task2_fixture("verify", b"botai-v1");
+        let staging = stage_task2(&fixture);
+        let verified = installer::verify_payload(&staging)
+            .expect("installer::verify_payload must accept the upstream-only payload");
+        let disk = manifest_from_disk(&staging);
+        assert_eq!(verified.schema_version, 1);
+        assert_eq!(verified.entries.len(), disk.entries.len());
+        for entry in &disk.entries {
+            let file = staging.join(&entry.path);
+            assert_eq!(entry.size, fs::metadata(&file).unwrap().len());
+            assert_eq!(entry.sha256, update_core::sha256_file(&file).unwrap());
+        }
+        assert!(!fixture.updates.join("active-payload.json").exists());
+        assert!(!staging.join("active-payload.json").exists());
+        assert!(!staging.join(MERGE_STATE_FILE).exists());
+        println!(
+            "upstream_only_manifest_verifies: entries={} schema_version={}",
+            verified.entries.len(),
+            verified.schema_version
+        );
+        fs::remove_dir_all(&fixture.base).unwrap();
+    }
+
+    #[test]
+    fn task2_happy() {
+        let fixture = task2_fixture("happy", b"botai-v1");
+        let staging = stage_task2(&fixture);
+        assert_eq!(staging, fixture.updates.join(UPSTREAM_ONLY_DIR).join(TASK2_TAG));
+        let manifest = manifest_from_disk(&staging);
+        assert_eq!(manifest.schema_version, 1);
+        assert_eq!(manifest.package_version, TASK2_TAG);
+        assert!(!manifest.entries.is_empty());
+        assert!(manifest.entries.iter().all(|entry| entry.ownership == "shared"));
+        assert_no_excluded_paths(&manifest);
+        assert!(installer::verify_payload(&staging).is_ok());
+        // The shared staging filters really ran.
+        assert!(!staging.join("gameinfo.gi").exists());
+        assert!(fixture.exe_dir.join("Panel v1.4.5.exe").is_file());
+        assert!(staging.join("backup/Online/gameinfo.gi").is_file());
+        assert!(staging.join(TASK2_UPSTREAM_MY_BOT).is_file());
+        // Freshness marker is keyed by the zip sha256.
+        let state: UpstreamOnlyState = serde_json::from_slice(
+            &fs::read(staging.join(UPSTREAM_ONLY_STATE_FILE)).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(state.schema_version, 1);
+        assert_eq!(state.tag, TASK2_TAG);
+        assert_eq!(state.upstream_zip_sha256, update_core::sha256_file(&fixture.zip).unwrap());
+        println!(
+            "task2_happy: staging={} entries={} schema_version={} package_version={} zip_sha256={}",
+            staging.display(),
+            manifest.entries.len(),
+            manifest.schema_version,
+            manifest.package_version,
+            state.upstream_zip_sha256
+        );
+        for entry in &manifest.entries {
+            println!(
+                "task2_happy entry: path={} size={} sha256={} component={} ownership={} restore_policy={}",
+                entry.path, entry.size, entry.sha256, entry.component, entry.ownership, entry.restore_policy
+            );
+        }
+        fs::remove_dir_all(&fixture.base).unwrap();
+    }
+
+    #[test]
+    fn task2_failure() {
+        // Branch 1: the selection seam reports no cached zip.
+        let fixture = task2_fixture("failure", b"botai-v1");
+        let seam_error = stage_upstream_only_with_selection(None, &fixture.updates, &fixture.exe_dir)
+            .unwrap_err();
+        assert_eq!(seam_error.detail, UPSTREAM_UNAVAILABLE);
+        assert_eq!(seam_error.code, "E1301");
+        assert_eq!(seam_error.category, "payload");
+        assert!(!fixture.updates.join(UPSTREAM_ONLY_DIR).exists());
+
+        // Branch 2: the real public entry point against an empty cache root.
+        // The state root stays empty, so the existing fresh-cache test remains
+        // valid even if it runs concurrently.
+        let _guard = app_storage::TEST_STATE_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let empty = task2_root("failure-empty-state");
+        unsafe {
+            std::env::set_var("CS2BI_STATE_ROOT", &empty);
+        }
+        let public_result = stage_upstream_only();
+        unsafe {
+            std::env::remove_var("CS2BI_STATE_ROOT");
+        }
+        drop(_guard);
+        let public_error = public_result.unwrap_err();
+        assert_eq!(public_error.detail, UPSTREAM_UNAVAILABLE);
+        assert_eq!(public_error.code, "E1301");
+        assert!(!empty.join("updates").join(UPSTREAM_ONLY_DIR).exists());
+        assert!(!empty.join("updates").join(UPSTREAM_ONLY_DIR).join(TASK2_TAG)
+            .join(installer::MANIFEST_FILE).exists());
+        println!(
+            "task2_failure: seam=({},{}) public=({},{}) message={}",
+            seam_error.code, seam_error.category, public_error.code, public_error.category,
+            public_error.detail
+        );
+        fs::remove_dir_all(&fixture.base).unwrap();
+        fs::remove_dir_all(&empty).unwrap();
+    }
+
+    #[test]
+    fn task2_manual_qa_dump() {
+        // Stage from the existing fixture zip already used by the merge tests.
+        let base = task2_root("manual-qa");
+        let zip = base.join("upstream.zip");
+        standard_upstream_zip(&zip);
+        let updates = base.join("updates");
+        let exe_dir = base.join("panel-dir");
+        fs::create_dir_all(&exe_dir).unwrap();
+        let staging = stage_upstream_only_with_selection(
+            Some((TASK2_TAG.to_string(), zip)),
+            &updates,
+            &exe_dir,
+        )
+        .unwrap();
+        let manifest_path = staging.join(installer::MANIFEST_FILE);
+        let manifest = manifest_from_disk(&staging);
+        assert!(installer::verify_payload(&staging).is_ok());
+        println!(
+            "task2_manual_qa_dump: schema_version={} package_version={} entries={} all_shared={}",
+            manifest.schema_version,
+            manifest.package_version,
+            manifest.entries.len(),
+            manifest.entries.iter().all(|entry| entry.ownership == "shared")
+        );
+        let la_paths = manifest
+            .entries
+            .iter()
+            .filter(|entry| is_excluded_la_path(&entry.path))
+            .count();
+        println!("task2_manual_qa_dump: excluded_la_paths={la_paths}");
+        if let Some(dump) = std::env::var_os("QA_DUMP") {
+            fs::copy(&manifest_path, PathBuf::from(&dump)).unwrap();
+            println!("task2_manual_qa_dump: wrote {}", PathBuf::from(dump).display());
+        }
+        // Optional second dump, additive to QA_DUMP: a richer fixture carrying an
+        // upstream-owned cfg/my_bot_* plus every LA-owned path. It makes the
+        // narrowed exclusion-set assertion non-vacuous on the real disk surface.
+        if let Some(rich) = std::env::var_os("QA_DUMP_RICH") {
+            let rich_zip = base.join("upstream-rich.zip");
+            task2_fixture_zip(&rich_zip, b"botai-v1", None);
+            let rich_updates = base.join("updates-rich");
+            let rich_exe = base.join("panel-dir-rich");
+            fs::create_dir_all(&rich_exe).unwrap();
+            let rich_staging = stage_upstream_only_with_selection(
+                Some((TASK2_TAG.to_string(), rich_zip)),
+                &rich_updates,
+                &rich_exe,
+            )
+            .unwrap();
+            let rich_manifest = manifest_from_disk(&rich_staging);
+            assert!(rich_manifest.entries.iter().any(|entry| {
+                entry.path == TASK2_UPSTREAM_MY_BOT && entry.ownership == "shared"
+            }));
+            assert_no_excluded_paths(&rich_manifest);
+            assert!(installer::verify_payload(&rich_staging).is_ok());
+            fs::copy(
+                rich_staging.join(installer::MANIFEST_FILE),
+                PathBuf::from(&rich),
+            )
+            .unwrap();
+            println!(
+                "task2_manual_qa_dump: rich dump {} entries={} upstream_my_bot_survives=true",
+                PathBuf::from(rich).display(),
+                rich_manifest.entries.len()
+            );
+        }
+        fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn upstream_only_restages_when_zip_sha256_changes() {
+        let fixture = task2_fixture("restage", b"botai-v1");
+        let staging = stage_task2(&fixture);
+        let manifest_path = staging.join(installer::MANIFEST_FILE);
+        let first_bytes = fs::read(&manifest_path).unwrap();
+        let first: installer::PayloadManifest = serde_json::from_slice(&first_bytes).unwrap();
+        let first_bot_sha = first
+            .entries
+            .iter()
+            .find(|entry| entry.path == TASK2_BOT_AI)
+            .unwrap()
+            .sha256
+            .clone();
+
+        // Same zip: freshness marker lets us reuse the staged tree verbatim.
+        let sentinel = staging.join("REUSE_SENTINEL");
+        fs::write(&sentinel, b"kept").unwrap();
+        let reused = stage_task2(&fixture);
+        assert_eq!(reused, staging);
+        assert!(sentinel.is_file(), "unchanged zip must reuse the staged tree");
+        assert_eq!(fs::read(&manifest_path).unwrap(), first_bytes);
+
+        // Changed zip bytes: new sha256 forces a fresh manifest, not the cached one.
+        task2_fixture_zip(&fixture.zip, b"botai-v2-longer", Some(("cfg/added_by_upstream.cfg", b"new")));
+        let restaged = stage_task2(&fixture);
+        assert!(!sentinel.exists(), "changed zip must re-stage from a clean root");
+        let second_bytes = fs::read(restaged.join(installer::MANIFEST_FILE)).unwrap();
+        assert_ne!(second_bytes, first_bytes, "the manifest file on disk must be regenerated");
+        let second: installer::PayloadManifest = serde_json::from_slice(&second_bytes).unwrap();
+        let second_bot = second
+            .entries
+            .iter()
+            .find(|entry| entry.path == TASK2_BOT_AI)
+            .unwrap();
+        assert_ne!(first_bot_sha, second_bot.sha256);
+        assert_eq!(
+            second_bot.sha256,
+            update_core::sha256_file(&restaged.join(TASK2_BOT_AI)).unwrap()
+        );
+        assert!(second
+            .entries
+            .iter()
+            .any(|entry| entry.path == "cfg/added_by_upstream.cfg"));
+        assert!(installer::verify_payload(&restaged).is_ok());
+        let state: UpstreamOnlyState = serde_json::from_slice(
+            &fs::read(restaged.join(UPSTREAM_ONLY_STATE_FILE)).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(state.upstream_zip_sha256, update_core::sha256_file(&fixture.zip).unwrap());
+        println!(
+            "upstream_only_restages_when_zip_sha256_changes: first_sha={} second_sha={} new_state={}",
+            first_bot_sha, second_bot.sha256, state.upstream_zip_sha256
+        );
+        fs::remove_dir_all(&fixture.base).unwrap();
+    }
+
+    #[test]
+    fn upstream_only_adversarial_stale_state() {
+        // Change the fixture zip bytes and prove a fresh manifest is regenerated.
+        let fixture = task2_fixture("adversarial-stale", b"old-byte-set");
+        let staging = stage_task2(&fixture);
+        let before = fs::read(staging.join(installer::MANIFEST_FILE)).unwrap();
+        task2_fixture_zip(&fixture.zip, b"a-completely-different-byte-set", None);
+        let after_staging = stage_task2(&fixture);
+        let after = fs::read(after_staging.join(installer::MANIFEST_FILE)).unwrap();
+        assert_ne!(before, after, "stale manifest must not be reused");
+        let state: UpstreamOnlyState = serde_json::from_slice(
+            &fs::read(after_staging.join(UPSTREAM_ONLY_STATE_FILE)).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(state.upstream_zip_sha256, update_core::sha256_file(&fixture.zip).unwrap());
+        assert!(installer::verify_payload(&after_staging).is_ok());
+        println!(
+            "upstream_only_adversarial_stale_state: manifest_bytes_before={} after={} sha={}",
+            before.len(),
+            after.len(),
+            state.upstream_zip_sha256
+        );
+        fs::remove_dir_all(&fixture.base).unwrap();
+    }
+
+    #[test]
+    fn upstream_only_adversarial_misleading_success_output() {
+        // Prove the assertions read the manifest FILE from disk, not an
+        // in-memory struct: tamper the file and observe the tamper.
+        let fixture = task2_fixture("adversarial-disk", b"botai-v1");
+        let staging = stage_task2(&fixture);
+        let path = staging.join(installer::MANIFEST_FILE);
+        let before: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(before["schema_version"], 1);
+
+        let mut tampered = before.clone();
+        tampered["package_version"] = serde_json::json!("TAMPERED-ON-DISK");
+        fs::write(&path, serde_json::to_vec(&tampered).unwrap()).unwrap();
+        let after: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(after["package_version"], "TAMPERED-ON-DISK");
+        assert_eq!(before["package_version"], TASK2_TAG);
+
+        // verify_payload is disk-backed too: an entry whose file is absent fails.
+        tampered["entries"].as_array_mut().unwrap().push(serde_json::json!({
+            "path": "cfg/tamper_probe.cfg",
+            "size": 1,
+            "sha256": "0".repeat(64),
+            "component": "configuration",
+            "ownership": "shared",
+            "restore_policy": "restore"
+        }));
+        fs::write(&path, serde_json::to_vec(&tampered).unwrap()).unwrap();
+        assert!(
+            installer::verify_payload(&staging).is_err(),
+            "verify_payload must read the on-disk manifest, not a cached struct"
+        );
+        println!(
+            "upstream_only_adversarial_misleading_success_output: disk_tamper_observed=true verify_payload_failed_on_disk_entry=true"
+        );
+        fs::remove_dir_all(&fixture.base).unwrap();
+    }
+
+    #[test]
+    fn upstream_only_adversarial_malformed_input() {
+        // Shape 1: no addons/cfg layout at all -> defined error, no manifest.
+        let base = task2_root("adversarial-malformed");
+        let updates = base.join("updates");
+        let exe_dir = base.join("panel-dir");
+        fs::create_dir_all(&exe_dir).unwrap();
+        let no_layout = base.join("no-layout.zip");
+        write_zip(&no_layout, &[("readme.txt", b"not a payload")]);
+        let error = stage_upstream_only_with_selection(
+            Some((TASK2_TAG.to_string(), no_layout)),
+            &updates,
+            &exe_dir,
+        )
+        .unwrap_err();
+        assert_eq!(error.detail, "Could not locate the upstream game/csgo payload");
+        assert!(!updates.join(UPSTREAM_ONLY_DIR).join(TASK2_TAG).exists());
+
+        // Shape 2: addons/cfg present but every file is LA-owned -> no empty manifest.
+        let only_la = base.join("only-la.zip");
+        write_zip(
+            &only_la,
+            &[
+                ("addons/counterstrikesharp/plugins/PlusMatchCoordinator/x.dll", b"la"),
+                ("cfg/my_bot_ffa_config.cfg", b"la"),
+            ],
+        );
+        let error = stage_upstream_only_with_selection(
+            Some((TASK2_TAG.to_string(), only_la)),
+            &updates,
+            &exe_dir,
+        )
+        .unwrap_err();
+        assert_eq!(
+            error.detail,
+            "The upstream package has no addons, cfg, or overrides payload files"
+        );
+        let staging = updates.join(UPSTREAM_ONLY_DIR).join(TASK2_TAG);
+        assert!(!staging.exists(), "no partial staging root may be left behind");
+        assert!(!staging.join(installer::MANIFEST_FILE).exists());
+        println!(
+            "upstream_only_adversarial_malformed_input: no_layout_error=defined only_la_error=defined manifest_written=false"
+        );
+        fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn upstream_only_adversarial_extraction_failure_leaves_no_partial_root() {
+        // A zip-slip entry makes extraction fail mid-operation; the staging root
+        // must be removed entirely (no half-extracted tree, no manifest).
+        let base = task2_root("adversarial-interrupt");
+        let updates = base.join("updates");
+        let exe_dir = base.join("panel-dir");
+        fs::create_dir_all(&exe_dir).unwrap();
+        let zip = base.join("slip.zip");
+        write_zip(
+            &zip,
+            &[
+                ("addons/x.dll", b"partial"),
+                ("cfg/y.cfg", b"partial"),
+                ("../evil.txt", b"evil"),
+            ],
+        );
+        let error = stage_upstream_only_with_selection(
+            Some((TASK2_TAG.to_string(), zip)),
+            &updates,
+            &exe_dir,
+        )
+        .unwrap_err();
+        assert!(error.detail.contains("Unsafe ZIP entry path") || error.detail.contains("Invalid update ZIP"), "unexpected error: {}", error.detail);
+        let staging = updates.join(UPSTREAM_ONLY_DIR).join(TASK2_TAG);
+        assert!(!staging.exists(), "extraction failure left a partial staging root");
+        assert!(!staging.join(installer::MANIFEST_FILE).exists());
+        assert!(!base.join("evil.txt").exists(), "zip slip escaped the fixture");
+        println!(
+            "upstream_only_adversarial_extraction_failure_leaves_no_partial_root: error={} staging_root_exists=false",
+            error.detail
+        );
+        fs::remove_dir_all(&base).unwrap();
     }
 }
