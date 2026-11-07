@@ -75,6 +75,22 @@ export default function LaPluginBundleCard({ csgoPath, onError }: Props) {
     }
   };
 
+  const installComponent = async () => {
+    if (!csgoPath || busy) return;
+    setBusy("install");
+    setProgressCleared(false);
+    try {
+      await api.installComponent(csgoPath, "la_plugins");
+      const snap = await api.getUpdateSnapshot();
+      setState(snap.la_plugins);
+    } catch (error) {
+      onError?.(error);
+    } finally {
+      setBusy(null);
+      setProgressCleared(true);
+    }
+  };
+
   const cancel = async () => {
     try {
       await api.cancelUpdate();
@@ -102,6 +118,11 @@ export default function LaPluginBundleCard({ csgoPath, onError }: Props) {
         <>
           <button className="upd-mini-btn" disabled={!csgoPath || !!busy} onClick={() => void check()}>
             <RefreshCw size={13} />{busy === "check" ? t("laBundle.checking") : t("laBundle.check")}
+          </button>
+          <button className="is-primary" disabled={!csgoPath || !!busy} onClick={() => void installComponent()}>
+            {busy === "install"
+              ? t("laBundle.installing")
+              : present ? t("component.update") : t("component.install")}
           </button>
           <button className="upd-mini-btn" disabled={!csgoPath || !!busy} onClick={() => void install()}>
             <Download size={13} />{busy === "install"
