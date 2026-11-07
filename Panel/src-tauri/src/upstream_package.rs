@@ -30,7 +30,6 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 const RELEASE_BODY_LIMIT: u64 = 1024 * 1024;
 const PROGRESS_EVENT: &str = "upstream://progress";
-pub const MERGED_EVENT: &str = "upstream://merged";
 const MERGE_STATE_FILE: &str = "merge-state.json";
 const SOURCE_FILE: &str = "source.json";
 const INSTALLED_STATE_FILE: &str = "upstream-install.json";
@@ -1587,25 +1586,29 @@ pub fn read_installed_state() -> Result<Option<UpstreamInstalledState>> {
     Ok(Some(state))
 }
 
-/// Called after `installer::install` succeeds from `merged_root`.
+/// Called after an upstream component install succeeds from `payload_root`. The tag is the one
+/// `select_cached_upstream()` selected for that payload — never derived from the payload
+/// directory name, which encodes the staging layout rather than a release tag.
 pub fn write_installed_state(
     csgo: &Path,
-    merged_root: &Path,
+    payload_root: &Path,
+    tag: &str,
 ) -> Result<UpstreamInstalledState> {
-    let tag = merged_root
-        .file_name()
-        .map(|name| name.to_string_lossy().into_owned())
-        .ok_or_else(|| AppError::payload("The merged payload root has no tag directory"))?;
-    validate_tag(&tag)?;
-    let source = read_source(&tag).unwrap_or_else(|| "manual".into());
-    let manifest: installer::PayloadManifest = serde_json::from_slice(
-        &fs::read(merged_root.join(installer::MANIFEST_FILE)).map_err(AppError::transaction_io)?,
-    )
-    .map_err(|error| AppError::payload(format!("Invalid merged payload manifest: {error}")))?;
+    validate_tag(tag)?;
+    let source = read_source(tag).unwrap_or_else(|| "manual".into());
+    let manifest_path = payload_root.join(installer::MANIFEST_FILE);
+    let manifest_bytes = fs::read(&manifest_path).map_err(|error| {
+        AppError::payload(format!(
+            "Upstream payload manifest is missing or unreadable ({}): {error}",
+            manifest_path.display()
+        ))
+    })?;
+    let manifest: installer::PayloadManifest = serde_json::from_slice(&manifest_bytes)
+        .map_err(|error| AppError::payload(format!("Invalid upstream payload manifest: {error}")))?;
     let now = unix_time();
     let state = UpstreamInstalledState {
         schema_version: 1,
-        upstream_tag: tag,
+        upstream_tag: tag.to_string(),
         upstream_source: source,
         upstream_installed_at: now,
         la_version: manifest.package_version,
@@ -3001,5 +3004,173 @@ mod tests {
             error.detail
         );
         fs::remove_dir_all(&base).unwrap();
+    }
+
+    /// A standalone upstream payload root whose directory name is deliberately NOT a release tag:
+    /// deriving the tag from the path can therefore never produce the expected value.
+    fn installed_state_payload(base: &Path) -> PathBuf {
+        let payload = base.join("staging-root-not-a-tag");
+        let cfg = payload.join("cfg");
+        fs::create_dir_all(&cfg).unwrap();
+        let file = cfg.join("bot_buy.cfg");
+        fs::write(&file, b"upstream-cfg").unwrap();
+        let manifest = installer::PayloadManifest {
+            schema_version: 1,
+            package_version: "1.4.5".to_string(),
+            entries: vec![payload_entry(
+                "cfg/bot_buy.cfg",
+                &file,
+                "config",
+                "shared",
+                "restore",
+            )],
+        };
+        fs::write(
+            payload.join(installer::MANIFEST_FILE),
+            serde_json::to_vec_pretty(&manifest).unwrap(),
+        )
+        .unwrap();
+        payload
+    }
+
+    fn installed_state_path() -> PathBuf {
+        app_storage::root().unwrap().join(INSTALLED_STATE_FILE)
+    }
+
+    /// Runs `body` with `CS2BI_STATE_ROOT` pointed at a fresh directory, holding the crate-wide
+    /// env lock so concurrent tests cannot observe the override.
+    fn with_state_root<T>(label: &str, body: impl FnOnce(&Path) -> T) -> (PathBuf, T) {
+        let _guard = app_storage::TEST_STATE_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let base = task2_root(label);
+        let state = base.join("state-root");
+        fs::create_dir_all(&state).unwrap();
+        unsafe {
+            std::env::set_var("CS2BI_STATE_ROOT", &state);
+        }
+        let value = body(&base);
+        unsafe {
+            std::env::remove_var("CS2BI_STATE_ROOT");
+        }
+        (base, value)
+    }
+
+    #[test]
+    fn write_installed_state_uses_explicit_tag() {
+        let (base, ()) = with_state_root("installed-state-tag", |base| {
+            let payload = installed_state_payload(base);
+            let csgo = base.join("csgo");
+            fs::create_dir_all(&csgo).unwrap();
+
+            let state = write_installed_state(&csgo, &payload, "v1.4.5").unwrap();
+            assert_eq!(state.upstream_tag, "v1.4.5");
+            assert_eq!(state.la_version, "1.4.5");
+            assert_eq!(state.schema_version, 1);
+
+            // misleading_success_output: assert the bytes on disk, not the returned struct.
+            let raw = fs::read(installed_state_path()).unwrap();
+            let doc: serde_json::Value = serde_json::from_slice(&raw).unwrap();
+            assert_eq!(doc["upstream_tag"].as_str(), Some("v1.4.5"));
+            assert_eq!(doc["la_version"].as_str(), Some("1.4.5"));
+            assert_eq!(
+                doc.as_object().unwrap().len(),
+                8,
+                "UpstreamInstalledState fields must stay unchanged: {doc}"
+            );
+            assert_eq!(
+                read_installed_state().unwrap().unwrap().upstream_tag,
+                "v1.4.5"
+            );
+        });
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn task4_happy() {
+        let (base, ()) = with_state_root("task4-happy", |base| {
+            let payload = installed_state_payload(base);
+            let csgo = base.join("csgo");
+            fs::create_dir_all(&csgo).unwrap();
+
+            let first = write_installed_state(&csgo, &payload, "v1.4.5").unwrap();
+            let second = write_installed_state(&csgo, &payload, "v1.4.6").unwrap();
+            assert_eq!(first.upstream_tag, "v1.4.5");
+            assert_eq!(second.upstream_tag, "v1.4.6");
+            let doc: serde_json::Value =
+                serde_json::from_slice(&fs::read(installed_state_path()).unwrap()).unwrap();
+            assert_eq!(doc["upstream_tag"].as_str(), Some("v1.4.6"));
+            assert_eq!(doc["target"].as_str(), Some(csgo.to_string_lossy().as_ref()));
+            println!(
+                "task4_happy: tag={} la_version={} target_ok=true",
+                doc["upstream_tag"].as_str().unwrap(),
+                doc["la_version"].as_str().unwrap()
+            );
+        });
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn task4_failure() {
+        let (base, ()) = with_state_root("task4-failure", |base| {
+            let payload = installed_state_payload(base);
+            let csgo = base.join("csgo");
+            fs::create_dir_all(&csgo).unwrap();
+            write_installed_state(&csgo, &payload, "v1.4.5").unwrap();
+            let before = fs::read(installed_state_path()).unwrap();
+
+            // Branch 1: a tag that is not path-safe is refused before any write.
+            let invalid = write_installed_state(&csgo, &payload, "../escape").unwrap_err();
+            assert_eq!(invalid.code, "E1002");
+            assert!(
+                invalid.detail.contains("Invalid upstream tag"),
+                "{}",
+                invalid.detail
+            );
+            assert_eq!(fs::read(installed_state_path()).unwrap(), before);
+
+            // Branch 2: a payload without a manifest is refused and the state is untouched.
+            let empty = base.join("payload-without-manifest");
+            fs::create_dir_all(&empty).unwrap();
+            let missing = write_installed_state(&csgo, &empty, "v1.4.6").unwrap_err();
+            assert_eq!(missing.code, "E1301");
+            assert!(
+                missing.detail.contains("manifest"),
+                "{}",
+                missing.detail
+            );
+            assert_eq!(fs::read(installed_state_path()).unwrap(), before);
+            println!(
+                "task4_failure: invalid_tag={} missing_manifest={}",
+                invalid.code, missing.code
+            );
+        });
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn task4_manual_qa_dump() {
+        let (base, ()) = with_state_root("task4-manual-qa", |base| {
+            let payload = installed_state_payload(base);
+            let csgo = base.join("csgo");
+            fs::create_dir_all(&csgo).unwrap();
+            write_installed_state(&csgo, &payload, "v1.4.5").unwrap();
+
+            let bytes = fs::read(installed_state_path()).unwrap();
+            let doc: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(doc["upstream_tag"].as_str(), Some("v1.4.5"));
+            if let Ok(dump) = std::env::var("QA_DUMP") {
+                fs::write(&dump, &bytes).unwrap();
+                println!(
+                    "task4_manual_qa_dump: wrote {} bytes to {} (upstream_tag={})",
+                    bytes.len(),
+                    dump,
+                    doc["upstream_tag"].as_str().unwrap()
+                );
+            } else {
+                println!("task4_manual_qa_dump: QA_DUMP unset, skipped dump");
+            }
+        });
+        fs::remove_dir_all(base).unwrap();
     }
 }

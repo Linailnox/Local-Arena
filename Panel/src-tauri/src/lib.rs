@@ -6,7 +6,7 @@ use std::process::Command;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use std::sync::OnceLock;
 use sysinfo::{ProcessesToUpdate, System};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
 
 mod app_storage;
 mod app_version;
@@ -31,7 +31,7 @@ mod runtime_state;
 mod steam;
 mod update_core;
 mod upstream_package;
-use installer::{InstallPlan, InstallTransactionResult, InstallationInspection, RestoreResult};
+use installer::{ComponentId, InstallPlan, InstallTransactionResult, InstallationInspection, RestoreResult};
 use install_checks::InstallCheckReport;
 use match_system::{MatchCatalog, MatchSession, MatchRequest, MatchState, PrepareMatchInput};
 use mode_files::{LaunchMode, apply_launch_mode, contains_metamod_search_path};
@@ -945,47 +945,45 @@ fn la_payload_source() -> Result<PathBuf> {
     exe_payload_root()
 }
 
-/// The payload root every game-directory operation installs from: the cached
-/// upstream zip merged with the newest LA payload (§6.3). Reuses the merged
-/// staging tree while the LA manifest key and the upstream zip are unchanged,
-/// and re-merges otherwise. Errors with the Installation Management gate when
-/// no upstream zip is cached.
-fn merged_payload_root(app: &AppHandle, csgo: &Path) -> Result<PathBuf> {
-    let la_payload = la_payload_source()?;
-    let Some((tag, upstream_zip)) = upstream_package::select_cached_upstream()? else {
-        return Err(AppError::payload(
-            "Upstream package is not available; download it in Installation Management",
-        ));
-    };
-    let staging_root = upstream_package::merged_root(&tag)?;
-    if upstream_package::merged_is_current(&la_payload, &staging_root, &upstream_zip) {
-        return Ok(staging_root);
+/// The payload root one component installs from. Every game-directory operation resolves its own
+/// component's source instead of a shared merged tree:
+///
+/// * `Upstream` — the cached upstream zip staged on its own (`stage_upstream_only`). Errors with
+///   the Installation Management gate when no upstream zip is cached.
+/// * `LaPlugins` — the active/exec-side LA payload, still guarded against consuming a merge's own
+///   output as the overlay source.
+/// * `InventorySimulator` — the newest staging tree the InventorySimulator installer extracted.
+///   The component's own install path stages that tree; this resolver only reads it back.
+///
+/// NOTE: several inspection-only call sites still pass `Upstream` as a representative source.
+/// That is a transient state — todos 5/6/8 replace those command paths with per-component
+/// resolution; do not grow a second abstraction over this one.
+fn component_payload_root(component: ComponentId) -> Result<PathBuf> {
+    match component {
+        ComponentId::Upstream => upstream_package::stage_upstream_only(),
+        ComponentId::LaPlugins => la_payload_source(),
+        ComponentId::InventorySimulator => inventory_staging_root(),
     }
-    let merged = upstream_package::merge(&upstream_package::MergeInput {
-        upstream_zip,
-        la_payload,
-        staging_root,
-    })?;
-    let _ = app.emit(
-        upstream_package::MERGED_EVENT,
-        serde_json::json!({
-            "tag": tag,
-            "root": merged.to_string_lossy(),
-        }),
-    );
-    if let Ok(state) = local_state_root(app) {
-        logging::append(
-            &state,
-            "INFO",
-            "upstream.merged",
-            &format!(
-                "tag={tag}, target={}, root={}",
-                csgo.display(),
-                merged.display()
-            ),
-        );
-    }
-    Ok(merged)
+}
+
+/// Newest staged InventorySimulator payload. This mirrors `inventory_plugin::staging_root`'s
+/// layout (`<updates>/staging/inventory-simulator/<tag>`), which that module keeps private, so
+/// this is the only reader of the layout outside `inventory_plugin`. Todo 7 owns the module and
+/// may expose the resolver instead.
+fn inventory_staging_root() -> Result<PathBuf> {
+    let root = online_update::update_root()?
+        .join("staging")
+        .join("inventory-simulator");
+    let mut staged: Vec<PathBuf> = fs::read_dir(&root)
+        .map_err(|_| AppError::payload("The InventorySimulator payload has not been staged yet"))?
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.is_dir() && path.join(installer::MANIFEST_FILE).is_file())
+        .collect();
+    staged.sort();
+    staged
+        .pop()
+        .ok_or_else(|| AppError::payload("The InventorySimulator payload has not been staged yet"))
 }
 
 fn local_state_root(_app: &AppHandle) -> Result<PathBuf> {
@@ -1027,7 +1025,10 @@ fn validate_files_at(
     verify_hashes: bool,
 ) -> Result<FilesReport> {
     if let Some(app) = app {
-        if let (Ok(payload), Ok(state)) = (merged_payload_root(app, root), local_state_root(app)) {
+        if let (Ok(payload), Ok(state)) = (
+            component_payload_root(ComponentId::Upstream),
+            local_state_root(app),
+        ) {
             let inspection = if verify_hashes {
                 installer::inspect(&payload, &state, root)
             } else {
@@ -1340,7 +1341,7 @@ fn prepare_and_launch_match(app: AppHandle, csgo: String, input: PrepareMatchInp
     let root = csgo_path(&csgo)?;
     ensure_target_not_running(&root)?;
     let state = local_state_root(&app)?;
-    let payload = merged_payload_root(&app, &root)?;
+    let payload = component_payload_root(ComponentId::Upstream)?;
     let difficulty = match input.difficulty.as_str() {
         "low" => "Low",
         "medium" => "Medium",
@@ -1817,7 +1818,7 @@ fn cs2ss_last_completed(csgo: String) -> Result<Option<match_system::CompletedMa
 #[tauri::command]
 fn run_install_checks(app: AppHandle, csgo: String, selected_map: Option<String>) -> Result<InstallCheckReport> {
     let root = csgo_path(&csgo)?;
-    collect_install_checks(&merged_payload_root(&app, &root)?, &local_state_root(&app)?, &root, selected_map.as_deref())
+    collect_install_checks(&component_payload_root(ComponentId::Upstream)?, &local_state_root(&app)?, &root, selected_map.as_deref())
 }
 
 fn collect_install_checks(payload: &Path, state: &Path, root: &Path, selected_map: Option<&str>) -> Result<InstallCheckReport> {
@@ -3174,7 +3175,7 @@ fn get_runtime_snapshot_impl(app: AppHandle) -> Result<RuntimeSnapshot> {
     let root = csgo_path(&selected)?;
     let process = inspect_cs2_process(Some(&root));
     let running = process.running;
-    let payload = merged_payload_root(&app, &root).ok();
+    let payload = component_payload_root(ComponentId::Upstream).ok();
     let state = local_state_root(&app).ok();
     if let Some(state) = &state {
         let _ = installer::recover_incomplete(state, &root);
@@ -3217,8 +3218,7 @@ async fn inspect_installation(app: AppHandle, csgo: String) -> Result<Installati
     run_installation_task("Installation inspection", move || {
         let root = csgo_path(&csgo)?;
         installer::recover_incomplete(&local_state_root(&app)?, &root)?;
-        let root_value = root.clone();
-        installer::inspect(&merged_payload_root(&app, &root_value)?, &local_state_root(&app)?, &root)
+        installer::inspect(&component_payload_root(ComponentId::Upstream)?, &local_state_root(&app)?, &root)
     })
     .await
 }
@@ -3229,7 +3229,7 @@ async fn get_install_plan(app: AppHandle, csgo: String) -> Result<InstallPlan> {
         let _busy = online_update::OperationGuard::acquire()?;
         let root = csgo_path(&csgo)?;
         ensure_target_not_running(&root)?;
-        installer::plan(&merged_payload_root(&app, &root)?, &local_state_root(&app)?, &root)
+        installer::plan(&component_payload_root(ComponentId::Upstream)?, &local_state_root(&app)?, &root)
     })
     .await
 }
@@ -3239,7 +3239,7 @@ async fn install_payload(app: AppHandle, csgo: String) -> Result<InstallTransact
     run_installation_task("Payload installation", move || {
         let _busy = online_update::OperationGuard::acquire()?;
         let root = csgo_path(&csgo)?;
-        let payload = merged_payload_root(&app, &root)?;
+        let payload = component_payload_root(ComponentId::Upstream)?;
         let state = local_state_root(&app)?;
         let report = collect_install_checks(&payload, &state, &root, None)?;
         ensure_install_checks_pass(&report)?;
@@ -3275,7 +3275,7 @@ async fn repair_payload(app: AppHandle, csgo: String) -> Result<InstallTransacti
     run_installation_task("Payload repair", move || {
         let _busy = online_update::OperationGuard::acquire()?;
         let root = csgo_path(&csgo)?;
-        let payload = merged_payload_root(&app, &root)?;
+        let payload = component_payload_root(ComponentId::Upstream)?;
         let state = local_state_root(&app)?;
         let report = collect_install_checks(&payload, &state, &root, None)?;
         ensure_install_checks_pass(&report)?;
@@ -3349,9 +3349,9 @@ fn restore_payload_impl(app: &AppHandle, csgo: &str, pristine: bool) -> Result<R
         &root.to_string_lossy(),
     );
     let result = if pristine {
-        installer::restore_pristine(&merged_payload_root(app, &root)?, &state, &root)
+        installer::restore_pristine(&component_payload_root(ComponentId::Upstream)?, &state, &root)
     } else {
-        installer::restore(&merged_payload_root(app, &root)?, &state, &root)
+        installer::restore(&component_payload_root(ComponentId::Upstream)?, &state, &root)
     };
     match &result {
         Ok(value) => logging::append(
@@ -3373,8 +3373,18 @@ fn restore_payload_impl(app: &AppHandle, csgo: &str, pristine: bool) -> Result<R
     result
 }
 
-fn record_upstream_install(state: &Path, root: &Path, merged_root: &Path) {
-    if let Err(error) = upstream_package::write_installed_state(root, merged_root) {
+fn record_upstream_install(state: &Path, root: &Path, payload_root: &Path) {
+    // The tag comes from the same cache selection that produced the payload — never from the
+    // payload directory name, which is a layout path rather than a release tag.
+    let recorded = upstream_package::select_cached_upstream().and_then(|selected| {
+        let (tag, _zip) = selected.ok_or_else(|| {
+            AppError::payload(
+                "Upstream package is not available; download it in Installation Management",
+            )
+        })?;
+        upstream_package::write_installed_state(root, payload_root, &tag)
+    });
+    if let Err(error) = recorded {
         logging::append(
             state,
             "WARN",
@@ -3387,7 +3397,7 @@ fn record_upstream_install(state: &Path, root: &Path, merged_root: &Path) {
 fn installed_plugin_version(app: &AppHandle) -> Option<String> {
     let config = read_config(app).ok()?;
     let root = csgo_path(config.csgo_path.as_deref()?).ok()?;
-    installer::inspect_quick(&merged_payload_root(app, &root).ok()?, &local_state_root(app).ok()?, &root)
+    installer::inspect_quick(&component_payload_root(ComponentId::LaPlugins).ok()?, &local_state_root(app).ok()?, &root)
         .ok()?
         .package_version
 }
@@ -3546,7 +3556,7 @@ async fn install_la_plugin_bundle(
                         "update.la_bundle_started",
                         "source=local-payload",
                     );
-                    (merged_payload_root(&app, &root)?, None)
+                    (component_payload_root(ComponentId::LaPlugins)?, None)
                 }
             };
         match with_canonical_layout(&state, &root, restore_preview, || {
