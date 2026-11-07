@@ -75,6 +75,8 @@ pub struct UpdateResult {
 pub struct UpdateBatchResult {
     pub panel: Option<UpdateResult>,
     pub la_plugins: Option<UpdateResult>,
+    /// One entry per component, in install order (upstream, la_plugins, inventory_simulator).
+    pub components: Vec<UpdateResult>,
     pub restart_required: bool,
 }
 

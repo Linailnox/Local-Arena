@@ -31,7 +31,7 @@ mod runtime_state;
 mod steam;
 mod update_core;
 mod upstream_package;
-use installer::{ComponentId, InstallPlan, InstallTransactionResult, InstallationInspection, RestoreResult};
+use installer::{ComponentId, InstallPlan, InstallationInspection, RestoreResult};
 use install_checks::InstallCheckReport;
 use match_system::{MatchCatalog, MatchSession, MatchRequest, MatchState, PrepareMatchInput};
 use mode_files::{LaunchMode, apply_launch_mode, contains_metamod_search_path};
@@ -3234,36 +3234,294 @@ async fn get_install_plan(app: AppHandle, csgo: String) -> Result<InstallPlan> {
     .await
 }
 
+/// The component id strings the frontend sends. They are exactly the `ComponentId` serde names,
+/// so a command argument, an update-progress event and a record row all spell a component the
+/// same way.
+fn component_from_id(raw: &str) -> Result<ComponentId> {
+    match raw {
+        "upstream" => Ok(ComponentId::Upstream),
+        "la_plugins" => Ok(ComponentId::LaPlugins),
+        "inventory_simulator" => Ok(ComponentId::InventorySimulator),
+        _ => Err(AppError::invalid(format!("Unknown component id: {raw}"))),
+    }
+}
+
+/// Payload whose manifest supplies the upstream install state's `la_version`.
+///
+/// `la_version` describes the LA component. The upstream-only payload's `package_version` is the
+/// upstream tag, so it is only the fallback for a machine with no LA payload at all.
+fn la_version_source<'a>(upstream_payload: &'a Path, la_payload: Option<&'a Path>) -> &'a Path {
+    la_payload
+        .filter(|path| path.join(installer::MANIFEST_FILE).is_file())
+        .unwrap_or(upstream_payload)
+}
+
+/// Writes the upstream install state after a successful upstream component install. The tag is
+/// the one `select_cached_upstream()` returned for the payload that was installed, so a second
+/// cache lookup can never label the state with a different release.
+fn record_upstream_install(state: &Path, root: &Path, upstream_payload: &Path, tag: &str) {
+    let la_payload = la_payload_source().ok();
+    let source = la_version_source(upstream_payload, la_payload.as_deref());
+    if let Err(error) = upstream_package::write_installed_state(root, source, tag) {
+        logging::append(state, "WARN", "upstream.install_state_failed", &error.detail);
+    }
+}
+
+fn component_install_result(
+    component: &str,
+    version: String,
+    installed_files: usize,
+    label: &str,
+) -> online_update::UpdateResult {
+    online_update::UpdateResult {
+        component: component.to_string(),
+        version,
+        installed: true,
+        restart_required: false,
+        rollback_succeeded: None,
+        detail: format!("{label} installed ({installed_files} files)"),
+    }
+}
+
+/// Installs the upstream component from the cached upstream release. There is no `latest.json`
+/// field for upstream, so the local cache is its only source; an empty cache is an error that
+/// names the download action instead of a silent network fetch inside "install everything".
+fn install_upstream_blocking(
+    app: &AppHandle,
+    root: &Path,
+    state: &Path,
+) -> Result<online_update::UpdateResult> {
+    let config = read_config(app)?;
+    let restore_preview = config.mode.as_deref() == Some("preview");
+    let (tag, _zip) = upstream_package::select_cached_upstream()?.ok_or_else(|| {
+        AppError::payload(
+            "Upstream package is not cached; download it in Installation Management first",
+        )
+    })?;
+    ensure_target_not_running(root)?;
+    ensure_steam_app_idle(root)?;
+    let payload = upstream_package::stage_upstream_only()?;
+    let report = collect_install_checks(&payload, state, root, None)?;
+    ensure_install_checks_pass(&report)?;
+    logging::append(state, "INFO", "install.upstream_started", &format!("tag={tag}"));
+    let result = with_canonical_layout(state, root, restore_preview, || {
+        let result = installer::install_component(&payload, state, root, ComponentId::Upstream)?;
+        write_bot_randomizer_options(root, &config.bot_items)?;
+        Ok(result)
+    });
+    match &result {
+        Ok(value) => {
+            record_upstream_install(state, root, &payload, &tag);
+            logging::append(
+                state,
+                "INFO",
+                "install.upstream_completed",
+                &format!("tag={tag}, files={}", value.installed_files),
+            )
+        }
+        Err(error) => logging::append(state, "ERROR", "install.upstream_failed", &error.detail),
+    }
+    let value = result?;
+    Ok(component_install_result(
+        "upstream",
+        tag,
+        value.installed_files,
+        "Upstream component",
+    ))
+}
+
+/// Installs the LA plugins component. `allow_download` is the only difference between installing
+/// and repairing it: an install takes the published update when the signed manifest offers one,
+/// a repair always rebuilds from the local payload the record points at.
+fn install_la_blocking(
+    app: &AppHandle,
+    root: &Path,
+    state: &Path,
+    allow_download: bool,
+) -> Result<online_update::UpdateResult> {
+    let config = read_config(app)?;
+    let restore_preview = config.mode.as_deref() == Some("preview");
+    ensure_target_not_running(root)?;
+    ensure_steam_app_idle(root)?;
+    let snapshot = online_update::snapshot(installed_plugin_version(app).as_deref())?;
+    let source = la_bundle_source(allow_download && snapshot.la_plugins.update_available);
+    if source == LaBundleSource::Download && !snapshot.la_plugins.compatible {
+        return Err(AppError::update(
+            "This plugin update requires a newer Panel updater",
+        ));
+    }
+    let (payload, downloaded_version) = match source {
+        LaBundleSource::Download => {
+            logging::append(state, "INFO", "update.la_bundle_started", "source=github.com");
+            match online_update::prepare_plugin(app) {
+                Ok((version, merged)) => (merged, Some(version)),
+                Err(error) => {
+                    logging::append(
+                        state,
+                        "ERROR",
+                        "update.la_bundle_failed",
+                        &format!("stage=download, {}", error.detail),
+                    );
+                    return Err(error);
+                }
+            }
+        }
+        LaBundleSource::Local => {
+            logging::append(
+                state,
+                "INFO",
+                "update.la_bundle_started",
+                "source=local-payload",
+            );
+            (component_payload_root(ComponentId::LaPlugins)?, None)
+        }
+    };
+    let report = collect_install_checks(&payload, state, root, None)?;
+    ensure_install_checks_pass(&report)?;
+    let result = with_canonical_layout(state, root, restore_preview, || {
+        installer::install_la_plugins_component(&payload, state, root)
+    });
+    match &result {
+        Ok(value) => logging::append(
+            state,
+            "INFO",
+            "update.la_bundle_completed",
+            &format!(
+                "version={}, files={}",
+                downloaded_version
+                    .as_deref()
+                    .unwrap_or(&value.package_version),
+                value.installed_files
+            ),
+        ),
+        Err(error) => logging::append(
+            state,
+            "ERROR",
+            "update.la_bundle_failed",
+            &format!("stage=install, rollback=attempted, {}", error.detail),
+        ),
+    }
+    let value = result?;
+    let version = downloaded_version.unwrap_or_else(|| value.package_version.clone());
+    Ok(component_install_result(
+        "la_plugins",
+        version,
+        value.installed_files,
+        "LA plugins bundle",
+    ))
+}
+
+/// Installs InventorySimulator from its third-party release. The component has no locally packed
+/// copy, so an install and a repair resolve the same release; the shared downloader reuses an
+/// already verified archive of that tag instead of fetching it again.
+fn install_inventory_blocking(
+    app: &AppHandle,
+    root: &Path,
+) -> Result<online_update::UpdateResult> {
+    let snapshot = inventory_plugin::install(app, root, None)?;
+    let version = snapshot.installed_version.unwrap_or_default();
+    Ok(online_update::UpdateResult {
+        component: "inventory_simulator".into(),
+        version,
+        installed: true,
+        restart_required: false,
+        rollback_succeeded: None,
+        detail: "InventorySimulator installed".into(),
+    })
+}
+
+/// Installs one component from whichever source its own update channel designates.
+fn install_one_blocking(
+    app: &AppHandle,
+    root: &Path,
+    component: ComponentId,
+    allow_download: bool,
+) -> Result<online_update::UpdateResult> {
+    let state = local_state_root(app)?;
+    match component {
+        ComponentId::Upstream => install_upstream_blocking(app, root, &state),
+        ComponentId::LaPlugins => install_la_blocking(app, root, &state, allow_download),
+        ComponentId::InventorySimulator => install_inventory_blocking(app, root),
+    }
+}
+
+/// Three independent transactions in dependency order, each landing its own version in
+/// `record.components` — no merged tree and no package-level version. The first failure is the
+/// run's error: later components are never attempted.
+fn install_components_blocking(
+    app: &AppHandle,
+    root: &Path,
+) -> Result<Vec<online_update::UpdateResult>> {
+    installer::run_component_steps(&installer::INSTALL_ORDER, |component| {
+        install_one_blocking(app, root, component, true)
+    })
+}
+
 #[tauri::command]
-async fn install_payload(app: AppHandle, csgo: String) -> Result<InstallTransactionResult> {
-    run_installation_task("Payload installation", move || {
+async fn install_component_by_id(
+    app: AppHandle,
+    csgo: String,
+    component_id: String,
+) -> Result<online_update::UpdateResult> {
+    tauri::async_runtime::spawn_blocking(move || {
         let _busy = online_update::OperationGuard::acquire()?;
         let root = csgo_path(&csgo)?;
-        let payload = component_payload_root(ComponentId::Upstream)?;
-        let state = local_state_root(&app)?;
-        let report = collect_install_checks(&payload, &state, &root, None)?;
-        ensure_install_checks_pass(&report)?;
+        let component = component_from_id(&component_id)?;
+        install_one_blocking(&app, &root, component, true)
+    })
+    .await
+    .map_err(|error| AppError::update(format!("Component install task failed: {error}")))?
+}
+
+/// Reinstalls one component from its local source. A component transaction already skips files
+/// whose bytes match, so a repair only rewrites what is missing or differs.
+#[tauri::command]
+async fn repair_component(
+    app: AppHandle,
+    csgo: String,
+    component_id: String,
+) -> Result<online_update::UpdateResult> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let _busy = online_update::OperationGuard::acquire()?;
+        let root = csgo_path(&csgo)?;
+        let component = component_from_id(&component_id)?;
+        install_one_blocking(&app, &root, component, false)
+    })
+    .await
+    .map_err(|error| AppError::update(format!("Component repair task failed: {error}")))?
+}
+
+#[tauri::command]
+async fn uninstall_component(
+    app: AppHandle,
+    csgo: String,
+    component_id: String,
+) -> Result<RestoreResult> {
+    run_installation_task("Component uninstall", move || {
+        let _busy = online_update::OperationGuard::acquire()?;
+        let root = csgo_path(&csgo)?;
+        let component = component_from_id(&component_id)?;
         ensure_target_not_running(&root)?;
         ensure_steam_app_idle(&root)?;
-        let config = read_config(&app)?;
-        let restore_preview = config.mode.as_deref() == Some("preview");
-        logging::append(&state, "INFO", "install.started", &root.to_string_lossy());
-        let result = with_canonical_layout(&state, &root, restore_preview, || {
-            let result = installer::install(&payload, &state, &root, false)?;
-            write_bot_randomizer_options(&root, &config.bot_items)?;
-            Ok(result)
-        });
+        let state = local_state_root(&app)?;
+        logging::append(
+            &state,
+            "INFO",
+            "uninstall.started",
+            &format!("component={component_id}"),
+        );
+        let result = installer::uninstall_component(&state, &root, component);
         match &result {
-            Ok(value) => {
-                record_upstream_install(&state, &root, &payload);
-                logging::append(
-                    &state,
-                    "INFO",
-                    "install.completed",
-                    &format!("{} files", value.installed_files),
-                )
-            }
-            Err(error) => logging::append(&state, "ERROR", "install.failed", &error.detail),
+            Ok(value) => logging::append(
+                &state,
+                "INFO",
+                "uninstall.completed",
+                &format!(
+                    "component={component_id}, restored={}, removed={}, preserved={}",
+                    value.restored_files, value.removed_files, value.preserved_files
+                ),
+            ),
+            Err(error) => logging::append(&state, "ERROR", "uninstall.failed", &error.detail),
         }
         result
     })
@@ -3271,37 +3529,61 @@ async fn install_payload(app: AppHandle, csgo: String) -> Result<InstallTransact
 }
 
 #[tauri::command]
-async fn repair_payload(app: AppHandle, csgo: String) -> Result<InstallTransactionResult> {
-    run_installation_task("Payload repair", move || {
+async fn install_all_components(
+    app: AppHandle,
+    csgo: String,
+) -> Result<Vec<online_update::UpdateResult>> {
+    tauri::async_runtime::spawn_blocking(move || {
         let _busy = online_update::OperationGuard::acquire()?;
         let root = csgo_path(&csgo)?;
-        let payload = component_payload_root(ComponentId::Upstream)?;
-        let state = local_state_root(&app)?;
-        let report = collect_install_checks(&payload, &state, &root, None)?;
-        ensure_install_checks_pass(&report)?;
+        install_components_blocking(&app, &root)
+    })
+    .await
+    .map_err(|error| AppError::update(format!("Install-all task failed: {error}")))?
+}
+
+/// Removes every component the install record knows about, one transaction per component in
+/// reverse install order, restoring the pre-install copy wherever one was kept.
+#[tauri::command]
+async fn restore_all_components(app: AppHandle, csgo: String) -> Result<RestoreResult> {
+    run_installation_task("Restore all components", move || {
+        let _busy = online_update::OperationGuard::acquire()?;
+        let root = csgo_path(&csgo)?;
         ensure_target_not_running(&root)?;
         ensure_steam_app_idle(&root)?;
-        let config = read_config(&app)?;
-        let restore_preview = config.mode.as_deref() == Some("preview");
-        logging::append(&state, "INFO", "repair.started", &root.to_string_lossy());
-        let result = with_canonical_layout(&state, &root, restore_preview, || {
-            let result = installer::install(&payload, &state, &root, true)?;
-            write_bot_randomizer_options(&root, &config.bot_items)?;
-            Ok(result)
-        });
-        match &result {
-            Ok(value) => {
-                record_upstream_install(&state, &root, &payload);
-                logging::append(
-                    &state,
-                    "INFO",
-                    "repair.completed",
-                    &format!("{} files", value.installed_files),
-                )
-            }
-            Err(error) => logging::append(&state, "ERROR", "repair.failed", &error.detail),
+        let state = local_state_root(&app)?;
+        logging::append(&state, "INFO", "restore_all.started", &root.to_string_lossy());
+        let steps = [
+            ComponentId::InventorySimulator,
+            ComponentId::LaPlugins,
+            ComponentId::Upstream,
+        ];
+        let results = installer::run_component_steps(&steps, |component| {
+            installer::uninstall_component(&state, &root, component)
+        })?;
+        let mut total = RestoreResult {
+            restored_files: 0,
+            removed_files: 0,
+            preserved_files: 0,
+            presets_backup: None,
+            steam_verify_uri: "steam://validate/730".to_string(),
+            result_kind: "restore_all_components".to_string(),
+        };
+        for result in results {
+            total.restored_files += result.restored_files;
+            total.removed_files += result.removed_files;
+            total.preserved_files += result.preserved_files;
         }
-        result
+        logging::append(
+            &state,
+            "INFO",
+            "restore_all.completed",
+            &format!(
+                "restored={}, removed={}, preserved={}",
+                total.restored_files, total.removed_files, total.preserved_files
+            ),
+        );
+        Ok(total)
     })
     .await
 }
@@ -3373,27 +3655,6 @@ fn restore_payload_impl(app: &AppHandle, csgo: &str, pristine: bool) -> Result<R
     result
 }
 
-fn record_upstream_install(state: &Path, root: &Path, payload_root: &Path) {
-    // The tag comes from the same cache selection that produced the payload — never from the
-    // payload directory name, which is a layout path rather than a release tag.
-    let recorded = upstream_package::select_cached_upstream().and_then(|selected| {
-        let (tag, _zip) = selected.ok_or_else(|| {
-            AppError::payload(
-                "Upstream package is not available; download it in Installation Management",
-            )
-        })?;
-        upstream_package::write_installed_state(root, payload_root, &tag)
-    });
-    if let Err(error) = recorded {
-        logging::append(
-            state,
-            "WARN",
-            "upstream.install_state_failed",
-            &error.detail,
-        );
-    }
-}
-
 fn installed_plugin_version(app: &AppHandle) -> Option<String> {
     let config = read_config(app).ok()?;
     let root = csgo_path(config.csgo_path.as_deref()?).ok()?;
@@ -3422,62 +3683,6 @@ async fn check_online_updates(
     })
     .await
     .map_err(|error| AppError::update(format!("Update check task failed: {error}")))?
-}
-
-fn install_plugin_update_impl(app: &AppHandle, csgo: &str) -> Result<online_update::UpdateResult> {
-    let root = csgo_path(csgo)?;
-    ensure_target_not_running(&root)?;
-    ensure_steam_app_idle(&root)?;
-    let state = local_state_root(app)?;
-    let config = read_config(app)?;
-    let restore_preview = config.mode.as_deref() == Some("preview");
-    logging::append(&state, "INFO", "update.plugin_started", "host=github.com");
-    let (version, payload) = online_update::prepare_plugin(app)?;
-    match with_canonical_layout(&state, &root, restore_preview, || {
-        let result = installer::install(&payload, &state, &root, false)?;
-        write_bot_randomizer_options(&root, &config.bot_items)?;
-        Ok(result)
-    }) {
-        Ok(value) => {
-            record_upstream_install(&state, &root, &payload);
-            logging::append(
-                &state,
-                "INFO",
-                "update.plugin_completed",
-                &format!("version={version}, files={}", value.installed_files),
-            );
-            Ok(online_update::UpdateResult {
-                component: "la_plugins".into(),
-                version,
-                installed: true,
-                restart_required: false,
-                rollback_succeeded: None,
-                detail: format!("Plugin update installed ({} files)", value.installed_files),
-            })
-        }
-        Err(error) => {
-            logging::append(
-                &state,
-                "ERROR",
-                "update.plugin_failed",
-                &format!("stage=install, rollback=attempted, {}", error.detail),
-            );
-            Err(error)
-        }
-    }
-}
-
-#[tauri::command]
-async fn install_plugin_update(
-    app: AppHandle,
-    csgo: String,
-) -> Result<online_update::UpdateResult> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let _busy = online_update::OperationGuard::acquire()?;
-        install_plugin_update_impl(&app, &csgo)
-    })
-    .await
-    .map_err(|error| AppError::update(format!("Plugin update task failed: {error}")))?
 }
 
 /// Which payload [`install_la_plugin_bundle`] installs from (F2 review, major 1).
@@ -3516,79 +3721,7 @@ async fn install_la_plugin_bundle(
     tauri::async_runtime::spawn_blocking(move || {
         let _busy = online_update::OperationGuard::acquire()?;
         let root = la_bundle_target(&csgo)?;
-        ensure_target_not_running(&root)?;
-        ensure_steam_app_idle(&root)?;
-        let state = local_state_root(&app)?;
-        let config = read_config(&app)?;
-        let restore_preview = config.mode.as_deref() == Some("preview");
-        // Decide from the snapshot before resolving any payload root: the local
-        // root is stale whenever an update is available (F2 major 1).
-        let snapshot = online_update::snapshot(installed_plugin_version(&app).as_deref())?;
-        let (payload, downloaded_version) =
-            match la_bundle_source(snapshot.la_plugins.update_available) {
-                LaBundleSource::Download => {
-                    logging::append(
-                        &state,
-                        "INFO",
-                        "update.la_bundle_started",
-                        "source=github.com",
-                    );
-                    match online_update::prepare_plugin(&app) {
-                        // `prepare_plugin` downloads, verifies, merges with the
-                        // cached upstream zip and activates the payload before
-                        // returning, so this root is resolved after activation.
-                        Ok((version, merged)) => (merged, Some(version)),
-                        Err(error) => {
-                            logging::append(
-                                &state,
-                                "ERROR",
-                                "update.la_bundle_failed",
-                                &format!("stage=download, {}", error.detail),
-                            );
-                            return Err(error);
-                        }
-                    }
-                }
-                LaBundleSource::Local => {
-                    logging::append(
-                        &state,
-                        "INFO",
-                        "update.la_bundle_started",
-                        "source=local-payload",
-                    );
-                    (component_payload_root(ComponentId::LaPlugins)?, None)
-                }
-            };
-        match with_canonical_layout(&state, &root, restore_preview, || {
-            installer::install_la_plugins_component(&payload, &state, &root)
-        }) {
-            Ok(value) => {
-                let version = downloaded_version.unwrap_or_else(|| value.package_version.clone());
-                logging::append(
-                    &state,
-                    "INFO",
-                    "update.la_bundle_completed",
-                    &format!("version={}, files={}", version, value.installed_files),
-                );
-                Ok(online_update::UpdateResult {
-                    component: "la_plugins".into(),
-                    version,
-                    installed: true,
-                    restart_required: false,
-                    rollback_succeeded: None,
-                    detail: format!("LA plugins bundle installed ({} files)", value.installed_files),
-                })
-            }
-            Err(error) => {
-                logging::append(
-                    &state,
-                    "ERROR",
-                    "update.la_bundle_failed",
-                    &format!("stage=install, rollback=attempted, {}", error.detail),
-                );
-                Err(error)
-            }
-        }
+        install_one_blocking(&app, &root, ComponentId::LaPlugins, true)
     })
     .await
     .map_err(|error| AppError::update(format!("LA plugin bundle task failed: {error}")))?
@@ -3610,6 +3743,9 @@ async fn install_panel_update(app: AppHandle) -> Result<online_update::UpdateRes
     Ok(result)
 }
 
+/// Installs everything a release publishes: the Panel update first, then every component through
+/// its own independent transaction. The component half is exactly `install_all_components`, so a
+/// failure there aborts before the Panel restarts and no later component is touched.
 #[tauri::command]
 async fn install_all_updates(
     app: AppHandle,
@@ -3618,22 +3754,14 @@ async fn install_all_updates(
     let worker_app = app.clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
         let _busy = online_update::OperationGuard::acquire()?;
+        let target = csgo.as_deref().ok_or_else(|| {
+            AppError::directory(
+                "Select the CS2 game/csgo directory before installing the components",
+            )
+        })?;
+        let root = csgo_path(target)?;
         let plugin_version = installed_plugin_version(&worker_app);
         let snapshot = online_update::snapshot(plugin_version.as_deref())?;
-
-        let la_plugins = if snapshot.la_plugins.update_available {
-            if !snapshot.la_plugins.compatible {
-                return Err(AppError::update(
-                    "This plugin update requires a newer Panel updater",
-                ));
-            }
-            let target = csgo.as_deref().ok_or_else(|| {
-                AppError::directory("Select the CS2 game/csgo directory before updating the plugin")
-            })?;
-            Some(install_plugin_update_impl(&worker_app, target)?)
-        } else {
-            None
-        };
 
         let panel = if snapshot.panel.update_available {
             if !snapshot.panel.compatible {
@@ -3646,10 +3774,16 @@ async fn install_all_updates(
             None
         };
 
+        let components = install_components_blocking(&worker_app, &root)?;
+        let la_plugins = components
+            .iter()
+            .find(|result| result.component == "la_plugins")
+            .cloned();
         Ok(online_update::UpdateBatchResult {
             restart_required: panel.is_some(),
             panel,
             la_plugins,
+            components,
         })
     })
     .await
@@ -4703,6 +4837,51 @@ mod tests {
 
         fs::remove_dir_all(root).unwrap();
     }
+
+    #[test]
+    fn component_from_id_accepts_exactly_the_serialized_component_names() {
+        for (raw, expected) in [
+            ("upstream", ComponentId::Upstream),
+            ("la_plugins", ComponentId::LaPlugins),
+            ("inventory_simulator", ComponentId::InventorySimulator),
+        ] {
+            assert_eq!(component_from_id(raw).unwrap(), expected);
+            // The command argument must be spelled exactly like the record key and the
+            // update-progress component, so one vocabulary spans backend and frontend.
+            assert_eq!(
+                serde_json::to_value(expected).unwrap(),
+                serde_json::Value::String(raw.to_string())
+            );
+        }
+        for rejected in ["", "la-plugin", "LaPlugins", "upstream "] {
+            let error = component_from_id(rejected).unwrap_err();
+            assert_eq!(error.code, "E1002", "{rejected:?}");
+        }
+    }
+
+    #[test]
+    fn la_version_comes_from_the_la_component() {
+        let base = test_root();
+        let upstream = base.join("upstream");
+        let la = base.join("la");
+        fs::create_dir_all(&upstream).unwrap();
+        fs::create_dir_all(&la).unwrap();
+        fs::write(upstream.join(installer::MANIFEST_FILE), b"{}").unwrap();
+
+        // No LA payload at all: the upstream payload is the only source there is.
+        assert_eq!(la_version_source(&upstream, None), upstream.as_path());
+        // A directory without a manifest cannot supply `la_version`.
+        assert_eq!(
+            la_version_source(&upstream, Some(&la)),
+            upstream.as_path()
+        );
+        // The LA payload wins as soon as it carries one, so `la_version` stops reporting the
+        // upstream tag.
+        fs::write(la.join(installer::MANIFEST_FILE), b"{}").unwrap();
+        assert_eq!(la_version_source(&upstream, Some(&la)), la.as_path());
+
+        fs::remove_dir_all(base).unwrap();
+    }
 }
 
 pub fn run() {
@@ -4747,13 +4926,13 @@ pub fn run() {
             get_cosmetics_inventory, save_cosmetics_inventory,
             inventory_plugin_status, inventory_plugin_check, inventory_plugin_install,
             export_cosmetics_inventory, import_cosmetics_inventory_file, get_runtime_snapshot, get_cs2_process,
-            inspect_installation, get_install_plan, install_payload, repair_payload,
+            inspect_installation, get_install_plan, install_component_by_id, repair_component,
+            uninstall_component, install_all_components, restore_all_components,
             restore_payload, restore_pristine_cs2, export_diagnostics, get_panel_memory, save_panel_memory,
             appearance::get_appearance, appearance::save_appearance,
             appearance::export_appearance, appearance::import_appearance,
             record_panel_error, get_update_snapshot, check_online_updates,
             install_panel_update,
-            install_plugin_update,
             install_la_plugin_bundle,
             install_all_updates,
             cancel_update,
