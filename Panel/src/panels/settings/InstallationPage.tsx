@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
-import { ArchiveRestore, CheckCircle2, CircleAlert, CircleX, ClipboardCheck, Copy, Download, FileCheck2, FolderOpen, PackageCheck, PlayCircle, RefreshCw, Stethoscope, Trash2, Wrench, X } from "lucide-react";
+import { ArchiveRestore, CheckCircle2, CircleAlert, CircleX, ClipboardCheck, Copy, Download, FileCheck2, FolderOpen, PackageCheck, PlayCircle, RefreshCw, Stethoscope, Trash2, X } from "lucide-react";
 import { useStore } from "../../state/store";
 import { useT, type I18nKey } from "../../i18n";
 import { useToast } from "../../components/Toast";
-import { api, toAppError, type InstallCheckReport, type InstallationSource, type MigrationKind, type UpstreamCacheInfo, type UpstreamInstalledState, type UpstreamProgress, type UpstreamReleaseInfo } from "../../lib/api";
-import { installAttemptDisabled, installBlockedByUpstream } from "../../lib/installGate";
+import { api, toAppError, type InstallCheckReport, type InstallationSource, type UpstreamCacheInfo, type UpstreamInstalledState, type UpstreamProgress, type UpstreamReleaseInfo } from "../../lib/api";
+
 import Segmented from "../../components/Segmented";
 import InventoryPluginCard from "../../components/InventoryPluginCard";
 import LaPluginBundleCard from "../../components/LaPluginBundleCard";
@@ -30,14 +30,6 @@ const SOURCE_DESC_KEYS: Record<InstallationSource, I18nKey> = {
   mixed_unknown: "install.sourceDesc.mixed_unknown",
 };
 
-const ACTION_KEYS: Record<MigrationKind, I18nKey> = {
-  fresh_install: "install.action.fresh_install",
-  managed_upgrade: "install.action.managed_upgrade",
-  adopt_legacy_plus: "install.action.adopt_legacy_plus",
-  replace_upstream: "install.action.replace_upstream",
-  blocked: "install.action.blocked",
-};
-
 type HeroTone = "blue" | "green" | "yellow" | "red";
 
 function formatBytes(value: number) {
@@ -49,9 +41,8 @@ function formatBytes(value: number) {
 
 export default function InstallationPage() {
   const {
-    csgoPath, installation, process, directory, chooseDirectory, verifyInstallation, installPayload,
-    repairPayload, restorePayload, restorePristineCs2, exportDiagnostics, reportError, config,
-    updateConfig,
+    csgoPath, installation, process, directory, chooseDirectory, verifyInstallation,
+    restorePayload, restorePristineCs2, exportDiagnostics, reportError, config, updateConfig,
   } = useStore();
   const t = useT();
   const toast = useToast();
@@ -219,6 +210,42 @@ export default function InstallationPage() {
     });
   };
 
+  const installAll = async () => {
+    if (!csgoPath || !!working) return;
+    await run("installAll", async () => {
+      try {
+        await api.installAllComponents(csgoPath);
+        await refreshUpstream();
+      } catch (error) {
+        reportError(error);
+      }
+    });
+  };
+
+  const uninstallComponent = async (componentId: string) => {
+    if (!csgoPath || !!working) return;
+    await run("uninstall", async () => {
+      try {
+        await api.uninstallComponent(csgoPath, componentId);
+        await refreshUpstream();
+      } catch (error) {
+        reportError(error);
+      }
+    });
+  };
+
+  const restoreAll = async () => {
+    if (!csgoPath || !!working) return;
+    await run("restoreAll", async () => {
+      try {
+        await api.restoreAllComponents(csgoPath);
+        await refreshUpstream();
+      } catch (error) {
+        reportError(error);
+      }
+    });
+  };
+
   const restore = async () => {
     setConfirmAction(null);
     await run("restore", async () => {
@@ -267,27 +294,6 @@ export default function InstallationPage() {
     await run("checks", async () => {
       try { setChecks(await api.runInstallChecks(csgoPath)); }
       catch (error) { reportError(error); }
-    });
-  };
-
-  const preflightAndRun = async (
-    name: "install" | "repair",
-    action: () => Promise<unknown>
-  ) => {
-    if (!csgoPath) return;
-    await run(name, async () => {
-      try {
-        const report = await api.runInstallChecks(csgoPath);
-        setChecks(report);
-        if (!report.can_proceed) {
-          toast.show(t("install.action.blocked"), "red");
-          return;
-        }
-        await action();
-        await refreshUpstream();
-      } catch (error) {
-        reportError(error);
-      }
     });
   };
 
@@ -455,27 +461,22 @@ export default function InstallationPage() {
 
         <section className="inst-group">
           <header className="inst-group__head">
-            <Wrench size={17} aria-hidden="true" />
+            <Download size={17} aria-hidden="true" />
             <span><strong>{t("install.groupRepair")}</strong><small>{t("install.groupRepairDesc")}</small></span>
           </header>
           <div className="installation-actions">
-            {!installation?.installed && installation?.can_install && (
-              <button className="is-primary" disabled={installAttemptDisabled(csgoPath, !!working || blocked, upstreamReady)}
-                onClick={() => preflightAndRun("install", installPayload)}>
-                <FileCheck2 size={17} />{working === "install" ? t("install.working") : t(ACTION_KEYS[installation.migration_kind])}
-              </button>
-            )}
-            {installation?.installed && (
-              <button disabled={installAttemptDisabled(csgoPath, !!working || blocked, upstreamReady)} onClick={() => preflightAndRun("repair", repairPayload)}>
-                <Wrench size={17} />{working === "repair" ? t("install.working") : t("install.repair")}
-              </button>
-            )}
-            {installBlockedByUpstream(upstreamReady) && (
-              <p className="inst-group__empty">{t("upstream.needDownload")}</p>
-            )}
-            {!installation?.installed && !installation?.can_install && (
-              <p className="inst-group__empty">{t("install.action.blocked")}</p>
-            )}
+            <button className="is-primary" disabled={!csgoPath || !!working} onClick={installAll}>
+              <Download size={17} />{working === "installAll" ? t("install.working") : t("install.installAll")}
+            </button>
+            <button disabled={!csgoPath || !!working} onClick={() => uninstallComponent("upstream")}>
+              <Trash2 size={17} />{t("install.uninstallUpstream")}
+            </button>
+            <button disabled={!csgoPath || !!working} onClick={() => uninstallComponent("la_plugins")}>
+              <Trash2 size={17} />{t("install.uninstallLa")}
+            </button>
+            <button disabled={!csgoPath || !!working} onClick={() => uninstallComponent("inventory_simulator")}>
+              <Trash2 size={17} />{t("install.uninstallInventory")}
+            </button>
           </div>
         </section>
 
@@ -488,6 +489,9 @@ export default function InstallationPage() {
             <button disabled={!installation?.restore_available || blocked || !!working} onClick={() => setConfirmAction("restore")}>
               <ArchiveRestore size={17} />{working === "restore" ? t("install.working") :
                 t(installation?.restore_baseline === "pre_migration" ? "install.restorePrevious" : "install.restore")}
+            </button>
+            <button className="is-primary" disabled={!csgoPath || !!working} onClick={restoreAll}>
+              <Download size={17} />{working === "restoreAll" ? t("install.working") : t("install.restoreAll")}
             </button>
             <button className="is-danger"
               disabled={!csgoPath || installation?.source === "clean" || blocked || !!working} onClick={() => setConfirmAction("pristine")}>
