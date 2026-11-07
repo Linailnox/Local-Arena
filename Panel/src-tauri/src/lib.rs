@@ -916,13 +916,6 @@ fn select_directory(app: AppHandle, path: String) -> Result<DirectoryInfo> {
     detect_directories(app)
 }
 
-fn payload_root() -> Result<PathBuf> {
-    if let Some(payload) = online_update::active_payload_root() {
-        return Ok(payload);
-    }
-    exe_payload_root()
-}
-
 fn exe_payload_root() -> Result<PathBuf> {
     let executable =
         std::env::current_exe().map_err(|error| AppError::payload(error.to_string()))?;
@@ -932,15 +925,27 @@ fn exe_payload_root() -> Result<PathBuf> {
         .ok_or_else(|| AppError::payload("Panel executable has no parent directory"))
 }
 
-fn la_payload_source() -> Result<PathBuf> {
-    if let Some(payload) = online_update::active_payload_root() {
-        // A merge must never consume its own output as the LA overlay source.
+/// The LA payload the install record points at, or the exec-side payload.
+///
+/// The pointer lives in `record.components["la_plugins"].path` — the directory `prepare_plugin`
+/// extracted the newest LA download into, replacing the pointer file the earlier design wrote into
+/// the update cache. A pointer that no longer verifies (a cleared cache, an edited manifest) is
+/// ignored rather than trusted, and a merge must never consume its own output as the LA overlay
+/// source.
+fn la_payload_source(target: &Path) -> Result<PathBuf> {
+    let pointed = app_storage::root()
+        .ok()
+        .and_then(|state| installer::component_path(&state, target, ComponentId::LaPlugins))
+        .map(PathBuf::from);
+    if let Some(payload) = pointed {
         if let Some(merged_prefix) = upstream_package::merged_root_prefix() {
             if payload.starts_with(&merged_prefix) {
                 return exe_payload_root();
             }
         }
-        return Ok(payload);
+        if installer::verify_payload(&payload).is_ok() {
+            return Ok(payload);
+        }
     }
     exe_payload_root()
 }
@@ -955,10 +960,10 @@ fn la_payload_source() -> Result<PathBuf> {
 /// * `InventorySimulator` — the newest staging tree its own install extracted. That install
 ///   deletes the staging tree once the transaction commits, so this resolves a tree that exists
 ///   *now* and reports the install action when none does.
-fn component_payload_root(component: ComponentId) -> Result<PathBuf> {
+fn component_payload_root(component: ComponentId, target: &Path) -> Result<PathBuf> {
     match component {
         ComponentId::Upstream => upstream_package::stage_upstream_only(),
-        ComponentId::LaPlugins => la_payload_source(),
+        ComponentId::LaPlugins => la_payload_source(target),
         ComponentId::InventorySimulator => inventory_plugin::latest_staging_root(),
     }
 }
@@ -1003,7 +1008,7 @@ fn validate_files_at(
 ) -> Result<FilesReport> {
     if let Some(app) = app {
         if let (Ok(payload), Ok(state)) = (
-            component_payload_root(ComponentId::Upstream),
+            component_payload_root(ComponentId::Upstream, root),
             local_state_root(app),
         ) {
             let inspection = if verify_hashes {
@@ -1302,7 +1307,11 @@ fn launch_cs2(app: AppHandle) -> Result<LaunchResult> {
 #[tauri::command]
 fn get_match_catalog(_app: AppHandle, csgo: Option<String>) -> Result<MatchCatalog> {
     let selected = csgo.as_deref().map(csgo_path).transpose()?;
-    match_system::load_catalog(&payload_root()?, selected.as_deref())
+    let payload = match selected.as_deref() {
+        Some(root) => la_payload_source(root)?,
+        None => exe_payload_root()?,
+    };
+    match_system::load_catalog(&payload, selected.as_deref())
 }
 
 fn match_launch_arguments(record_demo: bool, map: &str) -> Vec<String> {
@@ -1318,7 +1327,7 @@ fn prepare_and_launch_match(app: AppHandle, csgo: String, input: PrepareMatchInp
     let root = csgo_path(&csgo)?;
     ensure_target_not_running(&root)?;
     let state = local_state_root(&app)?;
-    let payload = component_payload_root(ComponentId::Upstream)?;
+    let payload = component_payload_root(ComponentId::Upstream, &root)?;
     let difficulty = match input.difficulty.as_str() {
         "low" => "Low",
         "medium" => "Medium",
@@ -1795,7 +1804,7 @@ fn cs2ss_last_completed(csgo: String) -> Result<Option<match_system::CompletedMa
 #[tauri::command]
 fn run_install_checks(app: AppHandle, csgo: String, selected_map: Option<String>) -> Result<InstallCheckReport> {
     let root = csgo_path(&csgo)?;
-    let payload = component_payload_root(ComponentId::Upstream)?;
+    let payload = component_payload_root(ComponentId::Upstream, &root)?;
     collect_component_checks(
         ComponentId::Upstream,
         &payload,
@@ -3186,7 +3195,7 @@ fn get_runtime_snapshot_impl(app: AppHandle) -> Result<RuntimeSnapshot> {
     let root = csgo_path(&selected)?;
     let process = inspect_cs2_process(Some(&root));
     let running = process.running;
-    let payload = component_payload_root(ComponentId::Upstream).ok();
+    let payload = component_payload_root(ComponentId::Upstream, &root).ok();
     let state = local_state_root(&app).ok();
     if let Some(state) = &state {
         let _ = installer::recover_incomplete(state, &root);
@@ -3229,7 +3238,7 @@ async fn inspect_installation(app: AppHandle, csgo: String) -> Result<Installati
     run_installation_task("Installation inspection", move || {
         let root = csgo_path(&csgo)?;
         installer::recover_incomplete(&local_state_root(&app)?, &root)?;
-        installer::inspect(&component_payload_root(ComponentId::Upstream)?, &local_state_root(&app)?, &root)
+        installer::inspect(&component_payload_root(ComponentId::Upstream, &root)?, &local_state_root(&app)?, &root)
     })
     .await
 }
@@ -3240,7 +3249,7 @@ async fn get_install_plan(app: AppHandle, csgo: String) -> Result<InstallPlan> {
         let _busy = online_update::OperationGuard::acquire()?;
         let root = csgo_path(&csgo)?;
         ensure_target_not_running(&root)?;
-        installer::plan(&component_payload_root(ComponentId::Upstream)?, &local_state_root(&app)?, &root)
+        installer::plan(&component_payload_root(ComponentId::Upstream, &root)?, &local_state_root(&app)?, &root)
     })
     .await
 }
@@ -3271,7 +3280,7 @@ fn la_version_source<'a>(upstream_payload: &'a Path, la_payload: Option<&'a Path
 /// the one `select_cached_upstream()` returned for the payload that was installed, so a second
 /// cache lookup can never label the state with a different release.
 fn record_upstream_install(state: &Path, root: &Path, upstream_payload: &Path, tag: &str) {
-    let la_payload = la_payload_source().ok();
+    let la_payload = la_payload_source(root).ok();
     let source = la_version_source(upstream_payload, la_payload.as_deref());
     if let Err(error) = upstream_package::write_installed_state(root, source, tag) {
         logging::append(state, "WARN", "upstream.install_state_failed", &error.detail);
@@ -3364,7 +3373,7 @@ fn install_la_blocking(
     let (payload, downloaded_version) = match source {
         LaBundleSource::Download => {
             logging::append(state, "INFO", "update.la_bundle_started", "source=github.com");
-            match online_update::prepare_plugin(app) {
+            match online_update::prepare_plugin(app, root) {
                 Ok((version, merged)) => (merged, Some(version)),
                 Err(error) => {
                     logging::append(
@@ -3384,7 +3393,7 @@ fn install_la_blocking(
                 "update.la_bundle_started",
                 "source=local-payload",
             );
-            (component_payload_root(ComponentId::LaPlugins)?, None)
+            (component_payload_root(ComponentId::LaPlugins, root)?, None)
         }
     };
     let report = collect_component_checks(ComponentId::LaPlugins, &payload, state, root, None)?;
@@ -3642,9 +3651,9 @@ fn restore_payload_impl(app: &AppHandle, csgo: &str, pristine: bool) -> Result<R
         &root.to_string_lossy(),
     );
     let result = if pristine {
-        installer::restore_pristine(&component_payload_root(ComponentId::Upstream)?, &state, &root)
+        installer::restore_pristine(&component_payload_root(ComponentId::Upstream, &root)?, &state, &root)
     } else {
-        installer::restore(&component_payload_root(ComponentId::Upstream)?, &state, &root)
+        installer::restore(&component_payload_root(ComponentId::Upstream, &root)?, &state, &root)
     };
     match &result {
         Ok(value) => logging::append(
@@ -4895,6 +4904,217 @@ mod tests {
 
         fs::remove_dir_all(base).unwrap();
     }
+
+    fn scratch(name: &str) -> PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "cs2bi-usa8-{name}-{}-{}",
+            std::process::id(),
+            UNIX_EPOCH.elapsed().unwrap_or_default().as_nanos()
+        ));
+        let _ = fs::remove_dir_all(&path);
+        fs::create_dir_all(&path).unwrap();
+        path
+    }
+
+    /// A one-file component payload directory with its own manifest.
+    fn payload_fixture(
+        dir: &Path,
+        name: &str,
+        relative: &str,
+        bytes: &[u8],
+        ownership: &str,
+        version: &str,
+    ) -> PathBuf {
+        let payload = dir.join(name);
+        let file = payload.join(relative);
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(&file, bytes).unwrap();
+        let manifest = serde_json::json!({
+            "schema_version": 1,
+            "package_version": version,
+            "entries": [{
+                "path": relative,
+                "size": bytes.len() as u64,
+                "sha256": update_core::sha256_file(&file).unwrap(),
+                "component": "runtime",
+                "ownership": ownership,
+                "restore_policy": "restore",
+            }],
+        });
+        fs::write(
+            payload.join(installer::MANIFEST_FILE),
+            serde_json::to_vec_pretty(&manifest).unwrap(),
+        )
+        .unwrap();
+        payload
+    }
+
+    const UPSTREAM_DLL: &str = "addons/counterstrikesharp/shared/BotHiderApi/BotHiderApi.dll";
+    const LA_DLL: &str =
+        "addons/counterstrikesharp/plugins/PlusMatchCoordinator/PlusMatchCoordinator.dll";
+
+    fn record_of(state: &Path) -> serde_json::Value {
+        let installations = state.join("installations");
+        let mut dirs: Vec<PathBuf> = fs::read_dir(&installations)
+            .unwrap()
+            .flatten()
+            .map(|entry| entry.path())
+            .collect();
+        dirs.sort();
+        serde_json::from_slice(&fs::read(dirs.pop().unwrap().join("record.json")).unwrap())
+            .unwrap()
+    }
+
+    #[test]
+    fn la_payload_source_three_branches() {
+        let _guard = app_storage::TEST_STATE_ENV_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+        let base = scratch("la-source");
+        let state = base.join("state");
+        let target = base.join("target");
+        fs::create_dir_all(&target).unwrap();
+        unsafe { std::env::set_var("CS2BI_STATE_ROOT", &state); }
+        let exe = exe_payload_root().unwrap();
+
+        // (1) No record at all: the exec-side payload is the source.
+        assert_eq!(la_payload_source(&target).unwrap(), exe);
+
+        // (2) A record whose LA row has no pointer: still the exec-side payload.
+        let upstream = payload_fixture(&base, "upstream", UPSTREAM_DLL, b"bothider", "shared", "1.4.3.3");
+        installer::install_component(&upstream, &state, &target, ComponentId::Upstream).unwrap();
+        assert_eq!(installer::component_path(&state, &target, ComponentId::LaPlugins), None);
+        assert_eq!(la_payload_source(&target).unwrap(), exe);
+
+        // (3) A pointer that no longer verifies is ignored instead of trusted.
+        let bogus = base.join("bogus");
+        fs::create_dir_all(&bogus).unwrap();
+        assert!(installer::set_component_path(&state, &target, ComponentId::LaPlugins, &bogus).unwrap());
+        assert_eq!(la_payload_source(&target).unwrap(), exe);
+
+        // (4) A pointer at a verified payload is the source.
+        let la = payload_fixture(&base, "la", LA_DLL, b"pmc", "plus", "1.4.4.0");
+        assert!(installer::set_component_path(&state, &target, ComponentId::LaPlugins, &la).unwrap());
+        assert_eq!(
+            la_payload_source(&target).unwrap(),
+            fs::canonicalize(&la).unwrap()
+        );
+
+        fs::remove_dir_all(&base).unwrap();
+        unsafe { std::env::remove_var("CS2BI_STATE_ROOT"); }
+    }
+
+    #[test]
+    fn task8_happy() {
+        // The pointer written by `prepare_plugin` survives the LA install that follows it: the
+        // record row keeps the path the download was extracted to.
+        let _guard = app_storage::TEST_STATE_ENV_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+        let base = scratch("task8-happy");
+        let state = base.join("state");
+        let target = base.join("target");
+        fs::create_dir_all(&target).unwrap();
+        unsafe { std::env::set_var("CS2BI_STATE_ROOT", &state); }
+
+        let upstream = payload_fixture(&base, "upstream", UPSTREAM_DLL, b"bothider", "shared", "1.4.3.3");
+        installer::install_component(&upstream, &state, &target, ComponentId::Upstream).unwrap();
+        let la = payload_fixture(&base, "la", LA_DLL, b"pmc", "plus", "1.4.4.0");
+        installer::set_component_path(&state, &target, ComponentId::LaPlugins, &la).unwrap();
+        let installed = installer::install_component(&la, &state, &target, ComponentId::LaPlugins).unwrap();
+
+        let pointer = installer::component_path(&state, &target, ComponentId::LaPlugins);
+        assert_eq!(pointer.as_deref(), Some(fs::canonicalize(&la).unwrap().to_str().unwrap()));
+        assert_eq!(
+            installer::component_version(&state, &target, ComponentId::LaPlugins).as_deref(),
+            Some("1.4.4.0")
+        );
+        assert_eq!(
+            la_payload_source(&target).unwrap(),
+            fs::canonicalize(&la).unwrap()
+        );
+        println!(
+            "task8_happy: files={} pointer={:?}",
+            installed.installed_files, pointer
+        );
+
+        fs::remove_dir_all(&base).unwrap();
+        unsafe { std::env::remove_var("CS2BI_STATE_ROOT"); }
+    }
+
+    #[test]
+    fn task8_failure() {
+        let _guard = app_storage::TEST_STATE_ENV_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+        let base = scratch("task8-failure");
+        let state = base.join("state");
+        let target = base.join("target");
+        fs::create_dir_all(&target).unwrap();
+        unsafe { std::env::set_var("CS2BI_STATE_ROOT", &state); }
+        let exe = exe_payload_root().unwrap();
+
+        // No record: the pointer cannot be written, and that is not an error — there is nothing
+        // installed to point at.
+        let la = payload_fixture(&base, "la", LA_DLL, b"pmc", "plus", "1.4.4.0");
+        assert!(!installer::set_component_path(&state, &target, ComponentId::LaPlugins, &la).unwrap());
+        assert_eq!(la_payload_source(&target).unwrap(), exe);
+
+        // A pointer whose payload was tampered with falls back instead of installing from it.
+        let upstream = payload_fixture(&base, "upstream", UPSTREAM_DLL, b"bothider", "shared", "1.4.3.3");
+        installer::install_component(&upstream, &state, &target, ComponentId::Upstream).unwrap();
+        installer::set_component_path(&state, &target, ComponentId::LaPlugins, &la).unwrap();
+        assert!(installer::verify_payload(&la).is_ok());
+        fs::write(la.join(LA_DLL), b"tampered").unwrap();
+        assert!(installer::verify_payload(&la).is_err());
+        assert_eq!(la_payload_source(&target).unwrap(), exe);
+        println!(
+            "task8_failure: pointer_without_record=false tampered_falls_back={}",
+            la_payload_source(&target).unwrap() == exe
+        );
+
+        fs::remove_dir_all(&base).unwrap();
+        unsafe { std::env::remove_var("CS2BI_STATE_ROOT"); }
+    }
+
+    #[test]
+    fn task8_manual_qa_dump() {
+        let _guard = app_storage::TEST_STATE_ENV_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+        let base = scratch("task8-qa");
+        let state = base.join("state");
+        let target = base.join("target");
+        fs::create_dir_all(&target).unwrap();
+        unsafe { std::env::set_var("CS2BI_STATE_ROOT", &state); }
+
+        let upstream = payload_fixture(&base, "upstream", UPSTREAM_DLL, b"bothider", "shared", "1.4.3.3");
+        installer::install_component(&upstream, &state, &target, ComponentId::Upstream).unwrap();
+        let la = payload_fixture(&base, "la", LA_DLL, b"pmc", "plus", "1.4.4.0");
+        installer::set_component_path(&state, &target, ComponentId::LaPlugins, &la).unwrap();
+        installer::install_component(&la, &state, &target, ComponentId::LaPlugins).unwrap();
+
+        let source = la_payload_source(&target).unwrap();
+        assert!(installer::verify_payload(&source).is_ok());
+        let artifact = serde_json::json!({
+            "la_payload_source": source.to_string_lossy(),
+            "record": record_of(&state),
+        });
+        let dump_path = std::env::var("QA_DUMP").ok();
+        match &dump_path {
+            Some(dump) => {
+                let bytes = serde_json::to_vec_pretty(&artifact).unwrap();
+                fs::write(dump, &bytes).unwrap();
+                println!(
+                    "task8_manual_qa_dump: wrote {} bytes to {} (source={})",
+                    bytes.len(),
+                    dump,
+                    source.display()
+                );
+            }
+            None => println!("task8_manual_qa_dump: QA_DUMP unset, skipped dump"),
+        }
+        // The QA harness verifies the pointed-at payload after this test returns, so the fixture
+        // stays on disk until it has done so and the harness removes it.
+        if dump_path.is_some() {
+            println!("task8_manual_qa_dump: fixture kept at {}", base.display());
+        } else {
+            fs::remove_dir_all(&base).unwrap();
+        }
+        unsafe { std::env::remove_var("CS2BI_STATE_ROOT"); }
+    }
 }
 
 pub fn run() {
@@ -4915,7 +5135,10 @@ pub fn run() {
                 let removed = logging::cleanup(&root).unwrap_or(0);
                 let archives_removed = diagnostics::cleanup_archives(&root).unwrap_or(0);
                 let update_cache_removed = online_update::cleanup_cache(None).unwrap_or(0);
-                logging::append(&root, "INFO", "panel.started", &format!("version={}, logs_collected={removed}, archives_collected={archives_removed}, update_cache_collected={update_cache_removed}", app_version::display()));
+                // The per-component record owns the LA payload pointer now; an older build's
+                // pointer file is deleted here and never parsed.
+                let legacy_pointer_removed = online_update::retire_legacy_active_payload().unwrap_or(false);
+                logging::append(&root, "INFO", "panel.started", &format!("version={}, logs_collected={removed}, archives_collected={archives_removed}, update_cache_collected={update_cache_removed}, legacy_pointer_removed={legacy_pointer_removed}", app_version::display()));
             }
             let update_app = app.handle().clone();
             tauri::async_runtime::spawn_blocking(move || {
