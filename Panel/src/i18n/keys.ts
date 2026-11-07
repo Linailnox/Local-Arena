@@ -1073,6 +1073,7 @@ export const EN = {
   "err.exportReady": "Diagnostics package ready",
   "err.exportFailed": "Export failed. Check the Panel logs for details",
   "err.copyPath": "Copy path",
+  "error.E1401": "The installation transaction failed and was rolled back.",
   "error.E1403": "A component file conflicts with a file already installed by another component. Uninstall the other component or move the conflicting file away, then retry.",
   "error.E1404": "The upstream component must be installed first, because the Local Arena plugin bundle needs its BotHiderApi.",
   // Per-category user-facing messages (chosen by AppError.category).

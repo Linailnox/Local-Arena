@@ -457,6 +457,7 @@ export const DICTS: Record<string, Partial18n> = {
     "install.installAll": "全部安装", "install.uninstallUpstream": "卸载上游组件", "install.uninstallLa": "卸载 Local Arena",
     "install.uninstallInventory": "卸载 InventorySimulator", "install.restoreAll": "恢复全部",
     "component.install": "安装", "component.update": "更新",
+    "error.E1401": "安装事务失败并已回滚。",
     "error.E1403": "该文件与其它组件已安装的文件内容不同，请先卸载另一个组件或移走冲突文件后重试",
     "error.E1404": "Local Arena 插件包需要上游组件提供的 BotHiderApi，请先安装上游组件",
     "update.panel": "面板", "update.plugin": "插件",

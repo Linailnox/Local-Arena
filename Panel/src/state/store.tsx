@@ -29,8 +29,8 @@ import {
   type TeamLineupInput,
   type InstallationInspection,
   type InstallPlan,
-  type InstallTransactionResult,
   type RestoreResult,
+  type UpdateResult,
   type DiagnosticReport,
 } from "../lib/api";
 
@@ -79,8 +79,8 @@ export type Store = {
   chooseDirectory: (path: string) => Promise<void>;
   getInstallPlan: () => Promise<InstallPlan | null>;
   verifyInstallation: () => Promise<InstallationInspection | null>;
-  installPayload: () => Promise<InstallTransactionResult | null>;
-  repairPayload: () => Promise<InstallTransactionResult | null>;
+  installPayload: () => Promise<UpdateResult[] | null>;
+  repairPayload: () => Promise<UpdateResult | null>;
   restorePayload: () => Promise<RestoreResult | null>;
   restorePristineCs2: () => Promise<RestoreResult | null>;
   exportDiagnostics: () => Promise<DiagnosticReport | null>;
@@ -545,18 +545,30 @@ setNadesPending(false);
     }
   }, [directory, reportError]);
 
-  const runInstallAction = useCallback(async (action: "install" | "repair") => {
+  // Backend `install_payload`/`repair_payload` commands were replaced by per-component
+  // commands (todo 9). installPayload now delegates to `install_all_components` (batch
+  // install-all semantics, todo 11 renames the button to 「全部安装」); repairPayload
+  // delegates to `repair_component` for the upstream component. Both are bridges until
+  // todo 11 rewires the install/repair buttons.
+  const installPayload = useCallback(async () => {
     const csgo = directory?.valid ? directory.selected : null;
     if (!csgo) return null;
     try {
-      const result = action === "install" ? await api.installPayload(csgo) : await api.repairPayload(csgo);
+      const result = await api.installAllComponents(csgo);
       await refreshAll();
       return result;
     } catch (e) { reportError(e); return null; }
   }, [directory, refreshAll, reportError]);
 
-  const installPayload = useCallback(() => runInstallAction("install"), [runInstallAction]);
-  const repairPayload = useCallback(() => runInstallAction("repair"), [runInstallAction]);
+  const repairPayload = useCallback(async () => {
+    const csgo = directory?.valid ? directory.selected : null;
+    if (!csgo) return null;
+    try {
+      const result = await api.repairComponent(csgo, "upstream");
+      await refreshAll();
+      return result;
+    } catch (e) { reportError(e); return null; }
+  }, [directory, refreshAll, reportError]);
 
   const restorePayload = useCallback(async () => {
     const csgo = directory?.valid ? directory.selected : null;

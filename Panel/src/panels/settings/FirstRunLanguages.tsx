@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { CheckCircle2, FolderSearch, RefreshCw, ShieldCheck, Stethoscope } from "lucide-react";
 import { useStore } from "../../state/store";
 import { LANGUAGES } from "../../data/languages";
+import { api } from "../../lib/api";
 import { useT, type I18nKey } from "../../i18n";
 import type { InstallationSource, InstallPlan, MigrationKind } from "../../lib/api";
 import StatusDot from "../../components/StatusDot";
@@ -41,7 +42,7 @@ const ACTION_KEYS: Record<MigrationKind, I18nKey> = {
 export default function FirstRunLanguages() {
   const {
     config, directory, process, updateConfig, chooseDirectory, getInstallPlan,
-    installPayload, exportDiagnostics, refreshProcess, reportError,
+    exportDiagnostics, refreshProcess, reportError,
   } = useStore();
   const t = useT();
   const saved = config?.first_run_step;
@@ -93,15 +94,15 @@ export default function FirstRunLanguages() {
     if (working) return;
     setWorking(true);
     try {
-      const result = await installPayload();
-      if (result) {
-        const showStory = result.welcome_story_eligible && !config?.welcome_story_prompt_presented;
-        const saved = await updateConfig({
-          first_run_step: "complete",
-          ...(showStory ? { welcome_story_prompt_presented: true } : {}),
-        });
+      const selected = directory?.selected ?? null;
+      if (!selected) return;
+      const results = await api.installAllComponents(selected);
+      if (results) {
+        // install_all_components returns a batch result; the welcome story is no longer
+        // gated on a per-install flag here (todo 9 replaced install_payload).
+        const saved = await updateConfig({ first_run_step: "complete" });
         setStep("complete");
-        if (showStory && saved) setStoryOpen(true);
+        if (saved) setStoryOpen(false);
       }
     } finally { setWorking(false); }
   };

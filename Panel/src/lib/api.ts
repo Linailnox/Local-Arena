@@ -522,14 +522,14 @@ export type OnlineUpdateSnapshot = {
 };
 
 export type UpdateProgress = {
-  component: "panel" | "la_plugins" | "inventory_simulator";
+  component: "panel" | "la_plugins" | "inventory_simulator" | "upstream";
   stage: string;
   downloaded_bytes: number;
   total_bytes: number;
 };
 
 export type UpdateResult = {
-  component: "panel" | "la_plugins" | "inventory_simulator";
+  component: "panel" | "la_plugins" | "inventory_simulator" | "upstream";
   version: string;
   installed: boolean;
   restart_required: boolean;
@@ -858,10 +858,16 @@ export const api = {
   inspectInstallation: (csgo: string) =>
     invoke<InstallationInspection>("inspect_installation", { csgo }),
   getInstallPlan: (csgo: string) => invoke<InstallPlan>("get_install_plan", { csgo }),
-  installPayload: (csgo: string) =>
-    invoke<InstallTransactionResult>("install_payload", { csgo }),
-  repairPayload: (csgo: string) =>
-    invoke<InstallTransactionResult>("repair_payload", { csgo }),
+  installComponent: (csgo: string, component: string) =>
+    invoke<UpdateResult>("install_component_by_id", { csgo, component_id: component }),
+  repairComponent: (csgo: string, component: string) =>
+    invoke<UpdateResult>("repair_component", { csgo, component_id: component }),
+  uninstallComponent: (csgo: string, component: string) =>
+    invoke<RestoreResult>("uninstall_component", { csgo, component_id: component }),
+  installAllComponents: (csgo: string) =>
+    invoke<UpdateResult[]>("install_all_components", { csgo }),
+  restoreAllComponents: (csgo: string) =>
+    invoke<RestoreResult>("restore_all_components", { csgo }),
   restorePayload: (csgo: string) => invoke<RestoreResult>("restore_payload", { csgo }),
   restorePristineCs2: (csgo: string) => invoke<RestoreResult>("restore_pristine_cs2", { csgo }),
   exportDiagnostics: (csgo: string | null) =>
@@ -870,8 +876,6 @@ export const api = {
   checkOnlineUpdates: (force: boolean) =>
     invoke<OnlineUpdateSnapshot>("check_online_updates", { force }),
   installPanelUpdate: () => invoke<UpdateResult>("install_panel_update"),
-  installPluginUpdate: (csgo: string) =>
-    invoke<UpdateResult>("install_plugin_update", { csgo }),
   installLaPluginBundle: (csgo: string) =>
     invoke<UpdateResult>("install_la_plugin_bundle", { csgo }),
   installAllUpdates: (csgo: string | null) =>
