@@ -332,7 +332,12 @@ fn stage_and_install(
     // One locked, journalled transaction installs every manifest entry — payload files and
     // the marker — into the game directory and merges the install record. It never touches
     // `active-payload.json`, which belongs to full-package installs.
-    crate::installer::install_component(&staging_dir, &state_root, root, OWNERSHIP)?;
+    crate::installer::install_component(
+        &staging_dir,
+        &state_root,
+        root,
+        crate::installer::ComponentId::InventorySimulator,
+    )?;
     Ok(())
 }
 

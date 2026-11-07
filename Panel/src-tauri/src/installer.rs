@@ -2,7 +2,7 @@ use crate::{AppError, Result, atomic_fs, mode_layout};
 use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
@@ -1110,9 +1110,35 @@ pub fn install(
     install_manifest(&manifest, payload_root, state_root, target, repaired, None)
 }
 
-/// Installs only the manifest entries whose `ownership` matches `ownership_filter` (`"plus"` is
-/// the Local Arena plugin bundle) through the same locked, journalled, record-merging transaction
-/// as [`install`].
+/// The ownership class a component's payload entries carry: the upstream payload is `shared`,
+/// the Local Arena bundle is `plus`, and InventorySimulator is the third-party class.
+fn component_ownership(component: ComponentId) -> &'static str {
+    match component {
+        ComponentId::Upstream => "shared",
+        ComponentId::LaPlugins => "plus",
+        ComponentId::InventorySimulator => "third-party",
+    }
+}
+
+/// The managed component an install-record entry's `ownership` class belongs to.
+fn component_of_ownership(ownership: &str) -> Option<ComponentId> {
+    match ownership {
+        "shared" => Some(ComponentId::Upstream),
+        "plus" => Some(ComponentId::LaPlugins),
+        "third-party" => Some(ComponentId::InventorySimulator),
+        _ => None,
+    }
+}
+
+/// Installs one component: the manifest entries whose `ownership` class belongs to
+/// `component_id` go through the same locked, journalled, record-merging transaction as
+/// [`install`], and the commit records `record.components[component_id]`.
+///
+/// Before any write the transaction runs [`preflight_component_conflicts`], which fails with
+/// E1403 when a payload path would overwrite a file that belongs to another component (or to no
+/// managed component) with different bytes, and with E1404 when the Local Arena bundle is
+/// installed without the upstream `BotHiderApi.dll` it links against. Both failures leave the
+/// target untouched.
 ///
 /// The install record stays one file per target: entries already recorded for other owners are
 /// carried over untouched and the component's entries are merged into them. Identical files are
@@ -1123,25 +1149,11 @@ pub fn install_component(
     payload_root: &Path,
     state_root: &Path,
     target: &Path,
-    ownership_filter: &str,
+    component_id: ComponentId,
 ) -> Result<InstallTransactionResult> {
     let _transaction_lock = acquire_transaction_lock(target)?;
     recover_incomplete_locked(state_root, target)?;
-    let manifest = read_manifest_for_target(payload_root, target)?;
-    let filtered = PayloadManifest {
-        schema_version: manifest.schema_version,
-        package_version: manifest.package_version.clone(),
-        entries: manifest
-            .entries
-            .into_iter()
-            .filter(|entry| entry.ownership == ownership_filter)
-            .collect(),
-    };
-    if filtered.entries.is_empty() {
-        return Err(AppError::payload(
-            "Component has no owned files in this payload",
-        ));
-    }
+    let filtered = preflight_component_conflicts(payload_root, state_root, target, component_id)?;
     // `repaired` selects the skip-identical branch, which is what an incremental component
     // install needs: only missing or differing files are replaced.
     let mut result = install_manifest(
@@ -1150,27 +1162,105 @@ pub fn install_component(
         state_root,
         target,
         true,
-        Some(ownership_filter),
+        Some(component_id),
     )?;
     // A single component is never the full-package first install the welcome story narrates.
     result.welcome_story_eligible = false;
     Ok(result)
 }
 
-/// Installs the Local Arena plugin bundle after its dependency preflight (the managed
-/// `BotHiderApi.dll` supplied by the upstream bundle). The requirements come from
-/// [`crate::component_registry::LA_PLUGIN_BUNDLE`] itself, so the descriptor stays the single
-/// source of truth and cannot drift from the preflight the bundle enforces.
+/// Pre-write gate for one component install: resolves the manifest subset this component owns,
+/// checks its dependency on the upstream bundle, and refuses any path that would silently
+/// overwrite a file another component already owns.
+///
+/// A path already registered under the CURRENT component is a normal component update and is
+/// excluded from the target-file comparison. Conflict paths are listed one per line as
+/// `path: <relative path>` so the error modal can render them as a list. The filtered manifest
+/// is returned so the transaction does not read and verify the same payload twice.
+pub fn preflight_component_conflicts(
+    payload_root: &Path,
+    state_root: &Path,
+    target: &Path,
+    component_id: ComponentId,
+) -> Result<PayloadManifest> {
+    let manifest = read_manifest_for_target(payload_root, target)?;
+    let ownership = component_ownership(component_id);
+    let filtered = PayloadManifest {
+        schema_version: manifest.schema_version,
+        package_version: manifest.package_version,
+        entries: manifest
+            .entries
+            .into_iter()
+            .filter(|entry| entry.ownership == ownership)
+            .collect(),
+    };
+    if filtered.entries.is_empty() {
+        return Err(AppError::payload(
+            "Component has no owned files in this payload",
+        ));
+    }
+    // The LA bundle links against the upstream-managed BotHiderApi; the requirement list comes
+    // from the compiled-in descriptor, so this gate cannot drift from it (E1404, not the generic
+    // transaction code `<check_requirements>` reports on its own).
+    if component_id == ComponentId::LaPlugins {
+        crate::component_registry::check_requirements(
+            target,
+            crate::component_registry::LA_PLUGIN_BUNDLE.requires,
+        )
+        .map_err(|error| AppError::new("E1404", "installation", error.detail))?;
+    }
+
+    let directory = installation_dir(state_root, target);
+    let registered_current: BTreeSet<String> = read_record(&directory)
+        .map(|record| {
+            record
+                .entries
+                .into_iter()
+                .filter(|entry| component_of_ownership(&entry.ownership) == Some(component_id))
+                .map(|entry| entry.path)
+                .collect()
+        })
+        .unwrap_or_default();
+    let mut conflicts = Vec::new();
+    for entry in &filtered.entries {
+        if registered_current.contains(&entry.path) {
+            continue;
+        }
+        let destination = target.join(safe_relative(&entry.path)?);
+        if !destination.is_file() {
+            continue;
+        }
+        if !sha256(&destination)?.eq_ignore_ascii_case(&entry.sha256) {
+            conflicts.push(entry.path.clone());
+        }
+    }
+    if !conflicts.is_empty() {
+        let detail = conflicts
+            .iter()
+            .map(|path| format!("path: {path}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        return Err(AppError::new(
+            "E1403",
+            "installation",
+            format!(
+                "These files are already installed by another component with different content; repair or remove that component first:\n{detail}"
+            ),
+        ));
+    }
+    Ok(filtered)
+}
+
+/// Installs the Local Arena plugin bundle. Its dependency on the upstream-managed
+/// `BotHiderApi.dll` is enforced by [`preflight_component_conflicts`] from
+/// [`crate::component_registry::LA_PLUGIN_BUNDLE`] itself, so this wrapper only names the
+/// component and cannot drift from the registry the bundle enforces.
 pub fn install_la_plugins_component(
     payload_root: &Path,
     state_root: &Path,
     target: &Path,
 ) -> Result<InstallTransactionResult> {
-    crate::component_registry::check_requirements(
-        target,
-        crate::component_registry::LA_PLUGIN_BUNDLE.requires,
-    )?;
-    install_component(payload_root, state_root, target, "plus")
+    install_component(payload_root, state_root, target, ComponentId::LaPlugins)
 }
 
 /// `package_version` a `plus` component install records.
@@ -1198,17 +1288,18 @@ fn plus_component_package_version(
 /// Transaction body shared by [`install`] and [`install_component`]. Callers hold the target
 /// transaction lock and have already recovered any interrupted transaction.
 ///
-/// `component_ownership` marks a subset install: its entries belong to one ownership class
-/// (`"plus"` for the LA bundle card, `"third-party"` for InventorySimulator) and merge into the
-/// existing record. `None` is a full-payload install. The recorded `package_version` follows
-/// that ownership class — see the record write at the end of the transaction.
+/// `component` marks a subset install: its entries belong to that component's ownership class
+/// (`plus` for the LA bundle card, `third-party` for InventorySimulator, `shared` for upstream)
+/// and merge into the existing record, which gains `record.components[component]`. `None` is a
+/// full-payload install. The recorded `package_version` follows that ownership class — see the
+/// record write at the end of the transaction.
 fn install_manifest(
     manifest: &PayloadManifest,
     payload_root: &Path,
     state_root: &Path,
     target: &Path,
     repaired: bool,
-    component_ownership: Option<&str>,
+    component: Option<ComponentId>,
 ) -> Result<InstallTransactionResult> {
     let detection = detect_source(state_root, target);
     if !detection.can_install {
@@ -1442,37 +1533,64 @@ fn install_manifest(
         return Err(rollback_error.or(record_error).unwrap_or(error));
     }
 
+    // `package_version` is the suite version `installed_plugin_version` reports and update
+    // detection parses. A full-payload install sets it from its own manifest. A component
+    // install depends on which ownership it carries:
+    //
+    // * `plus` is the LA bundle card's path, so the freshly installed bundle's version must be
+    //   recorded — preserving the previous one would leave detection at the old version and the
+    //   card offering the same update forever. Only a downgrade is refused: the bundle can
+    //   install from a local payload that predates the last online update, and recording that
+    //   older version would roll update detection backwards.
+    // * a third-party component (InventorySimulator) never speaks for the suite. Its tag
+    //   ("3.7.0") would break the four-part version parse, so an existing suite record keeps
+    //   its version. With no suite record the component's manifest version is the only version
+    //   there is; merging `plus` entries into such a record later replaces it (see
+    //   `is_suite_record`).
+    let package_version = match component {
+        None => manifest.package_version.clone(),
+        Some(ComponentId::LaPlugins) => {
+            plus_component_package_version(old_record.as_ref(), &manifest.package_version)
+        }
+        Some(_) => old_record
+            .as_ref()
+            .filter(|previous| is_suite_record(previous))
+            .map_or_else(
+                || manifest.package_version.clone(),
+                |previous| previous.package_version.clone(),
+            ),
+    };
+    // Per-component view: carry forward what earlier installs recorded — `old_record` has already
+    // been migrated by `read_record`, so a legacy v1 record's freshly mapped components survive
+    // this write — and record this component's own version. The LA row keeps the downgrade
+    // guard's answer so the component view can never claim a version the suite record refused;
+    // every other component records its own payload version (a third-party tag such as "3.7.0"
+    // is correct for its own row, never for the suite).
+    let mut components = old_record
+        .as_ref()
+        .map(|record| record.components.clone())
+        .unwrap_or_default();
+    if let Some(component_id) = component {
+        let version = match component_id {
+            ComponentId::LaPlugins => package_version.clone(),
+            _ => manifest.package_version.clone(),
+        };
+        components.insert(
+            component_id,
+            ComponentRecord {
+                version,
+                source: "component_install".to_string(),
+                installed_at: unix_time(),
+                ownership: component_ownership(component_id).to_string(),
+                path: None,
+            },
+        );
+    }
     let record = InstallRecord {
         schema_version: 2,
         installation_id: installation_id(target),
         target: target.to_string_lossy().into_owned(),
-        // `package_version` is the suite version `installed_plugin_version` reports and update
-        // detection parses. A full-payload install sets it from its own manifest. A component
-        // install depends on which ownership it carries:
-        //
-        // * `"plus"` is the LA bundle card's path, so the freshly installed bundle's version must
-        //   be recorded — preserving the previous one would leave detection at the old version and
-        //   the card offering the same update forever. Only a downgrade is refused: the bundle can
-        //   install from a local payload that predates the last online update, and recording that
-        //   older version would roll update detection backwards.
-        // * a third-party component (InventorySimulator) never speaks for the suite. Its tag
-        //   ("3.7.0") would break the four-part version parse, so an existing suite record keeps
-        //   its version. With no suite record the component's manifest version is the only version
-        //   there is; merging `plus` entries into such a record later replaces it (see
-        //   `is_suite_record`).
-        package_version: match component_ownership {
-            None => manifest.package_version.clone(),
-            Some("plus") => {
-                plus_component_package_version(old_record.as_ref(), &manifest.package_version)
-            }
-            Some(_) => old_record
-                .as_ref()
-                .filter(|previous| is_suite_record(previous))
-                .map_or_else(
-                    || manifest.package_version.clone(),
-                    |previous| previous.package_version.clone(),
-                ),
-        },
+        package_version,
         installed_at: unix_time(),
         source: old_record
             .as_ref()
@@ -1484,13 +1602,7 @@ fn install_manifest(
             .as_ref()
             .and_then(|record| record.migrated_from_version.clone())
             .or(detection.version),
-        // Carry the per-component view forward. `old_record` has already been migrated by
-        // `read_record`, so a legacy v1 record's freshly mapped components survive this write;
-        // component installs (plan todos 3 & 4) can extend them without being clobbered.
-        components: old_record
-            .as_ref()
-            .map(|record| record.components.clone())
-            .unwrap_or_default(),
+        components,
         entries: record_entries.into_values().collect(),
     };
     write_json_atomic(&directory.join("record.json"), &record)?;
@@ -2669,7 +2781,7 @@ mod tests {
 
         // The component payload adds the plus half to the same manifest.
         component_payload(&payload, true);
-        let result = install_component(&payload, &state, &target, "plus").unwrap();
+        let result = install_component(&payload, &state, &target, ComponentId::LaPlugins).unwrap();
 
         assert_eq!(result.installed_files, 2);
         assert_eq!(result.package_version, "1.4.3.3");
@@ -2723,7 +2835,7 @@ mod tests {
         fs::create_dir_all(&target).unwrap();
         component_payload(&payload, false);
 
-        let error = install_component(&payload, &state, &target, "plus").unwrap_err();
+        let error = install_component(&payload, &state, &target, ComponentId::LaPlugins).unwrap_err();
 
         assert_eq!(error.code, "E1301");
         assert!(error.detail.contains("no owned files"), "{}", error.detail);
@@ -2743,7 +2855,7 @@ mod tests {
 
         let error = install_la_plugins_component(&payload, &state, &target).unwrap_err();
 
-        assert_eq!(error.code, "E1401");
+        assert_eq!(error.code, "E1404");
         assert!(error.detail.contains("BotHiderApi"), "{}", error.detail);
         assert!(fs::read_dir(&target).unwrap().next().is_none());
 
@@ -2770,13 +2882,18 @@ mod tests {
         let state = base.join("state");
         fs::create_dir_all(&target).unwrap();
         component_payload(&payload, true);
+        // The LA bundle installs only once the upstream-managed BotHiderApi is present; write it
+        // unregistered here so the record this test inspects still holds only the plus entries.
+        let dll = owned_target(&target, COMPONENT_SHARED[1]);
+        fs::create_dir_all(dll.parent().unwrap()).unwrap();
+        fs::write(&dll, b"shared-bothider-api").unwrap();
 
-        let first = install_component(&payload, &state, &target, "plus").unwrap();
+        let first = install_component(&payload, &state, &target, ComponentId::LaPlugins).unwrap();
         assert_eq!(first.installed_files, 2);
         let plus = owned_target(&target, COMPONENT_PLUS[0]);
         let installed_sha = sha256(&plus).unwrap();
 
-        let second = install_component(&payload, &state, &target, "plus").unwrap();
+        let second = install_component(&payload, &state, &target, ComponentId::LaPlugins).unwrap();
 
         assert_eq!(second.installed_files, 0);
         assert_eq!(sha256(&plus).unwrap(), installed_sha);
@@ -2826,7 +2943,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = install_component(&payload, &state, &target, "plus").unwrap();
+        let result = install_component(&payload, &state, &target, ComponentId::LaPlugins).unwrap();
 
         assert_eq!(result.installed_files, 2);
         assert_eq!(fs::read(&shared).unwrap(), b"steam-original");
@@ -2845,7 +2962,7 @@ mod tests {
         install(&payload, &state, &target, false).unwrap();
         third_party_payload(&payload);
 
-        let result = install_component(&payload, &state, &target, "third-party").unwrap();
+        let result = install_component(&payload, &state, &target, ComponentId::InventorySimulator).unwrap();
 
         // The transaction installed the component's tag ...
         assert_eq!(result.package_version, "3.7.0");
@@ -2869,7 +2986,7 @@ mod tests {
         fixture(&payload, &target);
         install(&payload, &state, &target, false).unwrap();
         third_party_payload(&payload);
-        install_component(&payload, &state, &target, "third-party").unwrap();
+        install_component(&payload, &state, &target, ComponentId::InventorySimulator).unwrap();
         let third_party = owned_target(&target, THIRD_PARTY);
 
         let result = restore(&payload, &state, &target).unwrap();
@@ -2891,7 +3008,7 @@ mod tests {
         let state = base.join("state");
         fs::create_dir_all(&target).unwrap();
         third_party_payload(&payload);
-        install_component(&payload, &state, &target, "third-party").unwrap();
+        install_component(&payload, &state, &target, ComponentId::InventorySimulator).unwrap();
 
         // The component install wrote the only record there is, carrying its own tag.
         let record = read_record(&installation_dir(&state, &target)).unwrap();
@@ -2928,13 +3045,19 @@ mod tests {
         // The InventorySimulator card installs first on a machine without a suite record, so the
         // record that exists is third-party-only and carries that component's release tag.
         third_party_payload(&payload);
-        install_component(&payload, &state, &target, "third-party").unwrap();
+        install_component(&payload, &state, &target, ComponentId::InventorySimulator).unwrap();
         let directory = installation_dir(&state, &target);
         assert_eq!(read_record(&directory).unwrap().package_version, "3.7.0");
 
+        // The machine already carries the upstream-managed DLL the bundle links against (a
+        // legacy suite without a record): the dependency gate requires the file, not a record.
+        let dll = owned_target(&target, COMPONENT_SHARED[1]);
+        fs::create_dir_all(dll.parent().unwrap()).unwrap();
+        fs::write(&dll, b"shared-bothider-api").unwrap();
+
         // The LA bundle card then merges its `plus` subset into that same record.
         component_payload(&payload, true);
-        install_component(&payload, &state, &target, "plus").unwrap();
+        install_component(&payload, &state, &target, ComponentId::LaPlugins).unwrap();
 
         // The record now speaks for the suite, so it must report the bundle's version, not the
         // third-party tag it happened to inherit. A four-part parse of "3.7.0" would silently
@@ -2975,12 +3098,16 @@ mod tests {
         let state = base.join("state");
         fixture(&payload, &target);
         install(&payload, &state, &target, false).unwrap();
+        // The upstream half of a real suite install supplies the DLL the bundle links against.
+        let dll = owned_target(&target, COMPONENT_SHARED[1]);
+        fs::create_dir_all(dll.parent().unwrap()).unwrap();
+        fs::write(&dll, b"shared-bothider-api").unwrap();
 
         // The bundle card installs through this path, so the newly installed bundle's version is
         // the one update detection must report; keeping the older suite version would leave the
         // card offering the same update forever.
         component_payload(&payload, true);
-        install_component(&payload, &state, &target, "plus").unwrap();
+        install_component(&payload, &state, &target, ComponentId::LaPlugins).unwrap();
 
         let record = read_record(&installation_dir(&state, &target)).unwrap();
         assert_eq!(record.package_version, "1.4.3.3");
@@ -3008,7 +3135,7 @@ mod tests {
         // detection backwards, so the record keeps the newer suite version.
         component_payload(&payload, true);
         set_manifest_version(&payload, "1.4.2.4");
-        install_component(&payload, &state, &target, "plus").unwrap();
+        install_component(&payload, &state, &target, ComponentId::LaPlugins).unwrap();
 
         let record = read_record(&installation_dir(&state, &target)).unwrap();
         assert_eq!(record.package_version, "1.4.3.3");
@@ -3061,9 +3188,13 @@ mod tests {
         let state = base.join("state");
         fs::create_dir_all(&target).unwrap();
         third_party_payload(&payload);
-        install_component(&payload, &state, &target, "third-party").unwrap();
+        install_component(&payload, &state, &target, ComponentId::InventorySimulator).unwrap();
+        // The bundle's dependency gate requires the upstream-managed DLL on target.
+        let dll = owned_target(&target, COMPONENT_SHARED[1]);
+        fs::create_dir_all(dll.parent().unwrap()).unwrap();
+        fs::write(&dll, b"shared-bothider-api").unwrap();
         component_payload(&payload, true);
-        install_component(&payload, &state, &target, "plus").unwrap();
+        install_component(&payload, &state, &target, ComponentId::LaPlugins).unwrap();
         let directory = installation_dir(&state, &target);
         assert!(is_suite_record(&read_record(&directory).unwrap()));
 
@@ -3382,6 +3513,417 @@ mod tests {
             println!("task1_manual_qa_dump: wrote {} bytes to {}", bytes.len(), dump);
         } else {
             println!("task1_manual_qa_dump: QA_DUMP unset, skipped dump");
+        }
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    /// The LA half of a component payload rewritten with new bytes and a new manifest version.
+    fn versioned_component_payload(
+        payload: &Path,
+        version: &str,
+        plus_bytes: (&[u8], &[u8]),
+    ) -> PayloadManifest {
+        let mut manifest = PayloadManifest {
+            schema_version: 1,
+            package_version: version.to_string(),
+            entries: Vec::new(),
+        };
+        write_owned_entry(
+            payload,
+            &mut manifest,
+            COMPONENT_SHARED[0],
+            b"shared-bot-ai",
+            "shared",
+        );
+        write_owned_entry(
+            payload,
+            &mut manifest,
+            COMPONENT_SHARED[1],
+            b"shared-bothider-api",
+            "shared",
+        );
+        write_owned_entry(payload, &mut manifest, COMPONENT_PLUS[0], plus_bytes.0, "plus");
+        write_owned_entry(payload, &mut manifest, COMPONENT_PLUS[1], plus_bytes.1, "plus");
+        write_json_atomic(&payload.join(MANIFEST_FILE), &manifest).unwrap();
+        manifest
+    }
+
+    fn collect_files(root: &Path, out: &mut Vec<PathBuf>) {
+        for entry in fs::read_dir(root).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                collect_files(&path, out);
+            } else {
+                out.push(path);
+            }
+        }
+    }
+
+    /// Every target file with its sha256 — the "target unchanged" witness for aborted installs.
+    fn snapshot_target(root: &Path) -> BTreeMap<String, String> {
+        let mut files = Vec::new();
+        collect_files(root, &mut files);
+        files
+            .into_iter()
+            .map(|file| {
+                let relative = file
+                    .strip_prefix(root)
+                    .unwrap()
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                (relative, sha256(&file).unwrap())
+            })
+            .collect()
+    }
+
+    #[test]
+    fn conflict_aborts_before_any_write() {
+        // (a) An existing file nobody registered already occupies a payload path.
+        let base = root("component-conflict-unmanaged");
+        let payload = base.join("payload");
+        let target = base.join("target");
+        let state = base.join("state");
+        fs::create_dir_all(&target).unwrap();
+        third_party_payload(&payload);
+        let foreign = owned_target(&target, THIRD_PARTY);
+        fs::create_dir_all(foreign.parent().unwrap()).unwrap();
+        fs::write(&foreign, b"another-plugin-build").unwrap();
+        let before = snapshot_target(&target);
+
+        let error = install_component(&payload, &state, &target, ComponentId::InventorySimulator)
+            .unwrap_err();
+
+        assert_eq!(error.code, "E1403");
+        assert_eq!(error.category, "installation");
+        let listed: Vec<&str> = error
+            .detail
+            .lines()
+            .filter(|line| line.starts_with("path: "))
+            .collect();
+        assert_eq!(listed, vec![format!("path: {THIRD_PARTY}")]);
+        // mid-operation interrupts: a refused install writes nothing at all.
+        assert_eq!(snapshot_target(&target), before);
+        assert!(!installation_dir(&state, &target).exists());
+        assert_no_temp_files(&target);
+        fs::remove_dir_all(base).unwrap();
+
+        // (b) A path recorded under ANOTHER component conflicts even with the dependency present.
+        let base = root("component-conflict-other-component");
+        let payload = base.join("payload");
+        let target = base.join("target");
+        let state = base.join("state");
+        fs::create_dir_all(&target).unwrap();
+        let dll = owned_target(&target, COMPONENT_SHARED[1]);
+        fs::create_dir_all(dll.parent().unwrap()).unwrap();
+        fs::write(&dll, b"shared-bothider-api").unwrap();
+        third_party_payload(&payload);
+        install_component(&payload, &state, &target, ComponentId::InventorySimulator).unwrap();
+        let directory = installation_dir(&state, &target);
+        let third_party_sha = sha256(&owned_target(&target, THIRD_PARTY)).unwrap();
+
+        versioned_component_payload(
+            &payload,
+            "1.4.3.3",
+            (b"plus-match-coordinator", b"plus-team-lineup-injector"),
+        );
+        let mut manifest = read_manifest_document(&payload).unwrap();
+        write_owned_entry(
+            &payload,
+            &mut manifest,
+            THIRD_PARTY,
+            b"la-owned-collision",
+            "plus",
+        );
+        write_json_atomic(&payload.join(MANIFEST_FILE), &manifest).unwrap();
+        let record_before = fs::read(directory.join("record.json")).unwrap();
+        let before = snapshot_target(&target);
+
+        let error =
+            install_component(&payload, &state, &target, ComponentId::LaPlugins).unwrap_err();
+
+        assert_eq!(error.code, "E1403");
+        let listed: Vec<&str> = error
+            .detail
+            .lines()
+            .filter(|line| line.starts_with("path: "))
+            .collect();
+        assert_eq!(listed, vec![format!("path: {THIRD_PARTY}")]);
+        assert_eq!(snapshot_target(&target), before);
+        assert_eq!(fs::read(directory.join("record.json")).unwrap(), record_before);
+        assert_eq!(sha256(&owned_target(&target, THIRD_PARTY)).unwrap(), third_party_sha);
+        assert!(!owned_target(&target, COMPONENT_PLUS[0]).exists());
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn update_la_plugins_v1_to_v2_succeeds() {
+        let base = root("component-la-update");
+        let payload = base.join("payload");
+        let target = base.join("target");
+        let state = base.join("state");
+        fs::create_dir_all(&target).unwrap();
+        let dll = owned_target(&target, COMPONENT_SHARED[1]);
+        fs::create_dir_all(dll.parent().unwrap()).unwrap();
+        fs::write(&dll, b"shared-bothider-api").unwrap();
+
+        versioned_component_payload(&payload, "1.4.3.3", (b"pmc-v1", b"tli-v1"));
+        let first = install_component(&payload, &state, &target, ComponentId::LaPlugins).unwrap();
+        assert_eq!(first.installed_files, 2);
+        assert_eq!(
+            fs::read(owned_target(&target, COMPONENT_PLUS[0])).unwrap(),
+            b"pmc-v1"
+        );
+
+        // Same component, new bytes and a new version: a normal update, never a conflict.
+        versioned_component_payload(&payload, "1.4.4.0", (b"pmc-v2-longer", b"tli-v2-longer"));
+        let second = install_component(&payload, &state, &target, ComponentId::LaPlugins).unwrap();
+
+        assert_eq!(second.installed_files, 2);
+        assert_eq!(
+            fs::read(owned_target(&target, COMPONENT_PLUS[0])).unwrap(),
+            b"pmc-v2-longer"
+        );
+        assert_eq!(
+            fs::read(owned_target(&target, COMPONENT_PLUS[1])).unwrap(),
+            b"tli-v2-longer"
+        );
+        let directory = installation_dir(&state, &target);
+        let record = read_record(&directory).unwrap();
+        assert_eq!(record.package_version, "1.4.4.0");
+        assert_eq!(record.components.len(), 1);
+        let la = record.components.get(&ComponentId::LaPlugins).unwrap();
+        assert_eq!(la.version, "1.4.4.0");
+        assert_eq!(la.ownership, "plus");
+        // misleading_success_output: the bytes on disk must say the same.
+        let doc = read_record_document(&directory);
+        assert_eq!(
+            doc["components"]["la_plugins"]["version"].as_str(),
+            Some("1.4.4.0")
+        );
+        assert!(!directory.join("journal.json").exists());
+        assert_no_temp_files(&directory);
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn missing_dependency_reports_E1404() {
+        let base = root("component-missing-dependency");
+        let payload = base.join("payload");
+        let target = base.join("target");
+        let state = base.join("state");
+        fs::create_dir_all(&target).unwrap();
+        component_payload(&payload, true);
+
+        let error =
+            install_component(&payload, &state, &target, ComponentId::LaPlugins).unwrap_err();
+
+        assert_eq!(error.code, "E1404");
+        assert_eq!(error.category, "installation");
+        assert!(error.detail.contains("BotHiderApi"), "{}", error.detail);
+        assert!(fs::read_dir(&target).unwrap().next().is_none());
+        assert!(!installation_dir(&state, &target).exists());
+
+        // Once the upstream component supplies the DLL, the same install succeeds.
+        let dll = owned_target(&target, COMPONENT_SHARED[1]);
+        fs::create_dir_all(dll.parent().unwrap()).unwrap();
+        fs::write(&dll, b"shared-bothider-api").unwrap();
+        let result = install_component(&payload, &state, &target, ComponentId::LaPlugins).unwrap();
+        assert_eq!(result.installed_files, 2);
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn each_component_install_records_its_own_version() {
+        let base = root("component-versions");
+        let payload = base.join("payload");
+        let target = base.join("target");
+        let state = base.join("state");
+        fs::create_dir_all(&target).unwrap();
+        let directory = installation_dir(&state, &target);
+
+        // upstream: only the upstream row, holding the upstream payload's version.
+        component_payload(&payload, false);
+        install_component(&payload, &state, &target, ComponentId::Upstream).unwrap();
+        let record = read_record(&directory).unwrap();
+        assert_eq!(record.components.len(), 1);
+        assert_eq!(
+            record.components.get(&ComponentId::Upstream).unwrap().version,
+            "1.4.3.3"
+        );
+        assert!(!record.components.contains_key(&ComponentId::LaPlugins));
+
+        // la_plugins: its own row is added, the upstream row is carried over untouched.
+        versioned_component_payload(&payload, "1.4.4.0", (b"pmc", b"tli"));
+        install_component(&payload, &state, &target, ComponentId::LaPlugins).unwrap();
+        let record = read_record(&directory).unwrap();
+        assert_eq!(record.components.len(), 2);
+        assert_eq!(
+            record.components.get(&ComponentId::Upstream).unwrap().version,
+            "1.4.3.3"
+        );
+        assert_eq!(
+            record.components.get(&ComponentId::LaPlugins).unwrap().version,
+            "1.4.4.0"
+        );
+
+        // inventory_simulator: the third row carries its own tag, never the suite version.
+        third_party_payload(&payload);
+        install_component(&payload, &state, &target, ComponentId::InventorySimulator).unwrap();
+        let record = read_record(&directory).unwrap();
+        assert_eq!(record.components.len(), 3);
+        let simulator = record
+            .components
+            .get(&ComponentId::InventorySimulator)
+            .unwrap();
+        assert_eq!(simulator.version, "3.7.0");
+        assert_eq!(simulator.ownership, "third-party");
+        assert_eq!(record.package_version, "1.4.4.0");
+        let doc = read_record_document(&directory);
+        assert_eq!(doc["schema_version"].as_u64(), Some(2));
+        assert_eq!(doc["components"]["upstream"]["version"].as_str(), Some("1.4.3.3"));
+        assert_eq!(
+            doc["components"]["la_plugins"]["version"].as_str(),
+            Some("1.4.4.0")
+        );
+        assert_eq!(
+            doc["components"]["inventory_simulator"]["version"].as_str(),
+            Some("3.7.0")
+        );
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn task3_happy() {
+        let base = root("task3-happy");
+        let payload = base.join("payload");
+        let target = base.join("target");
+        let state = base.join("state");
+        fs::create_dir_all(&target).unwrap();
+        let directory = installation_dir(&state, &target);
+
+        component_payload(&payload, false);
+        let upstream = install_component(&payload, &state, &target, ComponentId::Upstream)
+            .expect("upstream install");
+        versioned_component_payload(&payload, "1.4.4.0", (b"pmc", b"tli"));
+        let la = install_component(&payload, &state, &target, ComponentId::LaPlugins)
+            .expect("la_plugins install");
+        third_party_payload(&payload);
+        let simulator =
+            install_component(&payload, &state, &target, ComponentId::InventorySimulator)
+                .expect("inventory_simulator install");
+
+        let record = read_record(&directory).unwrap();
+        println!(
+            "task3_happy: files upstream={} la={} simulator={} components={:?} schema={}",
+            upstream.installed_files,
+            la.installed_files,
+            simulator.installed_files,
+            record
+                .components
+                .iter()
+                .map(|(id, component)| (format!("{id:?}"), component.version.clone()))
+                .collect::<Vec<_>>(),
+            record.schema_version
+        );
+        assert_eq!(record.schema_version, 2);
+        assert_eq!(record.components.len(), 3);
+        assert_eq!(
+            record.components.get(&ComponentId::Upstream).unwrap().version,
+            "1.4.3.3"
+        );
+        assert_eq!(
+            record.components.get(&ComponentId::LaPlugins).unwrap().version,
+            "1.4.4.0"
+        );
+        assert_eq!(
+            record
+                .components
+                .get(&ComponentId::InventorySimulator)
+                .unwrap()
+                .version,
+            "3.7.0"
+        );
+        assert!(!directory.join("journal.json").exists());
+        assert_no_temp_files(&directory);
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn task3_failure() {
+        let base = root("task3-failure");
+
+        // Conflict branch: an unregistered file occupies a payload path.
+        let payload = base.join("conflict/payload");
+        let target = base.join("conflict/target");
+        let state = base.join("conflict/state");
+        fs::create_dir_all(&target).unwrap();
+        third_party_payload(&payload);
+        let foreign = owned_target(&target, THIRD_PARTY);
+        fs::create_dir_all(foreign.parent().unwrap()).unwrap();
+        fs::write(&foreign, b"unmanaged-bytes").unwrap();
+        let before = snapshot_target(&target);
+        let conflict =
+            install_component(&payload, &state, &target, ComponentId::InventorySimulator)
+                .expect_err("a conflicting path must abort the install");
+        assert_eq!(conflict.code, "E1403");
+        assert_eq!(snapshot_target(&target), before);
+        assert!(!installation_dir(&state, &target).exists());
+        println!(
+            "task3_failure: conflict={} lines={} detail=\n{}",
+            conflict.code,
+            conflict.detail.lines().count(),
+            conflict.detail
+        );
+
+        // Dependency branch: the LA bundle without the upstream BotHiderApi.
+        let payload = base.join("dependency/payload");
+        let target = base.join("dependency/target");
+        let state = base.join("dependency/state");
+        fs::create_dir_all(&target).unwrap();
+        component_payload(&payload, true);
+        let missing = install_component(&payload, &state, &target, ComponentId::LaPlugins)
+            .expect_err("a missing dependency must abort the install");
+        assert_eq!(missing.code, "E1404");
+        assert!(missing.detail.contains("BotHiderApi"), "{}", missing.detail);
+        assert!(fs::read_dir(&target).unwrap().next().is_none());
+        assert!(!installation_dir(&state, &target).exists());
+        println!("task3_failure: dependency={}", missing.code);
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn task3_manual_qa_dump() {
+        let base = root("task3-manual-qa-dump");
+        let payload = base.join("payload");
+        let target = base.join("target");
+        let state = base.join("state");
+        fs::create_dir_all(&target).unwrap();
+
+        component_payload(&payload, false);
+        install_component(&payload, &state, &target, ComponentId::Upstream).unwrap();
+        versioned_component_payload(&payload, "1.4.4.0", (b"pmc", b"tli"));
+        install_component(&payload, &state, &target, ComponentId::LaPlugins).unwrap();
+        third_party_payload(&payload);
+        install_component(&payload, &state, &target, ComponentId::InventorySimulator).unwrap();
+
+        // Dump the exact bytes the transaction wrote to disk, never an in-memory object.
+        let bytes = fs::read(installation_dir(&state, &target).join("record.json")).unwrap();
+        let doc: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(doc["schema_version"].as_u64(), Some(2));
+        assert_eq!(doc["components"].as_object().unwrap().len(), 3);
+        assert_eq!(
+            doc["components"]["la_plugins"]["version"].as_str(),
+            Some("1.4.4.0")
+        );
+        if let Ok(dump) = std::env::var("QA_DUMP") {
+            fs::write(&dump, &bytes).unwrap();
+            println!(
+                "task3_manual_qa_dump: wrote {} bytes to {}",
+                bytes.len(),
+                dump
+            );
+        } else {
+            println!("task3_manual_qa_dump: QA_DUMP unset, skipped dump");
         }
         fs::remove_dir_all(base).unwrap();
     }
