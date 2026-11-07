@@ -28,6 +28,11 @@ const GUIDE_ANCHORS: Record<string, string> = {
   update: "guide-issue-5",
 };
 
+// Error codes that resolve to a dedicated, localized message keyed by code rather than by
+// category. Category lookup (KNOWN_CATS / GUIDE_ANCHORS) still handles everything else via
+// `errcat.*`. Kept in sync with the keys.ts EN map.
+const KNOWN_ERROR_CODES = ["E1401", "E1403", "E1404"];
+
 type Props = {
   error: AppError | null;
   onClose: () => void;
@@ -57,7 +62,10 @@ export default function ErrorModal({ error, onClose, message, onExport, onOpenGu
   const localized = KNOWN_CATS.includes(error.category)
     ? t(`errcat.${error.category}` as I18nKey)
     : error.detail;
-  const primaryMessage = message ?? localized;
+  const codeMessage = KNOWN_ERROR_CODES.includes(error.code)
+    ? t(("error." + error.code) as I18nKey)
+    : undefined;
+  const primaryMessage = message ?? codeMessage ?? localized;
   const showDetail = error.detail && error.detail !== primaryMessage;
   const guideAnchor = GUIDE_ANCHORS[error.category];
 
