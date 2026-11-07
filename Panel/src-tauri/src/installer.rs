@@ -146,6 +146,10 @@ fn managed_source() -> InstallationSource {
 /// and legacy records (which lack that field) are normalized to it on first read.
 const RECORD_SCHEMA_VERSION: u32 = 2;
 
+/// Version sentinel a migrated legacy record carries for a component it never spoke for. It is a
+/// literal, never a guessed release tag or timestamp, and callers treat it as "not installed".
+pub const UNKNOWN_VERSION: &str = "unknown";
+
 /// Identifies one of the three peer components whose versions `record.json` tracks.
 /// `pub` so the upstream / LA-bundle / InventorySimulator install paths (plan todos 3 & 4) can
 /// address a component without duplicating string keys.
@@ -170,10 +174,10 @@ pub struct ComponentRecord {
 
 impl ComponentRecord {
     /// Placeholder for a component a v1 record never spoke for: the version is the literal
-    /// sentinel `"unknown"`, never a guessed release tag or timestamp.
+    /// sentinel [`UNKNOWN_VERSION`], never a guessed release tag or timestamp.
     fn unknown() -> Self {
         Self {
-            version: "unknown".to_string(),
+            version: UNKNOWN_VERSION.to_string(),
             source: "unknown".to_string(),
             installed_at: 0,
             ownership: "unknown".to_string(),
@@ -690,6 +694,21 @@ pub fn verify_payload_for_target(
 
 fn read_record(directory: &Path) -> Option<InstallRecord> {
     migrate_record_v1_to_v2(directory).ok().flatten()
+}
+
+/// Version recorded for one component, or `None` when that component was never installed.
+///
+/// The install record is the only authority: no payload is inspected, and no other component's
+/// version (nor the suite `package_version`) can stand in for a missing row. The migration
+/// sentinel [`UNKNOWN_VERSION`] reads as "not installed" rather than as a version string.
+pub fn component_version(
+    state_root: &Path,
+    target: &Path,
+    component: ComponentId,
+) -> Option<String> {
+    let record = read_record(&installation_dir(state_root, target))?;
+    let row = record.components.get(&component)?;
+    (row.version != UNKNOWN_VERSION).then(|| row.version.clone())
 }
 
 /// Reads `record.json` and, on the first read of a legacy v1 record (a single `package_version`
@@ -4325,6 +4344,150 @@ mod tests {
             );
         } else {
             println!("task5_manual_qa_dump: QA_DUMP unset, skipped dump");
+        }
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn installed_plugin_version_reads_component_record() {
+        let base = root("task6-component-record-version");
+        let target = base.join("target");
+        let state = base.join("state");
+        fs::create_dir_all(&target).unwrap();
+        let payloads = component_payloads(&base);
+        assert_eq!(
+            component_version(&state, &target, ComponentId::LaPlugins),
+            None,
+            "no record means no version"
+        );
+        run_component_steps(&INSTALL_ORDER, |component| {
+            install_component(&payloads[&component], &state, &target, component)
+        })
+        .unwrap();
+
+        let la = component_version(&state, &target, ComponentId::LaPlugins);
+        assert_eq!(la.as_deref(), Some("1.4.4.0"));
+        assert_ne!(
+            la.as_deref(),
+            Some("3.7.0"),
+            "the InventorySimulator release tag must not leak into the LA version"
+        );
+        assert_eq!(
+            component_version(&state, &target, ComponentId::Upstream).as_deref(),
+            Some("1.4.3.3")
+        );
+        assert_eq!(
+            component_version(&state, &target, ComponentId::InventorySimulator).as_deref(),
+            Some("3.7.0")
+        );
+        println!("installed_plugin_version_reads_component_record: la={la:?}");
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn task6_happy() {
+        // A legacy record without `components` migrates on read, so the LA version still resolves
+        // from the record alone — no payload inspection.
+        let base = root("task6-happy");
+        let target = base.join("target");
+        let state = base.join("state");
+        fs::create_dir_all(&target).unwrap();
+        let directory = installation_dir(&state, &target);
+        write_v1_record(&directory, "1.4.3.3");
+
+        assert_eq!(
+            component_version(&state, &target, ComponentId::LaPlugins).as_deref(),
+            Some("1.4.3.3")
+        );
+        // The migration sentinel reads as "not installed", never as a version.
+        assert_eq!(component_version(&state, &target, ComponentId::Upstream), None);
+        assert_eq!(
+            component_version(&state, &target, ComponentId::InventorySimulator),
+            None
+        );
+        println!(
+            "task6_happy: la={:?} migrated_record_keys={:?}",
+            component_version(&state, &target, ComponentId::LaPlugins),
+            read_record_document(&directory)["components"]
+                .as_object()
+                .map(|components| components.keys().cloned().collect::<Vec<_>>())
+        );
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn task6_failure() {
+        let base = root("task6-failure");
+
+        // (a) No record at all.
+        let target = base.join("absent/target");
+        let state = base.join("absent/state");
+        fs::create_dir_all(&target).unwrap();
+        assert_eq!(component_version(&state, &target, ComponentId::LaPlugins), None);
+
+        // (b) A corrupt record reports no version instead of panicking or guessing.
+        let target = base.join("corrupt/target");
+        let state = base.join("corrupt/state");
+        fs::create_dir_all(&target).unwrap();
+        let directory = installation_dir(&state, &target);
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(directory.join("record.json"), b"{ not a record").unwrap();
+        assert_eq!(component_version(&state, &target, ComponentId::LaPlugins), None);
+
+        // (c) A third-party-only record: the IS tag never becomes the LA version.
+        let target = base.join("third-party/target");
+        let state = base.join("third-party/state");
+        fs::create_dir_all(&target).unwrap();
+        let payloads = component_payloads(&base);
+        install_component(
+            &payloads[&ComponentId::InventorySimulator],
+            &state,
+            &target,
+            ComponentId::InventorySimulator,
+        )
+        .unwrap();
+        assert_eq!(component_version(&state, &target, ComponentId::LaPlugins), None);
+        assert_eq!(
+            component_version(&state, &target, ComponentId::InventorySimulator).as_deref(),
+            Some("3.7.0")
+        );
+        println!(
+            "task6_failure: absent={:?} corrupt={:?} third_party_la={:?}",
+            component_version(&state, &target, ComponentId::Upstream),
+            None::<String>,
+            component_version(&state, &target, ComponentId::LaPlugins)
+        );
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn task6_manual_qa_dump() {
+        let base = root("task6-manual-qa-dump");
+        let target = base.join("target");
+        let state = base.join("state");
+        fs::create_dir_all(&target).unwrap();
+        let payloads = component_payloads(&base);
+        run_component_steps(&INSTALL_ORDER, |component| {
+            install_component(&payloads[&component], &state, &target, component)
+        })
+        .unwrap();
+
+        let directory = installation_dir(&state, &target);
+        let bytes = fs::read(directory.join("record.json")).unwrap();
+        let doc: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        let la = component_version(&state, &target, ComponentId::LaPlugins);
+        assert_eq!(la.as_deref(), doc["components"]["la_plugins"]["version"].as_str());
+        assert_eq!(doc["components"]["inventory_simulator"]["version"].as_str(), Some("3.7.0"));
+        if let Ok(dump) = std::env::var("QA_DUMP") {
+            fs::write(&dump, &bytes).unwrap();
+            println!(
+                "task6_manual_qa_dump: wrote {} bytes to {} (la_plugins={:?})",
+                bytes.len(),
+                dump,
+                la
+            );
+        } else {
+            println!("task6_manual_qa_dump: QA_DUMP unset, skipped dump");
         }
         fs::remove_dir_all(base).unwrap();
     }

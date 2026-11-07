@@ -1030,6 +1030,28 @@ mod tests {
     }
 
     #[test]
+    fn snapshot_reports_the_la_component_version_verbatim() {
+        // The LA component version reaches the snapshot through exactly one path — the install
+        // record read by lib.rs::installed_plugin_version — so a third-party tag can never appear
+        // where the LA bundle's version belongs.
+        let _guard = app_storage::TEST_STATE_ENV_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+        let base = test_root("cs2bi-snapshot-la-component-version");
+        unsafe { std::env::set_var("CS2BI_STATE_ROOT", &base); }
+        let snapshot = snapshot(Some("1.4.4.0")).unwrap();
+        assert_eq!(snapshot.la_plugins.current_version, "1.4.4.0");
+        assert_ne!(snapshot.la_plugins.current_version, "3.7.0");
+        if let Ok(dump) = std::env::var("QA_SNAPSHOT_DUMP") {
+            fs::write(&dump, serde_json::to_vec_pretty(&snapshot).unwrap()).unwrap();
+            println!(
+                "snapshot_reports_the_la_component_version_verbatim: la_plugins={} -> {dump}",
+                snapshot.la_plugins.current_version
+            );
+        }
+        fs::remove_dir_all(&base).unwrap();
+        unsafe { std::env::remove_var("CS2BI_STATE_ROOT"); }
+    }
+
+    #[test]
     fn missing_installation_reports_no_current_version_or_update() {
         let manifest = v2_manifest(Some("1.4.3.40"), Some("1.4.3.40"));
         let current = la_plugins_current(None).unwrap_or_default();
