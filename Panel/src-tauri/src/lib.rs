@@ -950,40 +950,17 @@ fn la_payload_source() -> Result<PathBuf> {
 ///
 /// * `Upstream` — the cached upstream zip staged on its own (`stage_upstream_only`). Errors with
 ///   the Installation Management gate when no upstream zip is cached.
-/// * `LaPlugins` — the active/exec-side LA payload, still guarded against consuming a merge's own
-///   output as the overlay source.
-/// * `InventorySimulator` — the newest staging tree the InventorySimulator installer extracted.
-///   The component's own install path stages that tree; this resolver only reads it back.
-///
-/// NOTE: several inspection-only call sites still pass `Upstream` as a representative source.
-/// That is a transient state — todos 5/6/8 replace those command paths with per-component
-/// resolution; do not grow a second abstraction over this one.
+/// * `LaPlugins` — the LA payload the install record points at, falling back to the exec-side
+///   payload, still guarded against consuming a merge's own output as the overlay source.
+/// * `InventorySimulator` — the newest staging tree its own install extracted. That install
+///   deletes the staging tree once the transaction commits, so this resolves a tree that exists
+///   *now* and reports the install action when none does.
 fn component_payload_root(component: ComponentId) -> Result<PathBuf> {
     match component {
         ComponentId::Upstream => upstream_package::stage_upstream_only(),
         ComponentId::LaPlugins => la_payload_source(),
-        ComponentId::InventorySimulator => inventory_staging_root(),
+        ComponentId::InventorySimulator => inventory_plugin::latest_staging_root(),
     }
-}
-
-/// Newest staged InventorySimulator payload. This mirrors `inventory_plugin::staging_root`'s
-/// layout (`<updates>/staging/inventory-simulator/<tag>`), which that module keeps private, so
-/// this is the only reader of the layout outside `inventory_plugin`. Todo 7 owns the module and
-/// may expose the resolver instead.
-fn inventory_staging_root() -> Result<PathBuf> {
-    let root = online_update::update_root()?
-        .join("staging")
-        .join("inventory-simulator");
-    let mut staged: Vec<PathBuf> = fs::read_dir(&root)
-        .map_err(|_| AppError::payload("The InventorySimulator payload has not been staged yet"))?
-        .flatten()
-        .map(|entry| entry.path())
-        .filter(|path| path.is_dir() && path.join(installer::MANIFEST_FILE).is_file())
-        .collect();
-    staged.sort();
-    staged
-        .pop()
-        .ok_or_else(|| AppError::payload("The InventorySimulator payload has not been staged yet"))
 }
 
 fn local_state_root(_app: &AppHandle) -> Result<PathBuf> {
@@ -3051,9 +3028,12 @@ fn import_cosmetics_inventory_file(
 }
 
 #[tauri::command]
-fn inventory_plugin_status(csgo: String) -> Result<inventory_plugin::InventoryPluginSnapshot> {
+fn inventory_plugin_status(
+    app: AppHandle,
+    csgo: String,
+) -> Result<inventory_plugin::InventoryPluginSnapshot> {
     let root = csgo_path(&csgo)?;
-    Ok(inventory_plugin::snapshot(&root))
+    Ok(inventory_plugin::snapshot(&local_state_root(&app)?, &root))
 }
 
 #[tauri::command]
