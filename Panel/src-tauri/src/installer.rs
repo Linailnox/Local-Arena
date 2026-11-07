@@ -141,6 +141,47 @@ fn managed_source() -> InstallationSource {
     InstallationSource::ManagedPlus
 }
 
+/// Stable schema version for `record.json`. Full-payload installs have written `2` since the
+/// source/baseline migration; the per-component `components` map lives within this same version,
+/// and legacy records (which lack that field) are normalized to it on first read.
+const RECORD_SCHEMA_VERSION: u32 = 2;
+
+/// Identifies one of the three peer components whose versions `record.json` tracks.
+/// `pub` so the upstream / LA-bundle / InventorySimulator install paths (plan todos 3 & 4) can
+/// address a component without duplicating string keys.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ComponentId {
+    Upstream,
+    LaPlugins,
+    InventorySimulator,
+}
+
+/// Per-component version entry. `path` is an optional pointer to the LA bundle's download
+/// source; migrated legacy records have no such pointer.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ComponentRecord {
+    pub version: String,
+    pub source: String,
+    pub installed_at: u64,
+    pub ownership: String,
+    pub path: Option<String>,
+}
+
+impl ComponentRecord {
+    /// Placeholder for a component a v1 record never spoke for: the version is the literal
+    /// sentinel `"unknown"`, never a guessed release tag or timestamp.
+    fn unknown() -> Self {
+        Self {
+            version: "unknown".to_string(),
+            source: "unknown".to_string(),
+            installed_at: 0,
+            ownership: "unknown".to_string(),
+            path: None,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PayloadManifest {
     pub schema_version: u32,
@@ -182,6 +223,10 @@ struct InstallRecord {
     restore_baseline: RestoreBaseline,
     #[serde(default)]
     migrated_from_version: Option<String>,
+    /// Per-component version view (schema 2). `default` keeps every pre-existing fixture and
+    /// journal record parseable; a missing `components` key marks a legacy v1 record to migrate.
+    #[serde(default)]
+    components: BTreeMap<ComponentId, ComponentRecord>,
     entries: Vec<InstallRecordEntry>,
 }
 
@@ -644,7 +689,63 @@ pub fn verify_payload_for_target(
 }
 
 fn read_record(directory: &Path) -> Option<InstallRecord> {
-    serde_json::from_slice(&fs::read(directory.join("record.json")).ok()?).ok()
+    migrate_record_v1_to_v2(directory).ok().flatten()
+}
+
+/// Reads `record.json` and, on the first read of a legacy v1 record (a single `package_version`
+/// and no `components` key), builds the per-component schema-2 view and atomically writes it
+/// back. The one known suite version maps to `la_plugins`; `upstream` and `inventory_simulator`
+/// get `"unknown"` placeholders rather than fabricated release tags. Every write goes through
+/// [`write_json_atomic`], the shared temp + rename helper.
+///
+/// Presence of the `components` key is the migration trigger: an already-v2 record (complete or
+/// partial) is returned untouched with no write, so re-migration leaves the bytes unchanged and
+/// never clobbers versions written by component installs. A missing `record.json` yields
+/// `Ok(None)` and is never fabricated. Truncated JSON fails with E1401 before any write, so no
+/// partial record file can appear. `package_version` is never altered here, which keeps the
+/// existing plus-install downgrade guard intact.
+fn migrate_record_v1_to_v2(directory: &Path) -> Result<Option<InstallRecord>> {
+    let record_path = directory.join("record.json");
+    let bytes = match fs::read(&record_path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(AppError::transaction_io(error)),
+    };
+    let document: serde_json::Value = serde_json::from_slice(&bytes).map_err(|error| {
+        AppError::transaction(format!(
+            "Corrupt install record ({}): {error}",
+            record_path.display()
+        ))
+    })?;
+    let already_v2 = document.get("components").is_some();
+    let mut record: InstallRecord = serde_json::from_value(document).map_err(|error| {
+        AppError::transaction(format!(
+            "Corrupt install record ({}): {error}",
+            record_path.display()
+        ))
+    })?;
+    if already_v2 {
+        return Ok(Some(record));
+    }
+    record.components.insert(
+        ComponentId::LaPlugins,
+        ComponentRecord {
+            version: record.package_version.clone(),
+            source: "v1_record".to_string(),
+            installed_at: record.installed_at,
+            ownership: "plus".to_string(),
+            path: None,
+        },
+    );
+    record
+        .components
+        .insert(ComponentId::Upstream, ComponentRecord::unknown());
+    record
+        .components
+        .insert(ComponentId::InventorySimulator, ComponentRecord::unknown());
+    record.schema_version = RECORD_SCHEMA_VERSION;
+    write_json_atomic(&record_path, &record)?;
+    Ok(Some(record))
 }
 
 /// Whether an install record speaks for the Local Arena suite (`plus`/`shared` entries) or was
@@ -1383,6 +1484,13 @@ fn install_manifest(
             .as_ref()
             .and_then(|record| record.migrated_from_version.clone())
             .or(detection.version),
+        // Carry the per-component view forward. `old_record` has already been migrated by
+        // `read_record`, so a legacy v1 record's freshly mapped components survive this write;
+        // component installs (plan todos 3 & 4) can extend them without being clobbered.
+        components: old_record
+            .as_ref()
+            .map(|record| record.components.clone())
+            .unwrap_or_default(),
         entries: record_entries.into_values().collect(),
     };
     write_json_atomic(&directory.join("record.json"), &record)?;
@@ -2921,6 +3029,7 @@ mod tests {
             source: InstallationSource::ManagedPlus,
             restore_baseline: RestoreBaseline::ExistingRecord,
             migrated_from_version: None,
+            components: BTreeMap::new(),
             entries: vec![InstallRecordEntry {
                 path: "cfg/test.cfg".to_string(),
                 original_existed: true,
@@ -2971,6 +3080,309 @@ mod tests {
             b"third-party-plugin"
         );
         assert!(read_record(&directory).is_none());
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    /// Legacy v1 `record.json`: a single `package_version`, no `components` key. Real records
+    /// written before this change already carry `schema_version: 2`; the missing `components`
+    /// field is what marks them for migration.
+    fn write_v1_record(directory: &Path, version: &str) {
+        fs::create_dir_all(directory).unwrap();
+        let raw = format!(
+            r#"{{
+  "schema_version": 2,
+  "installation_id": "v1-fixture",
+  "target": "C:/cs2/game/csgo",
+  "package_version": "{version}",
+  "installed_at": 1700000000,
+  "source": "managed_plus",
+  "restore_baseline": "existing_record",
+  "migrated_from_version": null,
+  "entries": [
+    {{
+      "path": "cfg/test.cfg",
+      "original_existed": true,
+      "original_sha256": null,
+      "original_backup": null,
+      "installed_sha256": "abc123",
+      "ownership": "plus",
+      "restore_policy": "restore"
+    }}
+  ]
+}}"#
+        );
+        fs::write(directory.join("record.json"), raw).unwrap();
+    }
+
+    /// Reads the record bytes straight from disk (never an in-memory object) for assertions.
+    fn read_record_document(directory: &Path) -> serde_json::Value {
+        let bytes = fs::read(directory.join("record.json")).unwrap();
+        serde_json::from_slice(&bytes).unwrap()
+    }
+
+    fn assert_no_temp_files(directory: &Path) {
+        for entry in fs::read_dir(directory).unwrap() {
+            let name = entry.unwrap().file_name().to_string_lossy().into_owned();
+            assert!(
+                !name.contains(".tmp") && !name.starts_with('.'),
+                "unexpected temp/partial file left behind: {name}"
+            );
+        }
+    }
+
+    #[test]
+    fn record_v2_migrates_v1() {
+        let base = root("record-v2-migrates-v1");
+
+        // 1. no record at all -> never fabricate one.
+        let none = base.join("none");
+        fs::create_dir_all(&none).unwrap();
+        assert!(migrate_record_v1_to_v2(&none).unwrap().is_none());
+        assert!(!none.join("record.json").exists());
+        assert!(read_record(&none).is_none());
+
+        // 2. v1 only -> full per-component migration written atomically.
+        let v1 = base.join("v1");
+        write_v1_record(&v1, "1.4.3.3");
+        let migrated = migrate_record_v1_to_v2(&v1).unwrap().unwrap();
+        assert_eq!(migrated.schema_version, 2);
+        assert_eq!(migrated.components.len(), 3);
+        assert_eq!(
+            migrated.components.get(&ComponentId::LaPlugins).unwrap().version,
+            "1.4.3.3"
+        );
+        assert_eq!(
+            migrated.components.get(&ComponentId::Upstream).unwrap().version,
+            "unknown"
+        );
+        assert_eq!(
+            migrated
+                .components
+                .get(&ComponentId::InventorySimulator)
+                .unwrap()
+                .version,
+            "unknown"
+        );
+        let doc = read_record_document(&v1);
+        assert_eq!(doc["schema_version"].as_u64(), Some(2));
+        assert_eq!(
+            doc["components"]["la_plugins"]["version"].as_str(),
+            Some("1.4.3.3")
+        );
+        assert_eq!(
+            doc["components"]["upstream"]["version"].as_str(),
+            Some("unknown")
+        );
+        assert_eq!(
+            doc["components"]["inventory_simulator"]["version"].as_str(),
+            Some("unknown")
+        );
+        assert_eq!(doc["package_version"].as_str(), Some("1.4.3.3"));
+        assert_eq!(doc["restore_baseline"].as_str(), Some("existing_record"));
+        assert!(doc["migrated_from_version"].is_null());
+        assert_eq!(doc["entries"].as_array().unwrap().len(), 1);
+        assert_no_temp_files(&v1);
+
+        // 3. already v2 (three components) -> byte-identical, no write.
+        let v2 = base.join("v2");
+        let v2_raw = r#"{
+  "schema_version": 2,
+  "installation_id": "v2-fixture",
+  "target": "C:/cs2/game/csgo",
+  "package_version": "1.4.3.3",
+  "installed_at": 1700000001,
+  "source": "managed_plus",
+  "restore_baseline": "existing_record",
+  "migrated_from_version": null,
+  "components": {
+    "upstream": {"version": "1.4.5", "source": "upstream_zip", "installed_at": 1, "ownership": "shared", "path": null},
+    "la_plugins": {"version": "1.4.4.0", "source": "bundle", "installed_at": 2, "ownership": "plus", "path": "LocalArena-plugin.zip"},
+    "inventory_simulator": {"version": "3.7.0", "source": "github", "installed_at": 3, "ownership": "third_party", "path": null}
+  },
+  "entries": []
+}"#;
+        fs::create_dir_all(&v2).unwrap();
+        fs::write(v2.join("record.json"), v2_raw).unwrap();
+        let before = fs::read(v2.join("record.json")).unwrap();
+        let record = migrate_record_v1_to_v2(&v2).unwrap().unwrap();
+        assert_eq!(record.components.len(), 3);
+        assert_eq!(
+            record.components.get(&ComponentId::LaPlugins).unwrap().version,
+            "1.4.4.0"
+        );
+        assert_eq!(fs::read(v2.join("record.json")).unwrap(), before);
+
+        // 4. partial components -> treated as already-v2, never clobbered or topped up.
+        let partial = base.join("partial");
+        let partial_raw = r#"{
+  "schema_version": 2,
+  "installation_id": "partial-fixture",
+  "target": "C:/cs2/game/csgo",
+  "package_version": "1.4.3.3",
+  "installed_at": 1700000002,
+  "source": "managed_plus",
+  "restore_baseline": "existing_record",
+  "migrated_from_version": null,
+  "components": {
+    "la_plugins": {"version": "1.4.5.0", "source": "bundle", "installed_at": 4, "ownership": "plus", "path": null}
+  },
+  "entries": []
+}"#;
+        fs::create_dir_all(&partial).unwrap();
+        fs::write(partial.join("record.json"), partial_raw).unwrap();
+        let before = fs::read(partial.join("record.json")).unwrap();
+        let record = migrate_record_v1_to_v2(&partial).unwrap().unwrap();
+        assert_eq!(record.components.len(), 1);
+        assert_eq!(
+            record.components.get(&ComponentId::LaPlugins).unwrap().version,
+            "1.4.5.0"
+        );
+        assert_eq!(fs::read(partial.join("record.json")).unwrap(), before);
+
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn record_v2_migration_is_idempotent() {
+        let base = root("record-v2-idempotent");
+        write_v1_record(&base, "1.4.3.3");
+        migrate_record_v1_to_v2(&base).unwrap().unwrap();
+        let once = fs::read(base.join("record.json")).unwrap();
+        // Re-migration (direct + via read_record) leaves every byte unchanged.
+        migrate_record_v1_to_v2(&base).unwrap().unwrap();
+        assert_eq!(fs::read(base.join("record.json")).unwrap(), once);
+        let seen = read_record(&base).unwrap();
+        assert_eq!(seen.components.len(), 3);
+        assert_eq!(fs::read(base.join("record.json")).unwrap(), once);
+
+        // stale_state + misleading_success_output: inject a sentinel into the on-disk record;
+        // the next read must see it (reading disk, not a cached object) and must not rewrite it.
+        let mut doc = read_record_document(&base);
+        doc["components"]["la_plugins"]["source"] =
+            serde_json::json!("sentinel-from-disk");
+        let sentinel_bytes = serde_json::to_vec_pretty(&doc).unwrap();
+        fs::write(base.join("record.json"), &sentinel_bytes).unwrap();
+        let reread = read_record(&base).unwrap();
+        assert_eq!(
+            reread.components.get(&ComponentId::LaPlugins).unwrap().source,
+            "sentinel-from-disk"
+        );
+        assert_eq!(fs::read(base.join("record.json")).unwrap(), sentinel_bytes);
+        assert_no_temp_files(&base);
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn record_v2_downgrade_guard() {
+        let base = root("record-v2-downgrade-guard");
+        write_v1_record(&base, "1.4.3.3");
+        let migrated = migrate_record_v1_to_v2(&base).unwrap().unwrap();
+        // Migration must not disturb package_version: it is the guard's comparison input.
+        assert_eq!(migrated.package_version, "1.4.3.3");
+        assert!(is_suite_record(&migrated));
+        let on_disk = read_record_document(&base);
+        assert_eq!(on_disk["package_version"].as_str(), Some("1.4.3.3"));
+        // A lower bundle version is still refused; a higher one is still recorded.
+        assert_eq!(
+            plus_component_package_version(Some(&migrated), "1.4.2.4"),
+            "1.4.3.3"
+        );
+        assert_eq!(
+            plus_component_package_version(Some(&migrated), "1.4.4.0"),
+            "1.4.4.0"
+        );
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn task1_happy() {
+        let base = root("task1-happy");
+        write_v1_record(&base, "1.4.3.3");
+        // Real read surface: read_record triggers the migration + atomic write-back.
+        let record = read_record(&base).expect("v1 record must still be readable");
+        assert_eq!(record.schema_version, 2);
+        assert_eq!(record.package_version, "1.4.3.3");
+        assert_eq!(record.restore_baseline, RestoreBaseline::ExistingRecord);
+        assert!(record.migrated_from_version.is_none());
+        assert_eq!(record.entries.len(), 1); // InstallRecordEntry fields untouched
+        assert_eq!(record.components.len(), 3);
+        // misleading_success_output: assert against bytes actually on disk, not the returned object.
+        let raw = fs::read(base.join("record.json")).unwrap();
+        let doc: serde_json::Value = serde_json::from_slice(&raw).unwrap();
+        assert_eq!(doc["schema_version"].as_u64(), Some(2));
+        assert_eq!(
+            doc["components"]["la_plugins"]["version"].as_str(),
+            Some("1.4.3.3")
+        );
+        assert_eq!(
+            doc["components"]["upstream"]["version"].as_str(),
+            Some("unknown")
+        );
+        assert_eq!(
+            doc["components"]["inventory_simulator"]["version"].as_str(),
+            Some("unknown")
+        );
+        assert_eq!(
+            doc["components"]["la_plugins"]["installed_at"].as_u64(),
+            Some(1700000000)
+        );
+        assert!(doc["components"]["upstream"]["path"].is_null());
+        assert_eq!(doc["package_version"].as_str(), Some("1.4.3.3"));
+        assert_no_temp_files(&base);
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn task1_failure() {
+        let base = root("task1-failure");
+        fs::create_dir_all(&base).unwrap();
+        let truncated: &[u8] = b"{\"schema_version\": 2, \"package_version\": \"1.4.3.3\", \"entr";
+        let path = base.join("record.json");
+        fs::write(&path, truncated).unwrap();
+
+        let error = migrate_record_v1_to_v2(&base).unwrap_err();
+        assert_eq!(error.code, "E1401");
+        assert!(
+            error.detail.contains("Corrupt install record"),
+            "{}",
+            error.detail
+        );
+        // mid-operation interrupts: no partial write, the truncated bytes are untouched, and no
+        // temp file was left behind.
+        assert_eq!(fs::read(&path).unwrap().as_slice(), truncated);
+        let names: Vec<String> = fs::read_dir(&base)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names, vec!["record.json".to_string()]);
+        // The production read path stays lenient (returns None) exactly as before this change.
+        assert!(read_record(&base).is_none());
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn task1_manual_qa_dump() {
+        let base = root("task1-manual-qa-dump");
+        write_v1_record(&base, "1.4.3.3");
+        migrate_record_v1_to_v2(&base).unwrap().unwrap();
+        // Dump the exact bytes written to disk, not an in-memory serialization.
+        let bytes = fs::read(base.join("record.json")).unwrap();
+        let doc: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(doc["schema_version"].as_u64(), Some(2));
+        assert_eq!(
+            doc["components"]["la_plugins"]["version"].as_str(),
+            Some("1.4.3.3")
+        );
+        assert_eq!(
+            doc["components"]["upstream"]["version"].as_str(),
+            Some("unknown")
+        );
+        if let Ok(dump) = std::env::var("QA_DUMP") {
+            fs::write(&dump, &bytes).unwrap();
+            println!("task1_manual_qa_dump: wrote {} bytes to {}", bytes.len(), dump);
+        } else {
+            println!("task1_manual_qa_dump: QA_DUMP unset, skipped dump");
+        }
         fs::remove_dir_all(base).unwrap();
     }
 }
