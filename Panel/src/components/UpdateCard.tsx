@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { ArrowRight } from "lucide-react";
 
-export type UpdateCardTone = "panel" | "la_plugins" | "plugin" | "la_bundle";
+export type UpdateCardTone = "panel" | "la_plugins" | "plugin" | "la_bundle" | "upstream";
 
 export type UpdateCardStatusTone = "available" | "current" | "error";
 

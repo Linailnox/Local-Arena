@@ -65,6 +65,17 @@ export default function InventoryPluginCard({ csgoPath, onError }: Props) {
     finally { setBusy(null); setProgress(null); }
   };
 
+  const installComponent = async () => {
+    if (!csgoPath || busy) return;
+    setBusy("install");
+    setProgress(null);
+    try {
+      await api.installComponent(csgoPath, "inventory_simulator");
+      toast.show(t("inventoryPlugin.installed"), "green");
+    } catch (error) { onError(error); }
+    finally { setBusy(null); setProgress(null); }
+  };
+
   const cancel = async () => {
     try {
       await api.cancelUpdate();
@@ -100,6 +111,11 @@ export default function InventoryPluginCard({ csgoPath, onError }: Props) {
         <>
           <button className="upd-mini-btn" disabled={!csgoPath || !!busy} onClick={() => void check()}>
             <RefreshCw size={13} />{busy === "check" ? t("inventoryPlugin.checking") : t("inventoryPlugin.check")}
+          </button>
+          <button className="is-primary" disabled={!csgoPath || !!busy} onClick={() => void installComponent()}>
+            {busy === "install"
+              ? t("inventoryPlugin.installing")
+              : present ? t("component.update") : t("component.install")}
           </button>
           <button className="upd-mini-btn" disabled={!csgoPath || !!busy} onClick={() => void install()}>
             <Download size={13} />{installing

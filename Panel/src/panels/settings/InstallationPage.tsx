@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ArchiveRestore, ArrowRight, CheckCircle2, CircleAlert, CircleX, ClipboardCheck, Copy, Download, FileCheck2, FolderOpen, PackageCheck, PlayCircle, RefreshCw, Stethoscope, Trash2, Wrench, X } from "lucide-react";
+import { ArchiveRestore, CheckCircle2, CircleAlert, CircleX, ClipboardCheck, Copy, Download, FileCheck2, FolderOpen, PackageCheck, PlayCircle, RefreshCw, Stethoscope, Trash2, Wrench, X } from "lucide-react";
 import { useStore } from "../../state/store";
 import { useT, type I18nKey } from "../../i18n";
 import { useToast } from "../../components/Toast";
@@ -8,6 +8,7 @@ import { installAttemptDisabled, installBlockedByUpstream } from "../../lib/inst
 import Segmented from "../../components/Segmented";
 import InventoryPluginCard from "../../components/InventoryPluginCard";
 import LaPluginBundleCard from "../../components/LaPluginBundleCard";
+import UpdateCard from "../../components/UpdateCard";
 import { OnlineUpdateSection } from "./OnlineUpdatePage";
 import { localizeInstallCheck } from "../../lib/installCheckLocalization";
 import Modal from "../../components/Modal";
@@ -206,6 +207,18 @@ export default function InstallationPage() {
     });
   };
 
+  const installUpstream = async () => {
+    if (!csgoPath || !!upstreamWorking || !!working) return;
+    await run("install", async () => {
+      try {
+        await api.installComponent(csgoPath, "upstream");
+        await refreshUpstream();
+      } catch (error) {
+        reportError(error);
+      }
+    });
+  };
+
   const restore = async () => {
     setConfirmAction(null);
     await run("restore", async () => {
@@ -344,73 +357,81 @@ export default function InstallationPage() {
           </label>
         }
       >
-        <section className="upd-card">
-          <div className="upd-card__head">
-            <span className="upd-card__icon upd-card__icon--upstream">
-              <PackageCheck size={20} />
-            </span>
-            <div>
-              <strong>{t("upstream.title")}</strong>
-              <small>{t("upstream.titleDesc")}</small>
-            </div>
-            <div className="upd-card__actions">
-              <span className={`update-status ${upstreamReady ? "update-status--current" : ""}`}>
-                {upstreamReady ? t("upstream.ready") : t("upstream.notReady")}
-              </span>
+        <UpdateCard
+          tone="upstream"
+          icon={<PackageCheck size={20} />}
+          title={t("upstream.title")}
+          description={t("upstream.titleDesc")}
+          status={{
+            label: upstreamReady ? t("upstream.ready") : t("upstream.notReady"),
+            tone: upstreamReady ? "current" : "available",
+          }}
+          actions={
+            <>
               <button className="upd-mini-btn" disabled={!releaseInfo || !!upstreamWorking} onClick={checkUpstream}>
                 <RefreshCw size={13} />{upstreamWorking === "check" ? t("upstream.checking") : t("upstream.check")}
               </button>
-              <button className="upd-mini-btn" disabled={!releaseInfo || !!upstreamWorking} onClick={downloadUpstream}>
-                <Download size={13} />{downloading ? t("upstream.downloading", { n: progressPct }) : releaseInfo?.cached ? t("upstream.redownload") : t("upstream.download")}
+              <button className="is-primary" disabled={!csgoPath || !!upstreamWorking || !!working} onClick={installUpstream}>
+                {working === "install"
+                  ? t("install.working")
+                  : !!upstreamState
+                    ? t("component.update")
+                    : t("component.install")}
               </button>
-            </div>
-          </div>
-          <div className="upd-card__versions">
-            <span className="upd-ver">
-              <small>{t("update.currentVersion")}</small>
-              <strong>{upstreamState ? upstreamState.upstream_tag : "--"}</strong>
-            </span>
-            <ArrowRight size={18} className={`upd-arrow ${upstreamOutdated ? "is-hot" : ""}`} aria-hidden="true" />
-            <span className="upd-ver">
-              <small>{t("update.latestVersion")}</small>
-              <strong className={upstreamOutdated ? "is-new" : ""}>{releaseInfo ? releaseInfo.release.tag : "--"}</strong>
-            </span>
-            <span className="upd-ver upd-ver--size">
-              <small>{t("upstream.cache")}</small>
-              <strong>{cache ? formatBytes(cache.total_bytes) : "--"}</strong>
-            </span>
-          </div>
-          {cache && cache.entries.length > 0 && (
-            <p className="inst-diagnostics-scope">
-              {cache.entries.map((entry) => t("upstream.cacheSize", { size: formatBytes(entry.size), tag: entry.tag })).join(" · ")}
-            </p>
-          )}
-          <div className="installation-actions">
-            {downloading && (
-              <button onClick={cancelUpstream}><X size={17} />{t("upstream.cancel")}</button>
-            )}
-            <button disabled={!cache || cache.total_bytes === 0 || !!upstreamWorking} onClick={clearUpstreamCache}>
-              <Trash2 size={17} />{upstreamWorking === "clear" ? t("install.working") : t("upstream.clear")}
+            </>
+          }
+          current={{
+            label: t("update.currentVersion"),
+            value: upstreamState ? upstreamState.upstream_tag : "--",
+          }}
+          latest={{
+            label: t("update.latestVersion"),
+            value: releaseInfo ? releaseInfo.release.tag : "--",
+            highlight: upstreamOutdated,
+          }}
+          size={{ label: t("upstream.cache"), value: cache ? formatBytes(cache.total_bytes) : "--" }}
+          progress={
+            (downloading || (progress && progress.stage !== "done")) && progress
+              ? {
+                  percent: progressPct,
+                  label: progress?.stage === "verifying"
+                    ? t("upstream.verifying")
+                    : t("upstream.progress", {
+                        done: formatBytes(progress?.downloaded_bytes ?? 0),
+                        total: formatBytes(progress?.total_bytes ?? 0),
+                        speed: ((progress?.speed_bps ?? 0) / 1048576).toFixed(1),
+                      }),
+                }
+              : null
+          }
+          footnote={
+            <>
+              {cache && cache.entries.length > 0 && (
+                <p className="inst-diagnostics-scope">
+                  {cache.entries.map((entry) => t("upstream.cacheSize", { size: formatBytes(entry.size), tag: entry.tag })).join(" · ")}
+                </p>
+              )}
+              {upstreamError && <div className="update-error">{upstreamError}</div>}
+            </>
+          }
+        />
+        <div className="installation-actions">
+          {releaseInfo && (
+            <button className="upd-mini-btn" disabled={!releaseInfo || !!upstreamWorking} onClick={downloadUpstream}>
+              <Download size={13} />{downloading ? t("upstream.downloading", { n: progressPct }) : releaseInfo?.cached ? t("upstream.redownload") : t("upstream.download")}
             </button>
-            <button disabled={!!upstreamWorking} onClick={importLocalZip}>
-              <FolderOpen size={17} />{upstreamWorking === "import" ? t("install.working") : t("upstream.manual")}
-            </button>
-          </div>
-          {(downloading || (progress && progress.stage !== "done")) && (
-            <div className="update-progress">
-              <div><span style={{ width: `${progressPct}%` }} /></div>
-              <small>
-                {progress?.stage === "verifying" ? t("upstream.verifying") : t("upstream.progress", {
-                  done: formatBytes(progress?.downloaded_bytes ?? 0),
-                  total: formatBytes(progress?.total_bytes ?? 0),
-                  speed: ((progress?.speed_bps ?? 0) / 1048576).toFixed(1),
-                })}
-              </small>
-            </div>
           )}
-          {downloading && <p className="inst-diagnostics-scope">{t("upstream.resume")}</p>}
-          {upstreamError && <div className="update-error">{upstreamError}</div>}
-        </section>
+          {downloading && (
+            <button onClick={cancelUpstream}><X size={17} />{t("upstream.cancel")}</button>
+          )}
+          <button disabled={!cache || cache.total_bytes === 0 || !!upstreamWorking} onClick={clearUpstreamCache}>
+            <Trash2 size={17} />{upstreamWorking === "clear" ? t("install.working") : t("upstream.clear")}
+          </button>
+          <button disabled={!!upstreamWorking} onClick={importLocalZip}>
+            <FolderOpen size={17} />{upstreamWorking === "import" ? t("install.working") : t("upstream.manual")}
+          </button>
+        </div>
+        {downloading && <p className="inst-diagnostics-scope">{t("upstream.resume")}</p>}
 
         <InventoryPluginCard csgoPath={csgoPath} onError={reportError} />
         <LaPluginBundleCard csgoPath={csgoPath} onError={reportError} />
