@@ -87,13 +87,6 @@ struct CacheMetadata {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-struct ActivePayload {
-    schema_version: u8,
-    version: String,
-    path: String,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
 struct PanelUpdatePlan {
     schema_version: u8,
     old_pid: u32,
@@ -506,7 +499,7 @@ fn find_payload_root(extracted: &Path) -> Option<PathBuf> {
         .find(|path| path.join(installer::MANIFEST_FILE).is_file())
 }
 
-pub fn prepare_plugin(app: &AppHandle) -> Result<(String, PathBuf)> {
+pub fn prepare_plugin(app: &AppHandle, target: &Path) -> Result<(String, PathBuf)> {
     let (component, archive) = download_component(app, "la_plugins")?;
     set_progress(
         app,
@@ -543,48 +536,37 @@ pub fn prepare_plugin(app: &AppHandle) -> Result<(String, PathBuf)> {
         staging_root,
     })?;
     installer::verify_payload(&merged)?;
-    // Keep the active-payload pointer on the pure LA payload root so
-    // `payload_root()` stays "the newest LA payload" and the merged root is
-    // never fed back into a merge as its own LA source.
-    activate_payload(&component.version, &plugin_root)?;
+    // The pure LA payload root is what later local installs, repairs and merges resolve from —
+    // never the merge's own output. It is recorded on the component's row, replacing the pointer
+    // file the earlier design kept in the update cache; a machine with no record yet is skipped,
+    // and the install that follows records its own row.
+    installer::set_component_path(
+        &app_storage::root()?,
+        target,
+        installer::ComponentId::LaPlugins,
+        &plugin_root,
+    )?;
+    cleanup_cache(Some(&component.version))?;
     Ok((component.version, merged))
 }
 
-pub fn activate_payload(version: &str, path: &Path) -> Result<()> {
-    let updates = update_root()?;
-    let canonical = fs::canonicalize(path).map_err(AppError::transaction_io)?;
-    let payloads = fs::canonicalize(updates.join("payloads")).map_err(AppError::transaction_io)?;
-    if !canonical.starts_with(&payloads) {
-        return Err(AppError::update(
-            "Active payload is outside the update cache",
-        ));
-    }
-    installer::verify_payload(&canonical)?;
-    let value = serde_json::to_vec_pretty(&ActivePayload {
-        schema_version: 1,
-        version: version.into(),
-        path: canonical.to_string_lossy().into_owned(),
-    })
-    .map_err(|error| AppError::update(error.to_string()))?;
-    atomic_fs::write_replace(&updates.join("active-payload.json"), &value)
-        .map_err(AppError::transaction_io)?;
-    cleanup_cache(Some(version))?;
-    Ok(())
+/// Path of the pointer file this design retired.
+fn legacy_active_payload_path() -> Result<PathBuf> {
+    Ok(update_root()?.join("active-payload.json"))
 }
 
-pub fn active_payload_root() -> Option<PathBuf> {
-    let updates = update_root().ok()?;
-    let pointer: ActivePayload =
-        serde_json::from_slice(&fs::read(updates.join("active-payload.json")).ok()?).ok()?;
-    if pointer.schema_version != 1 {
-        return None;
+/// Deletes the retired payload pointer.
+///
+/// The LA payload directory now lives in the install record, so a Panel that finds the old file
+/// simply removes it. It is never parsed: a half-written or hand-edited pointer from an older
+/// build must not be able to redirect an install, and its absence is the normal case.
+pub fn retire_legacy_active_payload() -> Result<bool> {
+    let path = legacy_active_payload_path()?;
+    match fs::remove_file(&path) {
+        Ok(()) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(AppError::transaction_io(error)),
     }
-    let path = fs::canonicalize(pointer.path).ok()?;
-    let payloads = fs::canonicalize(updates.join("payloads")).ok()?;
-    if !path.starts_with(payloads) || installer::verify_payload(&path).is_err() {
-        return None;
-    }
-    Some(path)
 }
 
 pub fn prepare_panel(app: &AppHandle) -> Result<UpdateResult> {
@@ -936,25 +918,28 @@ mod tests {
     }
 
     #[test]
-    fn active_payload_rejects_paths_outside_cache() {
+    fn legacy_active_payload_file_is_deleted() {
+        // The retired pointer is removed on the next run and never parsed: a half-written or
+        // hand-edited one from an older build must not be able to redirect an install, and its
+        // absence is the normal case.
         let _guard = app_storage::TEST_STATE_ENV_LOCK.lock().unwrap_or_else(|error| error.into_inner());
-        let base = std::env::temp_dir().join(format!("cs2bi-active-payload-{}", unix_time()));
-        unsafe {
-            std::env::set_var("CS2BI_STATE_ROOT", &base);
-        }
-        fs::create_dir_all(base.join("updates/payloads")).unwrap();
-        let value = serde_json::to_vec(&ActivePayload {
-            schema_version: 1,
-            version: "9.9.9.9".into(),
-            path: base.parent().unwrap().to_string_lossy().into_owned(),
-        })
-        .unwrap();
-        fs::write(base.join("updates/active-payload.json"), value).unwrap();
-        assert!(active_payload_root().is_none());
+        let base = test_root("cs2bi-legacy-active-payload");
+        unsafe { std::env::set_var("CS2BI_STATE_ROOT", &base); }
+        let updates = base.join("updates");
+        fs::create_dir_all(&updates).unwrap();
+        assert!(
+            !retire_legacy_active_payload().unwrap(),
+            "an absent pointer is not an error"
+        );
+
+        let pointer = legacy_active_payload_path().unwrap();
+        fs::write(&pointer, b"{ half written").unwrap();
+        assert!(retire_legacy_active_payload().unwrap());
+        assert!(!pointer.exists(), "the legacy pointer is gone");
+        assert!(!retire_legacy_active_payload().unwrap(), "deletion is idempotent");
+
         fs::remove_dir_all(&base).unwrap();
-        unsafe {
-            std::env::remove_var("CS2BI_STATE_ROOT");
-        }
+        unsafe { std::env::remove_var("CS2BI_STATE_ROOT"); }
     }
 
     #[test]
@@ -979,34 +964,6 @@ mod tests {
             checked_at: 0,
         }).unwrap()).unwrap();
         assert!(cached_manifest(false).unwrap().is_none());
-        fs::remove_dir_all(&base).unwrap();
-        unsafe { std::env::remove_var("CS2BI_STATE_ROOT"); }
-    }
-
-    #[test]
-    fn active_payload_switches_to_a_verified_payload() {
-        let _guard = app_storage::TEST_STATE_ENV_LOCK.lock().unwrap_or_else(|error| error.into_inner());
-        let base = test_root("cs2bi-active-payload-switch");
-        unsafe { std::env::set_var("CS2BI_STATE_ROOT", &base); }
-        let payload = base.join("updates/payloads/1.4.2.4");
-        let file = payload.join("addons/test.bin");
-        fs::create_dir_all(file.parent().unwrap()).unwrap();
-        fs::write(&file, b"payload").unwrap();
-        let manifest = installer::PayloadManifest {
-            schema_version: 1,
-            package_version: "1.4.2.4".into(),
-            entries: vec![installer::PayloadEntry {
-                path: "addons/test.bin".into(),
-                size: 7,
-                sha256: update_core::sha256_file(&file).unwrap(),
-                component: "plugin".into(),
-                ownership: "plus".into(),
-                restore_policy: "restore".into(),
-            }],
-        };
-        fs::write(payload.join(installer::MANIFEST_FILE), serde_json::to_vec(&manifest).unwrap()).unwrap();
-        activate_payload("1.4.2.4", &payload).unwrap();
-        assert_eq!(active_payload_root().unwrap(), fs::canonicalize(&payload).unwrap());
         fs::remove_dir_all(&base).unwrap();
         unsafe { std::env::remove_var("CS2BI_STATE_ROOT"); }
     }

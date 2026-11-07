@@ -711,6 +711,57 @@ pub fn component_version(
     (row.version != UNKNOWN_VERSION).then(|| row.version.clone())
 }
 
+/// Payload directory the record points a component's install at, if any.
+///
+/// This replaces the pointer file the earlier active-payload design wrote into the update cache:
+/// the record already describes what is installed, so the directory an update was extracted to
+/// belongs in it.
+pub fn component_path(
+    state_root: &Path,
+    target: &Path,
+    component: ComponentId,
+) -> Option<String> {
+    read_record(&installation_dir(state_root, target))?
+        .components
+        .get(&component)?
+        .path
+        .clone()
+}
+
+/// Points a component's row at the payload directory its download was extracted to, keeping
+/// whatever version and install time the row already recorded.
+///
+/// Only an existing record can be pointed: a machine with nothing installed gets the row from the
+/// install that follows, which preserves this pointer (see `install_manifest`). Writing a version
+/// here would claim an install that has not happened yet, so the row keeps `UNKNOWN_VERSION` until
+/// the transaction commits.
+pub fn set_component_path(
+    state_root: &Path,
+    target: &Path,
+    component: ComponentId,
+    path: &Path,
+) -> Result<bool> {
+    let directory = installation_dir(state_root, target);
+    let Some(mut record) = read_record(&directory) else {
+        return Ok(false);
+    };
+    let mut row = record
+        .components
+        .get(&component)
+        .cloned()
+        .unwrap_or_else(ComponentRecord::unknown);
+    row.ownership = component_ownership(component).to_string();
+    row.path = Some(
+        fs::canonicalize(path)
+            .unwrap_or_else(|_| path.to_path_buf())
+            .to_string_lossy()
+            .into_owned(),
+    );
+    record.components.insert(component, row);
+    write_json_atomic(&directory.join("record.json"), &record)?;
+    Ok(true)
+}
+
 /// Reads `record.json` and, on the first read of a legacy v1 record (a single `package_version`
 /// and no `components` key), builds the per-component schema-2 view and atomically writes it
 /// back. The one known suite version maps to `la_plugins`; `upstream` and `inventory_simulator`
@@ -1167,9 +1218,8 @@ fn component_of_ownership(ownership: &str) -> Option<ComponentId> {
 ///
 /// The install record stays one file per target: entries already recorded for other owners are
 /// carried over untouched and the component's entries are merged into them. Identical files are
-/// skipped, so re-running the same component payload is a no-op. `active-payload.json` is
-/// deliberately never written here — that pointer belongs to `online_update::activate_payload`
-/// for full-payload installs.
+/// skipped, so re-running the same component payload is a no-op. This transaction never writes a
+/// payload pointer: the component's own `record.components` row is the pointer.
 pub fn install_component(
     payload_root: &Path,
     state_root: &Path,
@@ -1631,7 +1681,13 @@ fn install_manifest(
                 source: "component_install".to_string(),
                 installed_at: unix_time(),
                 ownership: component_ownership(component_id).to_string(),
-                path: None,
+                // A download pointer written before this transaction (see
+                // `set_component_path`) must survive the row it rewrites, or the local source
+                // the next repair resolves would be lost.
+                path: old_record
+                    .as_ref()
+                    .and_then(|record| record.components.get(&component_id))
+                    .and_then(|row| row.path.clone()),
             },
         );
     }
