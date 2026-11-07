@@ -1797,6 +1797,24 @@
 }
 .upd-mini-btn:hover:not(:disabled) { border-color: var(--c-accent-line); color: var(--c-accent-hover); }
 .upd-mini-btn:disabled { opacity: 0.45; cursor: default; }
+/* Primary action inside an update card: same box as the upd-mini-btn siblings so
+   the row lines up, accent fill from the other install/update primaries. */
+.upd-card__actions .is-primary {
+  min-height: 26px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: var(--c-blue);
+  color: white;
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.upd-card__actions .is-primary:hover:not(:disabled) { background: var(--c-accent-hover); }
+.upd-card__actions .is-primary:disabled { opacity: 0.45; cursor: default; }
 .upd-card__icon {
   width: 46px;
   height: 46px;
