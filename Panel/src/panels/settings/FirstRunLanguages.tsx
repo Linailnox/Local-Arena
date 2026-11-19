@@ -116,6 +116,7 @@ export default function FirstRunLanguages() {
       open={guideOpen}
       title={t("first.installGuideTitle")}
       onClose={() => setGuideOpen(false)}
+      scrimClassName="modal__scrim--raised"
       footer={<>
         <button onClick={() => setGuideOpen(false)}>{t("common.cancel")}</button>
         <button className="is-primary" onClick={() => void finish()}>{t("first.goToInstallation")}</button>
