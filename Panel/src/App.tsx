@@ -41,7 +41,7 @@ const VIEW_KEY = "cs2bi.view";
 const WELCOME_STORY_URL = "https://api.hypcvgm.top/la";
 
 export default function App() {
-  const { error, clearError, ready, config, exportDiagnostics, updateConfig, reportError, statsConfigRequest } = useStore();
+  const { error, clearError, ready, config, exportDiagnostics, updateConfig, reportError, statsConfigRequest, installationRequest } = useStore();
   const { appearance } = useAppearance();
   const t = useT();
   const storyPromptAttempted = useRef(false);
@@ -58,6 +58,9 @@ export default function App() {
   useEffect(() => {
     if (statsConfigRequest > 0) setView("stats");
   }, [statsConfigRequest]);
+  useEffect(() => {
+    if (installationRequest > 0) setView("settings");
+  }, [installationRequest]);
   // Anchor inside the guide requested by the error modal deep link.
   const [guideAnchor, setGuideAnchor] = useState<string | null>(null);
   const clearGuideAnchor = useCallback(() => setGuideAnchor(null), []);

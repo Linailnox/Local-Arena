@@ -3315,7 +3315,7 @@ fn install_upstream_blocking(
     let restore_preview = config.mode.as_deref() == Some("preview");
     let (tag, _zip) = upstream_package::select_cached_upstream()?.ok_or_else(|| {
         AppError::payload(
-            "Upstream package is not cached; download it in Installation Management first",
+            "The upstream component has not been downloaded yet. Open Settings → Installation, download the upstream component, then try again.",
         )
     })?;
     ensure_target_not_running(root)?;

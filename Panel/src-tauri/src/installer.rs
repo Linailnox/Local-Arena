@@ -596,14 +596,12 @@ fn read_manifest_document(payload_root: &Path) -> Result<PayloadManifest> {
     let path = payload_root.join(MANIFEST_FILE);
     let bytes = fs::read(&path).map_err(|_| {
         if payload_root.join(PANEL_UPDATE_MARKER).is_file() {
-            AppError::payload(format!(
-                "This is the Panel-only online-update component, not the complete installer. Download and extract LocalArena-v{}-windows.zip for a first installation.",
-                crate::app_version::display()
-            ))
+            AppError::payload(
+                "This is a Panel-only update payload, not a complete component. Open Settings → Installation, download the upstream component, then choose Install all.",
+            )
         } else {
             AppError::payload(format!(
-                "The complete plugin payload is missing. Keep LocalArena.exe beside addons, cfg, overrides, and {}. Expected: {}",
-                MANIFEST_FILE,
+                "The Local Arena plugin payload is missing. Open Settings → Installation and download the Local Arena plugin bundle. Expected: {}",
                 path.display()
             ))
         }
@@ -2847,11 +2845,8 @@ mod tests {
         let error = read_manifest_document(&payload).unwrap_err();
 
         assert_eq!(error.code, "E1301");
-        assert!(error.detail.contains("Panel-only online-update component"));
-        assert!(error.detail.contains(&format!(
-            "LocalArena-v{}-windows.zip",
-            crate::app_version::display()
-        )));
+        assert!(error.detail.contains("Panel-only update payload"));
+        assert!(error.detail.contains("Settings → Installation"));
         fs::remove_dir_all(base).unwrap();
     }
 

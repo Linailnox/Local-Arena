@@ -39,7 +39,7 @@ const INSTALLED_STATE_FILE: &str = "upstream-install.json";
 const UPSTREAM_ONLY_DIR: &str = "upstream-only";
 const UPSTREAM_ONLY_STATE_FILE: &str = "upstream-only-state.json";
 const UPSTREAM_UNAVAILABLE: &str =
-    "Upstream package is not available; download it in Installation Management";
+    "The upstream component has not been downloaded yet. Open Settings → Installation, download the upstream component, then try again.";
 
 /// Paths owned by the LA plugin bundle. `scripts/package.ps1` marks exactly
 /// these three plugin directories plus these two cfg overlays as `plus`; every
