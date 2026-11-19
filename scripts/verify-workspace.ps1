@@ -2,7 +2,7 @@
 param(
     [string]$PackageRoot,
     [string]$PluginBundleRoot,
-    [string]$ExpectedPackageVersion = "1.4.3.3",
+    [string]$ExpectedPackageVersion = "1.5.0",
     [switch]$Linux
 )
 
