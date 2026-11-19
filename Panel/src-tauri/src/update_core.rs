@@ -1,223 +1,62 @@
-use base64::Engine;
-use ed25519_dalek::{Signature, Verifier, VerifyingKey};
-use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::cmp::Ordering;
 use std::fs::{self, File};
 use std::io::{self, Read, Seek};
 use std::path::{Component, Path, PathBuf};
 
-pub const MAX_MANIFEST_BYTES: u64 = 512 * 1024;
 pub const MAX_ARCHIVE_BYTES: u64 = 1024 * 1024 * 1024;
 pub const MAX_EXTRACTED_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 pub const MAX_ARCHIVE_ENTRIES: usize = 50_000;
 
+/// Release version ordering.
+///
+/// The release line uses three-part SemVer. Wrapping `semver::Version` keeps the
+/// pre-release ordering (`1.5.0-Preview.1 < 1.5.0`) and the existing call sites in
+/// `installer` — which compare payload package versions for downgrade guards — intact.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DisplayVersion {
-    parts: [u32; 4],
-    preview: Option<u32>,
+    version: semver::Version,
 }
 
 impl DisplayVersion {
     pub fn parse(value: &str) -> std::result::Result<Self, String> {
         let value = value.trim().trim_start_matches(['v', 'V']);
-        let (numeric, preview) = match value.split_once('-') {
-            Some((numeric, suffix)) => {
-                let Some(number) = suffix
-                    .to_ascii_lowercase()
-                    .strip_prefix("preview.")
-                    .map(str::to_owned)
-                else {
-                    return Err(format!("Unsupported version suffix: {suffix}"));
-                };
-                if number.is_empty() || !number.bytes().all(|byte| byte.is_ascii_digit()) {
-                    return Err(format!("Invalid preview version: {suffix}"));
-                }
-                let number = number
-                    .parse::<u32>()
-                    .map_err(|_| format!("Preview version is too large: {suffix}"))?;
-                (numeric, Some(number))
-            }
+        // Legacy records used four numeric parts (`1.4.3.3`). Fold the fourth part
+        // into SemVer build metadata so old installs still compare against the
+        // three-part release line instead of failing to parse.
+        let (core, suffix) = match value.split_once('-') {
+            Some((core, suffix)) => (core, Some(suffix)),
             None => (value, None),
         };
-        let parts = numeric.split('.').collect::<Vec<_>>();
-        if parts.len() != 4 {
-            return Err(format!("Version must contain four numeric parts: {value}"));
-        }
-        let mut parsed = [0; 4];
-        for (index, part) in parts.into_iter().enumerate() {
-            if part.is_empty() || !part.bytes().all(|byte| byte.is_ascii_digit()) {
-                return Err(format!("Invalid version component: {part}"));
+        let parts = core.split('.').collect::<Vec<_>>();
+        let normalized = match parts.as_slice() {
+            [major, minor, patch, build]
+                if [major, minor, patch, build]
+                    .iter()
+                    .all(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit())) =>
+            {
+                match suffix {
+                    Some(suffix) => format!("{major}.{minor}.{patch}-{suffix}+{build}"),
+                    None => format!("{major}.{minor}.{patch}+{build}"),
+                }
             }
-            parsed[index] = part
-                .parse::<u32>()
-                .map_err(|_| format!("Version component is too large: {part}"))?;
-        }
-        Ok(Self {
-            parts: parsed,
-            preview,
-        })
+            _ => value.to_string(),
+        };
+        let version = semver::Version::parse(&normalized)
+            .map_err(|error| format!("Invalid release version {value}: {error}"))?;
+        Ok(Self { version })
     }
 }
 
 impl Ord for DisplayVersion {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.parts.cmp(&other.parts).then_with(|| match (self.preview, other.preview) {
-            (Some(left), Some(right)) => left.cmp(&right),
-            (Some(_), None) => Ordering::Less,
-            (None, Some(_)) => Ordering::Greater,
-            (None, None) => Ordering::Equal,
-        })
+        self.version.cmp(&other.version)
     }
 }
 
 impl PartialOrd for DisplayVersion {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
-    }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct RemoteComponent {
-    pub version: String,
-    pub url: String,
-    pub size: u64,
-    pub sha256: String,
-    pub min_panel_version: String,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct RemoteComponents {
-    pub panel: RemoteComponent,
-    pub plugin: RemoteComponent,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct RemoteUpdateManifest {
-    pub schema_version: u8,
-    pub release_version: String,
-    pub published_at: String,
-    pub release_notes_url: String,
-    pub components: RemoteComponents,
-}
-
-impl RemoteUpdateManifest {
-    pub fn validate(&self) -> std::result::Result<(), String> {
-        if self.schema_version != 1 {
-            return Err("Unsupported update manifest schema".into());
-        }
-        DisplayVersion::parse(&self.release_version)?;
-        validate_https_github_url(&self.release_notes_url)?;
-        for component in [&self.components.panel, &self.components.plugin] {
-            DisplayVersion::parse(&component.version)?;
-            DisplayVersion::parse(&component.min_panel_version)?;
-            validate_https_github_url(&component.url)?;
-            if component.size == 0 || component.size > MAX_ARCHIVE_BYTES {
-                return Err(format!(
-                    "Update component size is outside the allowed range: {}",
-                    component.size
-                ));
-            }
-            validate_sha256(&component.sha256)?;
-        }
-        Ok(())
-    }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct LaPluginsComponents {
-    pub windows: Option<RemoteComponent>,
-    pub linux: Option<RemoteComponent>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct RemoteComponentsV2 {
-    pub panel: RemoteComponent,
-    pub la_plugins: LaPluginsComponents,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct RemoteUpdateManifestV2 {
-    pub schema_version: u8,
-    pub release_version: String,
-    pub published_at: String,
-    pub release_notes_url: String,
-    pub components: RemoteComponentsV2,
-}
-
-impl RemoteUpdateManifestV2 {
-    pub fn validate(&self) -> std::result::Result<(), String> {
-        validate_v2(self)
-    }
-}
-
-fn validate_component(component: &RemoteComponent) -> std::result::Result<(), String> {
-    DisplayVersion::parse(&component.version)?;
-    DisplayVersion::parse(&component.min_panel_version)?;
-    validate_https_github_url(&component.url)?;
-    if component.size == 0 || component.size > MAX_ARCHIVE_BYTES {
-        return Err(format!(
-            "Update component size is outside the allowed range: {}",
-            component.size
-        ));
-    }
-    validate_sha256(&component.sha256)
-}
-
-pub fn validate_v2(manifest: &RemoteUpdateManifestV2) -> std::result::Result<(), String> {
-    if manifest.schema_version != 2 {
-        return Err("Unsupported update manifest schema".into());
-    }
-    DisplayVersion::parse(&manifest.release_version)?;
-    validate_https_github_url(&manifest.release_notes_url)?;
-    validate_component(&manifest.components.panel)?;
-    let la_plugins = &manifest.components.la_plugins;
-    if la_plugins.windows.is_none() && la_plugins.linux.is_none() {
-        return Err("Update manifest must publish at least one LA plugin archive".into());
-    }
-    for component in [&la_plugins.windows, &la_plugins.linux].into_iter().flatten() {
-        validate_component(component)?;
-    }
-    Ok(())
-}
-
-pub fn parse_update_manifest(
-    bytes: &[u8],
-) -> std::result::Result<RemoteUpdateManifestV2, String> {
-    #[derive(Deserialize)]
-    struct SchemaPeek {
-        schema_version: u8,
-    }
-
-    let peek: SchemaPeek = serde_json::from_slice(bytes)
-        .map_err(|error| format!("Invalid update manifest: {error}"))?;
-    match peek.schema_version {
-        2 => {
-            let manifest: RemoteUpdateManifestV2 = serde_json::from_slice(bytes)
-                .map_err(|error| format!("Invalid update manifest: {error}"))?;
-            manifest.validate()?;
-            Ok(manifest)
-        }
-        1 => {
-            let manifest: RemoteUpdateManifest = serde_json::from_slice(bytes)
-                .map_err(|error| format!("Invalid update manifest: {error}"))?;
-            manifest.validate()?;
-            // Schema v1 only ever published a Windows LA plugin archive.
-            Ok(RemoteUpdateManifestV2 {
-                schema_version: 2,
-                release_version: manifest.release_version,
-                published_at: manifest.published_at,
-                release_notes_url: manifest.release_notes_url,
-                components: RemoteComponentsV2 {
-                    panel: manifest.components.panel,
-                    la_plugins: LaPluginsComponents {
-                        windows: Some(manifest.components.plugin),
-                        linux: None,
-                    },
-                },
-            })
-        }
-        _ => Err("Unsupported update manifest schema".into()),
     }
 }
 
@@ -246,29 +85,6 @@ pub fn validate_sha256(value: &str) -> std::result::Result<(), String> {
     } else {
         Err("SHA-256 must contain 64 hexadecimal characters".into())
     }
-}
-
-pub fn verify_manifest_signature(
-    manifest: &[u8],
-    signature_base64: &str,
-    public_key_base64: &str,
-) -> std::result::Result<(), String> {
-    let engine = base64::engine::general_purpose::STANDARD;
-    let public = engine
-        .decode(public_key_base64.trim())
-        .map_err(|_| "Embedded update public key is invalid Base64")?;
-    let signature = engine
-        .decode(signature_base64.trim())
-        .map_err(|_| "Update manifest signature is invalid Base64")?;
-    let public: [u8; 32] = public
-        .try_into()
-        .map_err(|_| "Embedded update public key must be 32 bytes")?;
-    let signature = Signature::from_slice(&signature)
-        .map_err(|_| "Update manifest signature must be 64 bytes")?;
-    let key =
-        VerifyingKey::from_bytes(&public).map_err(|_| "Embedded update public key is invalid")?;
-    key.verify(manifest, &signature)
-        .map_err(|_| "Update manifest signature verification failed".into())
 }
 
 pub fn sha256_file(path: &Path) -> io::Result<String> {
@@ -307,72 +123,6 @@ pub fn verify_component_file(
         ));
     }
     Ok(())
-}
-
-pub fn replace_file_with_backup(
-    staged: &Path,
-    target: &Path,
-    backup: &Path,
-) -> std::result::Result<(), String> {
-    if !staged.is_file() {
-        return Err("Staged update file is missing".into());
-    }
-    if !target.is_file() {
-        return Err("Current Panel executable is missing".into());
-    }
-    if let Some(parent) = backup.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|error| format!("Cannot create Panel backup directory: {error}"))?;
-    }
-    fs::copy(target, backup).map_err(|error| format!("Cannot back up current Panel: {error}"))?;
-    let temporary = crate::atomic_fs::temporary_path(target).map_err(|error| error.to_string())?;
-    let result = (|| -> std::result::Result<(), String> {
-        fs::copy(staged, &temporary)
-            .map_err(|error| format!("Cannot stage Panel replacement: {error}"))?;
-        crate::atomic_fs::sync(&temporary)
-            .map_err(|error| format!("Cannot flush Panel replacement: {error}"))?;
-        crate::atomic_fs::replace(&temporary, target)
-            .map_err(|error| format!("Cannot replace Panel executable: {error}"))
-    })();
-    if result.is_err() {
-        let _ = fs::remove_file(&temporary);
-    }
-    result
-}
-
-pub fn install_file_with_backup(
-    staged: &Path,
-    current: &Path,
-    target: &Path,
-    backup: &Path,
-) -> std::result::Result<(), String> {
-    if current == target {
-        return replace_file_with_backup(staged, target, backup);
-    }
-    if !staged.is_file() {
-        return Err("Staged update file is missing".into());
-    }
-    if !current.is_file() {
-        return Err("Current Panel executable is missing".into());
-    }
-    if let Some(parent) = backup.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|error| format!("Cannot create Panel backup directory: {error}"))?;
-    }
-    fs::copy(current, backup).map_err(|error| format!("Cannot back up current Panel: {error}"))?;
-    let temporary = crate::atomic_fs::temporary_path(target).map_err(|error| error.to_string())?;
-    let result = (|| -> std::result::Result<(), String> {
-        fs::copy(staged, &temporary)
-            .map_err(|error| format!("Cannot stage Panel replacement: {error}"))?;
-        crate::atomic_fs::sync(&temporary)
-            .map_err(|error| format!("Cannot flush Panel replacement: {error}"))?;
-        crate::atomic_fs::replace(&temporary, target)
-            .map_err(|error| format!("Cannot install Panel executable: {error}"))
-    })();
-    if result.is_err() {
-        let _ = fs::remove_file(&temporary);
-    }
-    result
 }
 
 fn safe_entry_path(name: &str) -> std::result::Result<PathBuf, String> {
@@ -452,7 +202,6 @@ pub fn extract_zip_safely<R: Read + Seek>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ed25519_dalek::{Signer, SigningKey};
     use std::io::{Cursor, Write};
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -462,7 +211,7 @@ mod tests {
 
     fn root() -> PathBuf {
         std::env::temp_dir().join(format!(
-            "cs2bi-update-core-{}-{}-{}",
+            "localarena-update-core-{}-{}-{}",
             std::process::id(),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -473,38 +222,24 @@ mod tests {
     }
 
     #[test]
-    fn compares_four_part_versions_numerically() {
+    fn compares_semver_versions_numerically() {
         assert!(
-            DisplayVersion::parse("1.4.2.10").unwrap() > DisplayVersion::parse("1.4.2.3").unwrap()
+            DisplayVersion::parse("1.4.10").unwrap() > DisplayVersion::parse("1.4.3").unwrap()
         );
         assert!(
-            DisplayVersion::parse("v2.0.0.0").unwrap()
-                > DisplayVersion::parse("1.99.99.99").unwrap()
+            DisplayVersion::parse("v2.0.0").unwrap() > DisplayVersion::parse("1.99.99").unwrap()
         );
-        assert!(DisplayVersion::parse("1.4.2").is_err());
-        assert!(DisplayVersion::parse("1.4.2.fix").is_err());
-        assert!(DisplayVersion::parse("1.4.2.5-Preview.2").is_ok());
+        assert!(DisplayVersion::parse("1.4").is_err());
+        assert!(DisplayVersion::parse("1.4.3.fix").is_err());
+        assert!(DisplayVersion::parse("1.4.3-Preview.2").is_ok());
         assert!(
-            DisplayVersion::parse("1.4.2.5-Preview.2").unwrap()
-                > DisplayVersion::parse("1.4.2.5-Preview.1").unwrap()
+            DisplayVersion::parse("1.4.3-Preview.2").unwrap()
+                > DisplayVersion::parse("1.4.3-Preview.1").unwrap()
         );
         assert!(
-            DisplayVersion::parse("1.4.2.5").unwrap()
-                > DisplayVersion::parse("1.4.2.5-Preview.2").unwrap()
+            DisplayVersion::parse("1.4.3").unwrap()
+                > DisplayVersion::parse("1.4.3-Preview.2").unwrap()
         );
-        assert!(DisplayVersion::parse("1.4.2.5-beta.2").is_err());
-    }
-
-    #[test]
-    fn verifies_ed25519_manifest_and_rejects_changes() {
-        let signing = SigningKey::from_bytes(&[7_u8; 32]);
-        let manifest = br#"{"schema_version":1}"#;
-        let signature = signing.sign(manifest);
-        let engine = base64::engine::general_purpose::STANDARD;
-        let public = engine.encode(signing.verifying_key().to_bytes());
-        let signature = engine.encode(signature.to_bytes());
-        verify_manifest_signature(manifest, &signature, &public).unwrap();
-        assert!(verify_manifest_signature(b"changed", &signature, &public).is_err());
     }
 
     #[test]
@@ -518,120 +253,6 @@ mod tests {
         assert!(verify_component_file(&file, 8, &hash).is_err());
         assert!(verify_component_file(&file, 7, &"0".repeat(64)).is_err());
         fs::remove_dir_all(directory).unwrap();
-    }
-
-    #[test]
-    fn parses_and_validates_v2_manifest_with_panel_and_la_plugins() {
-        let manifest = serde_json::json!({
-            "schema_version": 2,
-            "release_version": "1.4.3.4",
-            "published_at": "2026-11-05T00:00:00Z",
-            "release_notes_url": "https://github.com/numakkiyu/Local-Arena/releases/tag/v1.4.3.4",
-            "components": {
-                "panel": component_json("1.4.3.4"),
-                "la_plugins": {
-                    "windows": component_json("1.4.3.4"),
-                    "linux": component_json("1.4.3.4"),
-                },
-            },
-        });
-        let parsed = parse_update_manifest(manifest.to_string().as_bytes()).unwrap();
-        assert_eq!(parsed.schema_version, 2);
-        assert_eq!(parsed.release_version, "1.4.3.4");
-        assert_eq!(parsed.components.panel.version, "1.4.3.4");
-        let windows = parsed.components.la_plugins.windows.unwrap();
-        assert_eq!(windows.size, 1024);
-        let linux = parsed.components.la_plugins.linux.unwrap();
-        assert_eq!(linux.version, "1.4.3.4");
-    }
-
-    #[test]
-    fn converts_v1_manifest_to_v2_la_plugins_windows() {
-        let manifest = serde_json::json!({
-            "schema_version": 1,
-            "release_version": "1.4.3.3",
-            "published_at": "2026-10-31T00:00:00Z",
-            "release_notes_url": "https://github.com/numakkiyu/Local-Arena/releases/tag/v1.4.3.3",
-            "components": {
-                "panel": component_json("1.4.3.3"),
-                "plugin": component_json("1.4.3.2"),
-            },
-        });
-        let parsed = parse_update_manifest(manifest.to_string().as_bytes()).unwrap();
-        assert_eq!(parsed.schema_version, 2);
-        assert_eq!(parsed.release_version, "1.4.3.3");
-        assert_eq!(parsed.components.panel.version, "1.4.3.3");
-        assert_eq!(parsed.components.panel.sha256, "a".repeat(64));
-        assert_eq!(parsed.components.panel.min_panel_version, "1.4.3.0");
-        let windows = parsed.components.la_plugins.windows.unwrap();
-        assert_eq!(windows.version, "1.4.3.2");
-        assert_eq!(
-            windows.url,
-            component_json("1.4.3.2")["url"].as_str().unwrap()
-        );
-        assert!(parsed.components.la_plugins.linux.is_none());
-    }
-
-    #[test]
-    fn rejects_v1_manifest_without_plugin_component() {
-        let manifest = serde_json::json!({
-            "schema_version": 1,
-            "release_version": "1.4.3.3",
-            "published_at": "2026-10-31T00:00:00Z",
-            "release_notes_url": "https://github.com/numakkiyu/Local-Arena/releases/tag/v1.4.3.3",
-            "components": {
-                "panel": component_json("1.4.3.3"),
-            },
-        });
-        assert!(parse_update_manifest(manifest.to_string().as_bytes()).is_err());
-    }
-
-    #[test]
-    fn rejects_unsupported_schema_and_invalid_v2_components() {
-        let base = serde_json::json!({
-            "schema_version": 2,
-            "release_version": "1.4.3.4",
-            "published_at": "2026-11-05T00:00:00Z",
-            "release_notes_url": "https://github.com/numakkiyu/Local-Arena/releases/tag/v1.4.3.4",
-            "components": {
-                "panel": component_json("1.4.3.4"),
-                "la_plugins": {
-                    "windows": component_json("1.4.3.4"),
-                    "linux": null,
-                },
-            },
-        });
-        parse_update_manifest(base.to_string().as_bytes()).unwrap();
-
-        let mut future = base.clone();
-        future["schema_version"] = serde_json::json!(3);
-        assert!(parse_update_manifest(future.to_string().as_bytes()).is_err());
-
-        let mut empty = base.clone();
-        empty["components"]["la_plugins"]["windows"] = serde_json::Value::Null;
-        assert!(parse_update_manifest(empty.to_string().as_bytes()).is_err());
-
-        let mut bad_hash = base.clone();
-        bad_hash["components"]["panel"]["sha256"] = serde_json::json!("not-a-sha256");
-        assert!(parse_update_manifest(bad_hash.to_string().as_bytes()).is_err());
-
-        let mut bad_url = base.clone();
-        bad_url["components"]["panel"]["url"] = serde_json::json!("http://example.com/panel.zip");
-        assert!(parse_update_manifest(bad_url.to_string().as_bytes()).is_err());
-
-        let mut bad_min = base.clone();
-        bad_min["components"]["panel"]["min_panel_version"] = serde_json::json!("1.4");
-        assert!(parse_update_manifest(bad_min.to_string().as_bytes()).is_err());
-    }
-
-    fn component_json(version: &str) -> serde_json::Value {
-        serde_json::json!({
-            "version": version,
-            "url": "https://github.com/numakkiyu/Local-Arena/releases/download/v1.4.3.3/LocalArena-panel-v1.4.3.3-windows.zip",
-            "size": 1024,
-            "sha256": "a".repeat(64),
-            "min_panel_version": "1.4.3.0",
-        })
     }
 
     fn zip_with(name: &str, bytes: &[u8]) -> Vec<u8> {
@@ -664,56 +285,5 @@ mod tests {
                 .is_err()
         );
         let _ = fs::remove_dir_all(directory);
-    }
-
-    #[test]
-    fn panel_replacement_creates_backup_and_is_atomic() {
-        let directory = root();
-        fs::create_dir_all(&directory).unwrap();
-        let target = directory.join("LocalArena.exe");
-        let staged = directory.join("new.exe");
-        let backup = directory.join("backup/previous.exe");
-        fs::write(&target, b"old").unwrap();
-        fs::write(&staged, b"new").unwrap();
-        replace_file_with_backup(&staged, &target, &backup).unwrap();
-        assert_eq!(fs::read(target).unwrap(), b"new");
-        assert_eq!(fs::read(backup).unwrap(), b"old");
-        fs::remove_dir_all(directory).unwrap();
-    }
-
-    #[test]
-    fn missing_panel_stage_leaves_current_executable_unchanged() {
-        let directory = root();
-        fs::create_dir_all(&directory).unwrap();
-        let target = directory.join("LocalArena.exe");
-        fs::write(&target, b"old").unwrap();
-        assert!(
-            replace_file_with_backup(
-                &directory.join("missing.exe"),
-                &target,
-                &directory.join("backup.exe")
-            )
-            .is_err()
-        );
-        assert_eq!(fs::read(target).unwrap(), b"old");
-        assert!(!directory.join("backup.exe").exists());
-        fs::remove_dir_all(directory).unwrap();
-    }
-
-    #[test]
-    fn panel_replacement_migrates_legacy_executable_name() {
-        let directory = root();
-        fs::create_dir_all(&directory).unwrap();
-        let current = directory.join("CS2BotImproverPlus.exe");
-        let target = directory.join("LocalArena.exe");
-        let staged = directory.join("new.exe");
-        let backup = directory.join("backup/previous.exe");
-        fs::write(&current, b"old").unwrap();
-        fs::write(&staged, b"new").unwrap();
-        install_file_with_backup(&staged, &current, &target, &backup).unwrap();
-        assert_eq!(fs::read(target).unwrap(), b"new");
-        assert_eq!(fs::read(current).unwrap(), b"old");
-        assert_eq!(fs::read(backup).unwrap(), b"old");
-        fs::remove_dir_all(directory).unwrap();
     }
 }

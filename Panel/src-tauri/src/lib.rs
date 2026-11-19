@@ -3364,7 +3364,11 @@ fn install_la_blocking(
     ensure_target_not_running(root)?;
     ensure_steam_app_idle(root)?;
     let snapshot = online_update::snapshot(installed_plugin_version(app).as_deref())?;
-    let source = la_bundle_source(allow_download && snapshot.la_plugins.update_available);
+    let source = la_bundle_source(
+        allow_download
+            && (snapshot.la_plugins.update_available
+                || snapshot.la_plugins.current_version.is_empty()),
+    );
     if source == LaBundleSource::Download && !snapshot.la_plugins.compatible {
         return Err(AppError::update(
             "This plugin update requires a newer Panel updater",
@@ -3675,16 +3679,12 @@ async fn check_online_updates(
     app: AppHandle,
     force: bool,
 ) -> Result<online_update::OnlineUpdateSnapshot> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let plugin_version = installed_plugin_version(&app);
-        let result = online_update::check(force, plugin_version.as_deref());
-        if let Err(error) = &result {
-            online_update::record_check_error(error);
-        }
-        result
-    })
-    .await
-    .map_err(|error| AppError::update(format!("Update check task failed: {error}")))?
+    let plugin_version = installed_plugin_version(&app);
+    let result = online_update::check(&app, force, plugin_version.as_deref()).await;
+    if let Err(error) = &result {
+        online_update::record_check_error(error);
+    }
+    result
 }
 
 /// Which payload [`install_la_plugin_bundle`] installs from (F2 review, major 1).
@@ -3731,16 +3731,14 @@ async fn install_la_plugin_bundle(
 
 #[tauri::command]
 async fn install_panel_update(app: AppHandle) -> Result<online_update::UpdateResult> {
-    let worker_app = app.clone();
-    let result = tauri::async_runtime::spawn_blocking(move || {
+    let result = {
         let _busy = online_update::OperationGuard::acquire()?;
-        online_update::prepare_panel(&worker_app)
-    })
-    .await
-    .map_err(|error| AppError::update(format!("Panel update task failed: {error}")))??;
+        online_update::install_panel(&app).await?
+    };
+    let restart_app = app.clone();
     std::thread::spawn(move || {
         std::thread::sleep(std::time::Duration::from_millis(500));
-        app.exit(0);
+        restart_app.restart();
     });
     Ok(result)
 }
@@ -3753,48 +3751,58 @@ async fn install_all_updates(
     app: AppHandle,
     csgo: Option<String>,
 ) -> Result<online_update::UpdateBatchResult> {
-    let worker_app = app.clone();
-    let result = tauri::async_runtime::spawn_blocking(move || {
-        let _busy = online_update::OperationGuard::acquire()?;
-        let target = csgo.as_deref().ok_or_else(|| {
-            AppError::directory(
-                "Select the CS2 game/csgo directory before installing the components",
-            )
-        })?;
-        let root = csgo_path(target)?;
-        let plugin_version = installed_plugin_version(&worker_app);
-        let snapshot = online_update::snapshot(plugin_version.as_deref())?;
+    let target = csgo.as_deref().ok_or_else(|| {
+        AppError::directory(
+            "Select the CS2 game/csgo directory before installing the components",
+        )
+    })?;
+    let root = csgo_path(target)?;
+    let plugin_version = installed_plugin_version(&app);
+    let snapshot = online_update::snapshot(plugin_version.as_deref())?;
+    if snapshot.panel.update_available && !snapshot.panel.compatible {
+        return Err(AppError::update(
+            "This Panel update requires a newer updater baseline",
+        ));
+    }
 
-        let panel = if snapshot.panel.update_available {
-            if !snapshot.panel.compatible {
-                return Err(AppError::update(
-                    "This Panel update requires a newer updater baseline",
-                ));
-            }
-            Some(online_update::prepare_panel(&worker_app)?)
-        } else {
-            None
-        };
-
-        let components = install_components_blocking(&worker_app, &root)?;
-        let la_plugins = components
-            .iter()
-            .find(|result| result.component == "la_plugins")
-            .cloned();
-        Ok(online_update::UpdateBatchResult {
-            restart_required: panel.is_some(),
-            panel,
-            la_plugins,
-            components,
+    // Components first: the Tauri updater installs the Panel bundle itself and
+    // the process may restart immediately afterwards, so no component work may
+    // be queued behind it.
+    let components = {
+        let worker_app = app.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            let _busy = online_update::OperationGuard::acquire()?;
+            install_components_blocking(&worker_app, &root)
         })
-    })
-    .await
-    .map_err(|error| AppError::update(format!("Combined update task failed: {error}")))??;
+        .await
+        .map_err(|error| AppError::update(format!("Component update task failed: {error}")))??
+    };
+
+    let panel = if snapshot.panel.update_available {
+        Some({
+            let _busy = online_update::OperationGuard::acquire()?;
+            online_update::install_panel(&app).await?
+        })
+    } else {
+        None
+    };
+
+    let la_plugins = components
+        .iter()
+        .find(|result| result.component == "la_plugins")
+        .cloned();
+    let result = online_update::UpdateBatchResult {
+        restart_required: panel.is_some(),
+        panel,
+        la_plugins,
+        components,
+    };
 
     if result.restart_required {
+        let restart_app = app.clone();
         std::thread::spawn(move || {
             std::thread::sleep(std::time::Duration::from_millis(500));
-            app.exit(0);
+            restart_app.restart();
         });
     }
     Ok(result)
@@ -5191,6 +5199,7 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             if let Ok(root) = app_storage::root() {
                 let removed = logging::cleanup(&root).unwrap_or(0);
@@ -5202,9 +5211,11 @@ pub fn run() {
                 logging::append(&root, "INFO", "panel.started", &format!("version={}, logs_collected={removed}, archives_collected={archives_removed}, update_cache_collected={update_cache_removed}, legacy_pointer_removed={legacy_pointer_removed}", app_version::display()));
             }
             let update_app = app.handle().clone();
-            tauri::async_runtime::spawn_blocking(move || {
+            tauri::async_runtime::spawn(async move {
                 let plugin_version = installed_plugin_version(&update_app);
-                if let Err(error) = online_update::check(false, plugin_version.as_deref()) {
+                if let Err(error) =
+                    online_update::check(&update_app, false, plugin_version.as_deref()).await
+                {
                     online_update::record_check_error(&error);
                     if let Ok(root) = app_storage::root() {
                         logging::append(&root, "WARN", "update.startup_check_failed", &format!("host=github.com, {}", error.detail));
@@ -5247,8 +5258,4 @@ pub fn run() {
             cs2ss_bridge::prune_cs2ss_bot_players])
         .run(tauri::generate_context!())
         .expect("error while running CS2BotImproverPlus");
-}
-
-pub fn maybe_run_update_helper() -> bool {
-    online_update::maybe_apply_panel_update()
 }
