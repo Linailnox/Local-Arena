@@ -1,17 +1,25 @@
 name: Build
+
 on:
   push:
     branches:
-      - 'update'
-      - 'build'
+      - "update"
+      - "build"
   workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  build:
-    runs-on: windows-latest
+  panel:
+    name: Panel (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+          - os: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     env:
       CARGO_TERM_COLOR: always
     steps:
@@ -24,8 +32,6 @@ jobs:
         with:
           bun-version: "1.4.3"
 
-      # Bun owns dependency installs (Panel/bun.lock); Node stays because the gate
-      # scripts and the tsc/esbuild shims spawn `node` directly.
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -35,75 +41,49 @@ jobs:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ hashFiles('Panel/bun.lock') }}
           restore-keys: bun-${{ runner.os }}-
-
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: "10.0.x"
 
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-pc-windows-msvc
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      
-      - name: Get latest tags
-        id: get_tag
-        shell: pwsh
+      - name: Install Linux system dependencies
+        if: matrix.os == 'ubuntu-latest'
         run: |
-          $latest_tag = git describe --tags --abbrev=0
-          echo "LTAG=$latest_tag" >> $env:GITHUB_OUTPUT
-      
-      - name: Prepare build and signing tools
-        shell: pwsh
-        run: |
-          python -m pip install --disable-pip-version-check pynacl
-          $env:CARGO_HOME = Join-Path $PWD ".cache/cargo-home"
-          New-Item -ItemType Directory -Path $env:CARGO_HOME -Force | Out-Null
-          cargo install cargo-xwin --locked --root $env:CARGO_HOME
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libgtk-3-dev
 
-      - name: Build, test, and package
-        shell: pwsh
-        run: |
-          $llvm = Join-Path $env:ProgramFiles "LLVM/bin"
-          if (-not (Test-Path (Join-Path $llvm "lld-link.exe"))) { throw "LLVM linker is unavailable: $llvm" }
-          $version = "${{ steps.get_tag.outputs.LTAG }}".TrimStart("v")
-          ./scripts/package.ps1 -ReleaseVersion $version -LlvmBin $llvm -XwinCache (Join-Path $PWD ".cache/xwin") -OutputDirectory (Join-Path $PWD "artifacts")
-          if ((git status --short --untracked-files=no).Length -ne 0) { git status --short; throw "Build modified tracked files" }
-      - uses: actions/upload-artifact@v7
-        with:
-            name: LocalArena-${{ github.ref_name }}-windows.zip
-            path:  artifacts/LocalArena-${{ steps.get_tag.outputs.LTAG }}-windows.zip
-            archive: false
-      - uses: actions/upload-artifact@v7
-        with:
-            name: LocalArena-panel-${{ github.ref_name }}-windows.zip
-            path: artifacts/LocalArena-panel-${{ steps.get_tag.outputs.LTAG }}-windows.zip
-            archive: false
-      - uses: actions/upload-artifact@v7
-        with:
-            name: LocalArena-plugin-${{ github.ref_name }}-windows.zip
-            path: artifacts/LocalArena-plugin-${{ steps.get_tag.outputs.LTAG }}-windows.zip
-            archive: false
-      - uses: actions/upload-artifact@v7
-        with:
-            name: latest.json
-            path: artifacts/latest.json
-            archive: false
-      - uses: actions/upload-artifact@v7
-        with:
-            name: latest.json.sig
-            path: artifacts/latest.json.sig
-            archive: false
-      - uses: actions/upload-artifact@v7
-        with:
-            name: SHA256SUMS.txt
-            path: artifacts/SHA256SUMS.txt
-            archive: false
+      - name: Install frontend dependencies
+        working-directory: Panel
+        run: bun install --frozen-lockfile
 
-  linux:
-    runs-on: ubuntu-latest
+      - name: Frontend gates
+        working-directory: Panel
+        run: |
+          bun run test:stickers
+          bun run test:install-gate
+
+      # Build only: no bundles and no updater signing on pull-request-style CI.
+      - uses: tauri-apps/tauri-action@v1
+        with:
+          projectPath: Panel
+          tauriScript: bun tauri
+          uploadUpdaterJson: false
+          args: --no-bundle
+
+  plugins:
+    name: Plugins (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            linux: false
+          - os: ubuntu-latest
+            linux: true
+    runs-on: ${{ matrix.os }}
     env:
       CARGO_TERM_COLOR: always
     steps:
@@ -112,53 +92,35 @@ jobs:
           fetch-depth: 0
           submodules: recursive
 
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: "1.4.3"
-
-      # Bun owns dependency installs (Panel/bun.lock); Node stays because the gate
-      # scripts and the tsc/esbuild shims spawn `node` directly.
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-
-      - uses: actions/cache@v4
-        with:
-          path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-${{ hashFiles('Panel/bun.lock') }}
-          restore-keys: bun-${{ runner.os }}-
-
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: "10.0.x"
+          dotnet-version: |
+            10.0.x
+            8.0.x
 
-      # MatchCore.Tests targets net8.0 and a net10 SDK alone carries no net8 runtime.
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: "8.0.x"
+      - name: Prepare build hooks
+        shell: pwsh
+        run: 'Set-Content -Path .local-build.ps1 -Value ''$DotNet = (Get-Command dotnet).Source'''
 
-      - name: Get latest tags
+      - name: Get latest tag
         id: get_tag
         shell: pwsh
         run: |
           $latest_tag = git describe --tags --abbrev=0
           echo "LTAG=$latest_tag" >> $env:GITHUB_OUTPUT
 
-      # build.ps1 and verify-workspace.ps1 dot-source this gitignored file on every
-      # host (verify-workspace only skips it under GITHUB_ACTIONS).
-      - name: Prepare Linux build hooks
-        run: printf '$DotNet = (Get-Command dotnet).Source\n' > .local-build.ps1
-
-      - name: Build and package (Linux)
+      - name: Build and package plugin bundle
         shell: pwsh
         run: |
           $version = "${{ steps.get_tag.outputs.LTAG }}".TrimStart("v")
-          ./scripts/package.ps1 -Linux -ReleaseVersion $version -OutputDirectory (Join-Path $PWD "artifacts")
+          $arguments = @{ ReleaseVersion = $version }
+          if ("${{ matrix.linux }}" -eq "true") { $arguments.Linux = $true }
+          ./scripts/package.ps1 @arguments
           if ((git status --short --untracked-files=no).Length -ne 0) { git status --short; throw "Build modified tracked files" }
 
       - uses: actions/upload-artifact@v7
         with:
-            name: LocalArena-plugin-${{ steps.get_tag.outputs.LTAG }}-linux.zip
-            path: artifacts/LocalArena-plugin-${{ steps.get_tag.outputs.LTAG }}-linux.zip
-            archive: false
-            if-no-files-found: error
+          name: LocalArena-plugin-${{ steps.get_tag.outputs.LTAG }}-${{ matrix.linux == true && 'linux' || 'windows' }}
+          path: artifacts/LocalArena-plugin-${{ steps.get_tag.outputs.LTAG }}-${{ matrix.linux == true && 'linux' || 'windows' }}.zip
+          archive: false
+          if-no-files-found: error
