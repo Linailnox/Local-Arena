@@ -116,3 +116,17 @@ node scripts/generate-sticker-catalog.mjs
 - `Panel/src/panels/TeamsSection.tsx` is an orphan (no importer) — dead code kept in tree.
 - CI: `build.yml` (push to update/build; Node 22 + dotnet 10.0.x; submodules recursive; two jobs — `build` on windows-latest and `linux` on ubuntu-latest), `release.yml` (tags `v1.4.3.3-Preview.*`; per-platform `build` matrix + a `publish` job that re-runs `assemble-update-manifest.ps1`, signs and publishes `latest.json` once every platform archive exists).
 - OfflineMatchTelemetry (net8 + Microsoft.Data.Sqlite) ships its `libe_sqlite3.so` via `package.ps1 -Linux`; OMT settles at the winner panel (`_matchSettled`, OfflineMatchTelemetry.cs:545) — once settled nothing may append to the ledger.
+
+## Agent skills
+
+### Issue tracker
+
+Issues and specs are local markdown files under `.scratch/<feature-slug>/` (GitHub Issues are disabled on this repo). See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default five-label vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context layout: `GLOSSARY.md` + `docs/adr/` at the repo root (created lazily by `/domain-modeling`). See `docs/agents/domain.md`.
