@@ -4,12 +4,10 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 #[cfg(not(test))]
-use std::sync::{Mutex, OnceLock};
+use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-pub const STATE_DIRECTORY: &str = ".csbip";
-#[cfg(not(test))]
-static HIDDEN_INITIALIZED: OnceLock<()> = OnceLock::new();
+pub const STATE_DIRECTORY: &str = "localarena";
 #[cfg(not(test))]
 static RESOLVED_ROOT: Mutex<Option<PathBuf>> = Mutex::new(None);
 #[cfg(test)]
@@ -31,18 +29,22 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
 }
 
 #[cfg(windows)]
-fn hide_directory(path: &Path) {
-    use std::os::windows::process::CommandExt;
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    let _ = std::process::Command::new("attrib.exe")
-        .arg("+H")
-        .arg(path)
-        .creation_flags(CREATE_NO_WINDOW)
-        .status();
+fn config_base_directory() -> Option<PathBuf> {
+    std::env::var_os("APPDATA")
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("USERPROFILE")
+                .map(|home| PathBuf::from(home).join("AppData").join("Roaming"))
+        })
 }
 
 #[cfg(not(windows))]
-fn hide_directory(_path: &Path) {}
+fn config_base_directory() -> Option<PathBuf> {
+    std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .filter(|path| !path.as_os_str().is_empty())
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))
+}
 
 fn ensure_writable(path: &Path) -> std::io::Result<()> {
     fs::create_dir_all(path)?;
@@ -63,37 +65,6 @@ fn ensure_writable(path: &Path) -> std::io::Result<()> {
     result.and(cleanup)
 }
 
-fn fallback_root() -> Option<PathBuf> {
-    std::env::var_os("LOCALAPPDATA")
-        .or_else(|| {
-            std::env::var_os("USERPROFILE")
-                .map(|home| PathBuf::from(home).join("AppData").join("Local").into_os_string())
-        })
-        .map(PathBuf::from)
-        .map(|root| root.join("CS2BotImproverPlus").join(STATE_DIRECTORY))
-}
-
-fn resolve_writable_root(portable: PathBuf, fallback: Option<PathBuf>) -> Result<PathBuf> {
-    if ensure_writable(&portable).is_ok() {
-        return Ok(portable);
-    }
-
-    let fallback = fallback.ok_or_else(|| {
-        AppError::transaction(format!(
-            "The portable state directory is not writable ({}) and no per-user Local AppData directory is available",
-            portable.display()
-        ))
-    })?;
-    ensure_writable(&fallback).map_err(|error| {
-        AppError::transaction(format!(
-            "Neither the portable state directory ({}) nor the per-user state directory ({}) is writable: {error}",
-            portable.display(),
-            fallback.display()
-        ))
-    })?;
-    Ok(fallback)
-}
-
 fn resolve_root() -> Result<PathBuf> {
     if let Some(override_path) = std::env::var_os("CS2BI_STATE_ROOT") {
         let path = PathBuf::from(override_path);
@@ -106,34 +77,34 @@ fn resolve_root() -> Result<PathBuf> {
         return Ok(path);
     }
 
-    let executable = std::env::current_exe()
-        .map_err(|error| AppError::transaction(format!("Cannot locate Panel executable: {error}")))?;
-    let portable = executable.parent()
-        .ok_or_else(|| AppError::transaction("Panel executable has no parent directory"))?
-        .join(STATE_DIRECTORY);
-    resolve_writable_root(portable, fallback_root())
+    let base = config_base_directory().ok_or_else(|| {
+        AppError::transaction(
+            "Cannot locate the per-user configuration directory (APPDATA / XDG_CONFIG_HOME / HOME)",
+        )
+    })?;
+    let path = base.join(STATE_DIRECTORY);
+    ensure_writable(&path).map_err(|error| {
+        AppError::transaction(format!(
+            "The per-user state directory is not writable ({}): {error}",
+            path.display()
+        ))
+    })?;
+    Ok(path)
 }
 
 pub fn root() -> Result<PathBuf> {
     #[cfg(test)]
     {
-        let path = resolve_root()?;
-        hide_directory(&path);
-        Ok(path)
+        resolve_root()
     }
     #[cfg(not(test))]
     {
-        let path = {
-            let mut resolved = RESOLVED_ROOT.lock().unwrap_or_else(|error| error.into_inner());
-            if let Some(path) = resolved.as_ref() {
-                path.clone()
-            } else {
-                let path = resolve_root()?;
-                *resolved = Some(path.clone());
-                path
-            }
-        };
-        HIDDEN_INITIALIZED.get_or_init(|| hide_directory(&path));
+        let mut resolved = RESOLVED_ROOT.lock().unwrap_or_else(|error| error.into_inner());
+        if let Some(path) = resolved.as_ref() {
+            return Ok(path.clone());
+        }
+        let path = resolve_root()?;
+        *resolved = Some(path.clone());
         Ok(path)
     }
 }
@@ -191,22 +162,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn read_only_portable_location_uses_per_user_fallback() {
-        let base = std::env::temp_dir().join(format!("cs2bi-storage-fallback-{}", unix_time()));
-        let portable = base.join("portable-state");
-        let fallback = base.join("local-app-data-state");
-        fs::create_dir_all(&base).unwrap();
-        fs::write(&portable, b"occupied by a file").unwrap();
-
-        let resolved = resolve_writable_root(portable, Some(fallback.clone())).unwrap();
-        assert_eq!(resolved, fallback);
-        assert!(resolved.is_dir());
-
+    fn state_directory_is_the_branded_config_directory() {
+        assert_eq!(STATE_DIRECTORY, "localarena");
+        let base = std::env::temp_dir().join(format!("localarena-config-{}", unix_time()));
+        let resolved = base.join(STATE_DIRECTORY);
+        ensure_writable(&resolved).unwrap();
+        assert_eq!(resolved.file_name().and_then(|name| name.to_str()), Some("localarena"));
         fs::remove_dir_all(base).unwrap();
     }
 
     #[test]
-    fn ui_memory_and_cosmetics_are_stored_under_portable_root() {
+    fn ui_memory_and_cosmetics_are_stored_under_the_state_root() {
         let _guard = TEST_STATE_ENV_LOCK.lock().unwrap_or_else(|error| error.into_inner());
         let base = std::env::temp_dir().join(format!("cs2bi-storage-{}", unix_time()));
         unsafe { std::env::set_var("CS2BI_STATE_ROOT", &base); }
