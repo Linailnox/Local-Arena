@@ -8,6 +8,11 @@
   background: rgba(31, 30, 27, 0.32);
   animation: scrim-in var(--dur) var(--ease);
 }
+/* Raised above the first-run overlay (z-index 150), still below Toast (200)
+   and ErrorModal (250). */
+.modal__scrim--raised {
+  z-index: 160;
+}
 @keyframes scrim-in {
   from {
     opacity: 0;
