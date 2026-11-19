@@ -1,18 +1,9 @@
 [CmdletBinding()]
 param(
     [string]$DotNet,
-    [string]$Cargo,
-    [string]$Rustc,
-    [string]$RustToolchain,
-    [string]$LlvmBin,
-    [string]$XwinCache,
-    [string]$OutputDirectory,
     [string]$ReleaseVersion = "1.5.0",
-    [string]$MinimumPanelVersion = "1.5.0",
     [switch]$Linux,
-    [switch]$Explode,
-    [switch]$SkipBuild,
-    [switch]$SkipBunInstall
+    [switch]$SkipBuild
 )
 
 $ErrorActionPreference = "Stop"
@@ -21,16 +12,22 @@ $displayVersion = $ReleaseVersion.Trim().TrimStart('v', 'V')
 if ($displayVersion -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)?$') {
     throw "ReleaseVersion must use SemVer (MAJOR.MINOR.PATCH) with an optional pre-release suffix."
 }
-$minimumPanelVersion = $MinimumPanelVersion.Trim().TrimStart('v', 'V')
-if ($minimumPanelVersion -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)?$') {
-    throw "MinimumPanelVersion must use SemVer (MAJOR.MINOR.PATCH) with an optional pre-release suffix."
-}
-$isPreview = $displayVersion -match '-Preview\.\d+$'
 $releaseTag = "v$displayVersion"
 $cache = Join-Path $repo ".cache\package"
-$stage = Join-Path $cache "stage"
-$extract = Join-Path $cache "extract"
-if (-not $OutputDirectory) { $OutputDirectory = Join-Path $repo "artifacts" }
+$stage = Join-Path $cache "plugin-stage"
+$outputDirectory = Join-Path $repo "artifacts"
+
+# Panel and plugin artifacts are built separately: tauri-action (or a local
+# `bun tauri build`) owns the Panel, this script owns the LA plugin bundle.
+if (-not $SkipBuild) {
+    $buildArguments = @{ PluginsOnly = $true; Linux = $Linux }
+    if ($DotNet) { $buildArguments.DotNet = $DotNet }
+    & (Join-Path $PSScriptRoot "build.ps1") @buildArguments
+    if ($LASTEXITCODE -ne 0) { throw "Plugin build failed." }
+}
+
+if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force }
+New-Item -ItemType Directory -Path $stage -Force | Out-Null
 
 function Copy-Tree {
     param([string]$Source, [string]$Destination)
@@ -38,117 +35,30 @@ function Copy-Tree {
     Copy-Item -Path (Join-Path $Source "*") -Destination $Destination -Recurse -Force
 }
 
-function Assert-ChildPath {
-    param([string]$Parent, [string]$Child)
-    $parentPath = [IO.Path]::GetFullPath($Parent).TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
-    $childPath = [IO.Path]::GetFullPath($Child)
-    if (-not $childPath.StartsWith($parentPath, [StringComparison]::OrdinalIgnoreCase)) {
-        throw "Refusing to modify a path outside the package cache: $childPath"
-    }
-}
+$pluginPayload = Join-Path $stage "payload"
+New-Item -ItemType Directory -Path $pluginPayload -Force | Out-Null
 
-function Get-PinnedAsset {
-    param($Asset)
-    New-Item -ItemType Directory -Path $cache -Force | Out-Null
-    $path = Join-Path $cache $Asset.name
-    $expected = $Asset.sha256.ToLowerInvariant()
-    if (Test-Path -LiteralPath $path) {
-        $cached = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
-        if ($cached -eq $expected) { return $path }
-        Write-Host "Refreshing stale cached asset: $($Asset.name)"
-    }
-    $download = "$path.download"
-    try {
-        if (Test-Path -LiteralPath $download) { Remove-Item -LiteralPath $download -Force }
-        Invoke-WebRequest -Uri $Asset.url -OutFile $download
-        $actual = (Get-FileHash -LiteralPath $download -Algorithm SHA256).Hash.ToLowerInvariant()
-        if ($actual -ne $expected) {
-            throw "SHA-256 mismatch for $($Asset.name): $actual"
-        }
-        Move-Item -LiteralPath $download -Destination $path -Force
-    }
-    finally {
-        if (Test-Path -LiteralPath $download) { Remove-Item -LiteralPath $download -Force }
-    }
-    return $path
-}
-
-if (-not $SkipBuild) {
-    $buildArguments = @{ SkipBunInstall = $SkipBunInstall; Linux = $Linux }
-    if ($DotNet) { $buildArguments.DotNet = $DotNet }
-    if ($Cargo) { $buildArguments.Cargo = $Cargo }
-    if ($Rustc) { $buildArguments.Rustc = $Rustc }
-    if ($RustToolchain) { $buildArguments.RustToolchain = $RustToolchain }
-    if ($LlvmBin) { $buildArguments.LlvmBin = $LlvmBin }
-    if ($XwinCache) { $buildArguments.XwinCache = $XwinCache }
-    & (Join-Path $PSScriptRoot "build.ps1") @buildArguments
-    if ($LASTEXITCODE -ne 0) { throw "Build failed." }
-}
-
-Assert-ChildPath $cache $stage
-Assert-ChildPath $cache $extract
-if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force }
-if (Test-Path -LiteralPath $extract) { Remove-Item -LiteralPath $extract -Recurse -Force }
-New-Item -ItemType Directory -Path $stage,$extract -Force | Out-Null
-
-$osSuffix = if ($Linux) { "linux" } else { "windows" }
-$releaseRoot = Join-Path $stage "LocalArena-$releaseTag-$osSuffix"
-$payload = $releaseRoot
-if ($Linux) {
-    # Linux packages are self-contained for the upstream-style manual install, so
-    # the pinned for-Linux upstream zip is the base payload (user decision 2026-10-08).
-    $manifest = Get-Content -LiteralPath (Join-Path $PSScriptRoot "dependencies.json") -Raw | ConvertFrom-Json
-    $linuxBase = Get-PinnedAsset $manifest.upstream.linuxAsset
-    $linuxExtract = Join-Path $extract "upstream-linux"
-    Expand-Archive -LiteralPath $linuxBase -DestinationPath $linuxExtract -Force
-    # Upstream archives carry POSIX modes that hide content (execute-only entries);
-    # on Linux those bits deny reads, so restore owner read/write before copying.
-    if ($IsLinux -or $IsMacOS) {
-        $fixMode = [IO.UnixFileMode]::UserRead -bor [IO.UnixFileMode]::UserWrite -bor [IO.UnixFileMode]::UserExecute
-        Get-ChildItem -LiteralPath $linuxExtract -Recurse -Force |
-            ForEach-Object { $_.UnixFileMode = $_.UnixFileMode -bor $fixMode }
-    }
-    $payloadCandidates = @((Get-Item -LiteralPath $linuxExtract)) +
-        @(Get-ChildItem -LiteralPath $linuxExtract -Directory -Recurse)
-    $upstreamPayload = $payloadCandidates |
-        Where-Object { (Test-Path (Join-Path $_.FullName "addons")) -and (Test-Path (Join-Path $_.FullName "cfg")) } |
-        Select-Object -First 1
-    if (-not $upstreamPayload) { throw "Could not locate the upstream game/csgo payload." }
-    Copy-Tree $upstreamPayload.FullName $releaseRoot
-    $dotnetHost = Join-Path $payload "addons\counterstrikesharp\dotnet\dotnet"
-    if (Test-Path -LiteralPath $dotnetHost) {
-        $item = Get-Item -LiteralPath $dotnetHost
-        $item.UnixFileMode = $item.UnixFileMode -bor [IO.UnixFileMode]::UserRead -bor [IO.UnixFileMode]::UserWrite -bor [IO.UnixFileMode]::UserExecute
-    }
-}
-else {
-    # The package carries Local-Arena's own content only. Upstream runtime files are
-    # downloaded by the Panel at install time (docs/plans/PLAN-upstream-download-install.md §0.2).
-    New-Item -ItemType Directory -Path $releaseRoot,(Join-Path $payload "cfg") -Force | Out-Null
-}
-
-# Plus configuration overlays. Source files are deliberately not copied into the release payload.
-Copy-Item -LiteralPath (Join-Path $repo "cfg\my_bot_ffa_config.cfg") -Destination (Join-Path $payload "cfg\my_bot_ffa_config.cfg") -Force
-Copy-Item -LiteralPath (Join-Path $repo "cfg\my_bot_normal_config.cfg") -Destination (Join-Path $payload "cfg\my_bot_normal_config.cfg") -Force
-
-$upstreamPluginBuilds = @(
+# Plus-owned plugin assemblies. Each build directory already carries its own
+# dependency closure (MatchCore.dll, dependency metadata), so the bundle never
+# reaches into shared/ or the upstream runtime.
+$pluginBuilds = @(
     @{ Name = "PlusMatchCoordinator"; Framework = "net10.0" },
     @{ Name = "TeamLineupInjector"; Framework = "net10.0" }
 )
-foreach ($plugin in $upstreamPluginBuilds) {
-    $buildRoot = if ($plugin.BuildDir) { $plugin.BuildDir } else { "addons\counterstrikesharp\plugins\$($plugin.Name)" }
-    # BotController submodule projects disable AppendTargetFrameworkToOutputPath, so their
-    # outputs land directly in bin\Release instead of a per-TFM folder.
-    $relativeBuild = if ($plugin.Output) { $plugin.Output } else { "bin\Release\$($plugin.Framework)" }
-    $build = Join-Path $repo "$buildRoot\$relativeBuild"
+foreach ($plugin in $pluginBuilds) {
+    $build = Join-Path $repo "addons\counterstrikesharp\plugins\$($plugin.Name)\bin\Release\$($plugin.Framework)"
     if (-not (Test-Path -LiteralPath (Join-Path $build "$($plugin.Name).dll"))) {
-        throw "Expected upstream plugin build output was not produced: $build"
+        throw "Expected plugin build output was not produced: $build"
     }
-    Copy-Tree $build (Join-Path $payload "addons\counterstrikesharp\plugins\$($plugin.Name)")
+    Copy-Tree $build (Join-Path $pluginPayload "addons\counterstrikesharp\plugins\$($plugin.Name)")
 }
+
 $telemetryStage = Join-Path $repo "addons\counterstrikesharp\plugins\OfflineMatchTelemetry\stage\game\csgo\addons\counterstrikesharp\plugins\OfflineMatchTelemetry"
-if ($Linux) {
-    $telemetryExpectedFiles = @(
+if (-not (Test-Path -LiteralPath $telemetryStage)) {
+    throw "OfflineMatchTelemetry staged deployment was not produced: $telemetryStage"
+}
+$telemetryExpectedFiles = if ($Linux) {
+    @(
         "OfflineMatchTelemetry.dll",
         "OfflineMatchTelemetry.deps.json",
         "OfflineMatchTelemetry.pdb",
@@ -157,16 +67,29 @@ if ($Linux) {
         "SQLitePCLRaw.core.dll",
         "SQLitePCLRaw.provider.e_sqlite3.dll"
     )
-    if (-not (Test-Path -LiteralPath $telemetryStage)) {
-        throw "OfflineMatchTelemetry staged deployment was not produced: $telemetryStage"
-    }
-    $telemetryStageFiles = @(Get-ChildItem -LiteralPath $telemetryStage -File | Where-Object Name -ne "e_sqlite3.dll" | ForEach-Object Name | Sort-Object)
-    $telemetryDifference = @(Compare-Object ($telemetryExpectedFiles | Sort-Object) $telemetryStageFiles)
-    if ($telemetryDifference.Count -gt 0) {
-        throw "OfflineMatchTelemetry staged deployment does not match the release allowlist."
-    }
-    Copy-Tree $telemetryStage (Join-Path $payload "addons\counterstrikesharp\plugins\OfflineMatchTelemetry")
-    $omtPayloadDir = Join-Path $payload "addons\counterstrikesharp\plugins\OfflineMatchTelemetry"
+}
+else {
+    @(
+        "OfflineMatchTelemetry.dll",
+        "OfflineMatchTelemetry.deps.json",
+        "OfflineMatchTelemetry.pdb",
+        "Microsoft.Data.Sqlite.dll",
+        "SQLitePCLRaw.batteries_v2.dll",
+        "SQLitePCLRaw.core.dll",
+        "SQLitePCLRaw.provider.e_sqlite3.dll",
+        "e_sqlite3.dll"
+    )
+}
+$telemetryStageFiles = @(Get-ChildItem -LiteralPath $telemetryStage -File |
+    Where-Object { -not ($Linux -and $_.Name -eq "e_sqlite3.dll") } |
+    ForEach-Object Name | Sort-Object)
+$telemetryDifference = @(Compare-Object ($telemetryExpectedFiles | Sort-Object) $telemetryStageFiles)
+if ($telemetryDifference.Count -gt 0) {
+    throw "OfflineMatchTelemetry staged deployment does not match the release allowlist."
+}
+$omtPayloadDir = Join-Path $pluginPayload "addons\counterstrikesharp\plugins\OfflineMatchTelemetry"
+Copy-Tree $telemetryStage $omtPayloadDir
+if ($Linux) {
     Remove-Item -LiteralPath (Join-Path $omtPayloadDir "e_sqlite3.dll") -Force -ErrorAction SilentlyContinue
     $linuxSqliteCandidates = @(
         (Join-Path $repo "addons\counterstrikesharp\plugins\OfflineMatchTelemetry\bin\Release\net8.0\runtimes\linux-x64\native\libe_sqlite3.so")
@@ -180,27 +103,8 @@ if ($Linux) {
     }
     Copy-Item -LiteralPath $linuxSqlite -Destination (Join-Path $omtPayloadDir "libe_sqlite3.so") -Force
 }
-else {
-    $telemetryExpectedFiles = @(
-        "OfflineMatchTelemetry.dll",
-        "OfflineMatchTelemetry.deps.json",
-        "OfflineMatchTelemetry.pdb",
-        "Microsoft.Data.Sqlite.dll",
-        "SQLitePCLRaw.batteries_v2.dll",
-        "SQLitePCLRaw.core.dll",
-        "SQLitePCLRaw.provider.e_sqlite3.dll",
-        "e_sqlite3.dll"
-    )
-    if (-not (Test-Path -LiteralPath $telemetryStage)) {
-        throw "OfflineMatchTelemetry staged deployment was not produced: $telemetryStage"
-    }
-    $telemetryStageFiles = @(Get-ChildItem -LiteralPath $telemetryStage -File | ForEach-Object Name | Sort-Object)
-    $telemetryDifference = @(Compare-Object ($telemetryExpectedFiles | Sort-Object) $telemetryStageFiles)
-    if ($telemetryDifference.Count -gt 0) {
-        throw "OfflineMatchTelemetry staged deployment does not match the release allowlist."
-    }
-    Copy-Tree $telemetryStage (Join-Path $payload "addons\counterstrikesharp\plugins\OfflineMatchTelemetry")
-}
+
+# OpenRating release gate: the calibrated model ships inside PlusMatchCoordinator.
 $openRatingModelPath = Join-Path $repo "addons\counterstrikesharp\shared\MatchCore\open-rating-3.0-proxy-v1.json"
 $openRatingModel = Get-Content -LiteralPath $openRatingModelPath -Raw | ConvertFrom-Json
 if (-not $openRatingModel.release_gate.passed) {
@@ -232,73 +136,36 @@ foreach ($weightName in $openRatingWeightNames) {
 if (-not [double]::IsFinite([double]$openRatingModel.weights.intercept)) {
     throw "OpenRating intercept must be finite."
 }
-Copy-Item -LiteralPath $openRatingModelPath -Destination (Join-Path $payload "addons\counterstrikesharp\plugins\PlusMatchCoordinator\open-rating-3.0-proxy-v1.json") -Force
-$legacyRatingModel = Join-Path $payload "addons\counterstrikesharp\plugins\PlusMatchCoordinator\rating-plus-3.0-proxy-v1.json"
+Copy-Item -LiteralPath $openRatingModelPath -Destination (Join-Path $pluginPayload "addons\counterstrikesharp\plugins\PlusMatchCoordinator\open-rating-3.0-proxy-v1.json") -Force
+$legacyRatingModel = Join-Path $pluginPayload "addons\counterstrikesharp\plugins\PlusMatchCoordinator\rating-plus-3.0-proxy-v1.json"
 if (Test-Path -LiteralPath $legacyRatingModel) {
     Remove-Item -LiteralPath $legacyRatingModel -Force
 }
 
-if (-not $Linux) {
-    $panelExe = Join-Path $repo "Panel\src-tauri\target\release\cs2-bot-improver-plus-panel.exe"
-    Copy-Item -LiteralPath $panelExe -Destination (Join-Path $releaseRoot "LocalArena.exe") -Force
-    $webViewLoader = Join-Path $repo "Panel\src-tauri\target\release\WebView2Loader.dll"
-    if (Test-Path -LiteralPath $webViewLoader) {
-        Copy-Item -LiteralPath $webViewLoader -Destination (Join-Path $releaseRoot "WebView2Loader.dll") -Force
-    }
-}
-Copy-Item -LiteralPath (Join-Path $repo "README.md") -Destination (Join-Path $releaseRoot "README.md") -Force
-Copy-Item -LiteralPath (Join-Path $repo "README.zh-CN.md") -Destination (Join-Path $releaseRoot "README.zh-CN.md") -Force
-Copy-Item -LiteralPath (Join-Path $repo "LICENSE") -Destination (Join-Path $releaseRoot "LICENSE") -Force
-if ($isPreview) {
-    $packageReadme = Join-Path $releaseRoot "README.md"
-    $packageReadmeZh = Join-Path $releaseRoot "README.zh-CN.md"
-    (Get-Content -LiteralPath $packageReadme -Raw).Replace(
-        "The current ``main`` branch targets **1.5.0**",
-        "This local test package is **$displayVersion** (preview; may contain bugs; please report problems)"
-    ) | Set-Content -LiteralPath $packageReadme -Encoding utf8
-    (Get-Content -LiteralPath $packageReadmeZh -Raw).Replace(
-        "当前 ``main`` 分支源码版本为 **1.5.0**",
-        "当前本地测试包版本为 **$displayVersion**（预览版本，可能包含 Bug，请反馈）"
-    ) | Set-Content -LiteralPath $packageReadmeZh -Encoding utf8
-    @"
-Local Arena $releaseTag
-
-PREVIEW VERSION - MAY CONTAIN BUGS
-This local test package is not an official GitHub release.
-Please report problems together with an exported diagnostics ZIP.
-"@ | Set-Content -LiteralPath (Join-Path $releaseRoot "PREVIEW-NOTICE.txt") -Encoding utf8
+# Bot cfg overlays are plus-owned and always restored unless the user edited them.
+$cfgDir = Join-Path $pluginPayload "cfg"
+New-Item -ItemType Directory -Path $cfgDir -Force | Out-Null
+foreach ($cfgName in @("my_bot_ffa_config.cfg", "my_bot_normal_config.cfg")) {
+    Copy-Item -LiteralPath (Join-Path $repo "cfg\$cfgName") -Destination (Join-Path $cfgDir $cfgName) -Force
 }
 
-# The Panel uses this manifest as the installation ownership boundary. Only the
-# game payload is managed; the executable and documentation stay portable.
-$manifestEntries = foreach ($topLevel in @("addons", "cfg", "overrides")) {
-    $root = Join-Path $payload $topLevel
-    if (-not (Test-Path -LiteralPath $root)) { continue }
-    foreach ($file in Get-ChildItem -LiteralPath $root -File -Recurse) {
-        $relative = [IO.Path]::GetRelativePath($payload, $file.FullName).Replace("\", "/")
-        $plusOwned = $relative -like "addons/counterstrikesharp/plugins/PlusMatchCoordinator/*" -or
-            $relative -like "addons/counterstrikesharp/plugins/TeamLineupInjector/*" -or
-            $relative -like "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/*" -or
-            $relative -in @("cfg/my_bot_ffa_config.cfg", "cfg/my_bot_normal_config.cfg")
-        $component = if ($relative -like "addons/counterstrikesharp/plugins/*") {
+$manifestEntries = foreach ($file in Get-ChildItem -LiteralPath $pluginPayload -File -Recurse) {
+    $relative = [IO.Path]::GetRelativePath($pluginPayload, $file.FullName).Replace("\", "/")
+    $preserveConfig = $relative -in @(
+            "cfg/my_bot_ffa_config.cfg",
+            "cfg/my_bot_normal_config.cfg"
+        )
+    [ordered]@{
+        path = $relative
+        size = $file.Length
+        sha256 = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+        component = if ($relative -like "addons/counterstrikesharp/plugins/*") {
             ($relative -split "/")[3]
         }
-        elseif ($relative -like "addons/BotHider/*") { "BotHider" }
         elseif ($relative -like "cfg/*") { "configuration" }
-        elseif ($relative -like "overrides/*") { "overrides" }
         else { "runtime" }
-        $preserveConfig = $relative -in @(
-                "cfg/my_bot_ffa_config.cfg",
-                "cfg/my_bot_normal_config.cfg"
-            )
-        [ordered]@{
-            path = $relative
-            size = $file.Length
-            sha256 = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-            component = $component
-            ownership = if ($plusOwned) { "plus" } else { "shared" }
-            restore_policy = if ($preserveConfig) { "preserve-config" } else { "restore" }
-        }
+        ownership = "plus"
+        restore_policy = if ($preserveConfig) { "preserve-config" } else { "restore" }
     }
 }
 $payloadManifest = [ordered]@{
@@ -306,209 +173,18 @@ $payloadManifest = [ordered]@{
     package_version = $displayVersion
     entries = @($manifestEntries | Sort-Object path)
 }
-$payloadManifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $payload "plus-payload-manifest.json") -Encoding utf8
+$payloadManifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $pluginPayload "plus-payload-manifest.json") -Encoding utf8
 
-& (Join-Path $PSScriptRoot "verify-workspace.ps1") -PackageRoot $releaseRoot -ExpectedPackageVersion $displayVersion -Linux:$Linux
-if ($LASTEXITCODE -ne 0) { throw "Package verification failed." }
+& (Join-Path $PSScriptRoot "verify-workspace.ps1") -PluginBundleRoot $pluginPayload -ExpectedPackageVersion $displayVersion -Linux:$Linux
+if ($LASTEXITCODE -ne 0) { throw "Plugin bundle verification failed." }
 
-New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
-Get-ChildItem -LiteralPath $OutputDirectory -File -ErrorAction SilentlyContinue |
-    Where-Object { $_.Name -match '^(?:CS2BotImproverPlus|LocalArena)-.*\.zip$|^latest\.json(\.sig)?$|^SHA256SUMS\.txt$' } |
+New-Item -ItemType Directory -Path $outputDirectory -Force | Out-Null
+Get-ChildItem -LiteralPath $outputDirectory -File -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -match '^LocalArena-plugin-.*\.zip$' } |
     Remove-Item -Force
 
-$fullZip = Join-Path $OutputDirectory "LocalArena-$releaseTag-$osSuffix.zip"
-Compress-Archive -Path $releaseRoot -DestinationPath $fullZip -CompressionLevel Optimal
+$osSuffix = if ($Linux) { "linux" } else { "windows" }
+$pluginZip = Join-Path $outputDirectory "LocalArena-plugin-$releaseTag-$osSuffix.zip"
+Compress-Archive -Path (Join-Path $pluginPayload "*") -DestinationPath $pluginZip -CompressionLevel Optimal
 
-if ($Linux) {
-    # Linux also ships a Local-Arena-only plugin bundle: the full package carries the
-    # whole upstream runtime, while this zip carries just the LA-owned plugins so the
-    # Panel can install/repair them alone. Only the listed paths are copied (never a
-    # whole-tree copy), so no upstream file can leak in.
-    $pluginStage = Join-Path $stage "plugin-update-linux"
-    if (Test-Path -LiteralPath $pluginStage) { Remove-Item -LiteralPath $pluginStage -Recurse -Force }
-    New-Item -ItemType Directory -Path $pluginStage -Force | Out-Null
-    foreach ($name in @("PlusMatchCoordinator", "TeamLineupInjector", "OfflineMatchTelemetry")) {
-        $source = Join-Path $releaseRoot "addons/counterstrikesharp/plugins/$name"
-        if (-not (Test-Path -LiteralPath $source)) {
-            throw "Expected plus plugin payload is missing from the release root: $source"
-        }
-        Copy-Tree $source (Join-Path $pluginStage "addons/counterstrikesharp/plugins/$name")
-    }
-    $pluginCfgDir = Join-Path $pluginStage "cfg"
-    New-Item -ItemType Directory -Path $pluginCfgDir -Force | Out-Null
-    foreach ($cfgName in @("my_bot_ffa_config.cfg", "my_bot_normal_config.cfg")) {
-        Copy-Item -LiteralPath (Join-Path $releaseRoot "cfg/$cfgName") -Destination (Join-Path $pluginCfgDir $cfgName) -Force
-    }
-    $omtBundleDir = Join-Path $pluginStage "addons/counterstrikesharp/plugins/OfflineMatchTelemetry"
-    if (-not (Test-Path -LiteralPath (Join-Path $omtBundleDir "libe_sqlite3.so"))) {
-        throw "Linux plugin bundle is missing OfflineMatchTelemetry/libe_sqlite3.so."
-    }
-    if (Test-Path -LiteralPath (Join-Path $omtBundleDir "e_sqlite3.dll")) {
-        throw "Linux plugin bundle must not contain OfflineMatchTelemetry/e_sqlite3.dll."
-    }
-
-    # installer::verify_payload requires every manifest entry to exist inside the
-    # payload with matching size and sha256, so the bundle needs its own manifest:
-    # the release-root one also lists upstream files that this bundle deliberately
-    # omits. Only plus-owned entries are kept; schema/package versions are unchanged.
-    $releaseManifest = Get-Content -LiteralPath (Join-Path $releaseRoot "plus-payload-manifest.json") -Raw | ConvertFrom-Json
-    $plusEntries = @($releaseManifest.entries | Where-Object { $_.ownership -eq "plus" })
-    if ($plusEntries.Count -eq 0) {
-        throw "The release manifest contains no plus-owned entries; refusing to build an empty Linux plugin bundle."
-    }
-    foreach ($entry in $plusEntries) {
-        $bundled = Join-Path $pluginStage $entry.path
-        if (-not (Test-Path -LiteralPath $bundled -PathType Leaf)) {
-            throw "Linux plugin bundle is missing a manifest entry: $($entry.path)"
-        }
-    }
-    $pluginManifest = [ordered]@{
-        schema_version = $releaseManifest.schema_version
-        package_version = $releaseManifest.package_version
-        entries = @($plusEntries)
-    }
-    $pluginManifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $pluginStage "plus-payload-manifest.json") -Encoding utf8
-
-    # The bundle gate runs against the staged tree, not the zip, so a rejected bundle
-    # aborts packaging before anything is written to the output directory.
-    & (Join-Path $PSScriptRoot "verify-workspace.ps1") -PluginBundleRoot $pluginStage -ExpectedPackageVersion $displayVersion -Linux
-    if ($LASTEXITCODE -ne 0) { throw "Plugin bundle verification failed." }
-
-    $pluginZip = Join-Path $OutputDirectory "LocalArena-plugin-$releaseTag-linux.zip"
-    Compress-Archive -Path (Join-Path $pluginStage "*") -DestinationPath $pluginZip -CompressionLevel Optimal
-}
-
-function Get-PanelArtifactCandidates {
-    param([string]$FileName)
-    $candidates = @()
-    if ($env:CARGO_TARGET_DIR) { $candidates += Join-Path $env:CARGO_TARGET_DIR "release\$FileName" }
-    $candidates += Join-Path $repo "Panel\src-tauri\target\release\$FileName"
-    try {
-        $cargo = if ($Cargo) { $Cargo } else { "cargo" }
-        $manifest = Join-Path $repo "Panel\src-tauri\Cargo.toml"
-        $metadata = & $cargo metadata --format-version 1 --no-deps --manifest-path $manifest 2>$null | ConvertFrom-Json
-        if ($metadata.target_directory) { $candidates += Join-Path $metadata.target_directory "release\$FileName" }
-    }
-    catch { }
-    return $candidates
-}
-
-$panelLinuxBinary = $null
-if ($Linux) {
-    # Ship the natively built Linux Panel beside the package when it exists; -Linux
-    # itself never runs cargo, so a missing binary is a skip, not an error. Cargo is
-    # asked where it actually put the build, so a custom build.target-dir (a global
-    # [build] target-dir, or CARGO_TARGET_DIR) is honored instead of silently missing.
-    foreach ($candidate in Get-PanelArtifactCandidates "cs2-bot-improver-plus-panel") {
-        if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) { continue; }
-        $panelLinuxBinary = Join-Path $OutputDirectory "cs2-bot-improver-plus-panel"
-        Copy-Item -LiteralPath $candidate -Destination $panelLinuxBinary -Force
-        break
-    }
-    if (-not $panelLinuxBinary) {
-        Write-Host "Panel Linux binary skipped (not built): bun tauri build --no-bundle --features tauri/custom-protocol (run inside Panel/)"
-    }
-}
-
-if ($Explode) {
-    # Produce a ready-to-run folder: the package zip extracted with the native
-    # Panel binary placed beside addons/cfg/overrides, so the app can start
-    # against that folder directly (its .csbip is created on first run).
-    if (-not $Linux) {
-        throw "-Explode requires -Linux (the Windows package already embeds the Panel executable)."
-    }
-    if (-not $panelLinuxBinary) {
-        throw "-Explode needs the native Panel binary; build it first: bun tauri build --no-bundle --features tauri/custom-protocol (run inside Panel/)"
-    }
-    $bundleDir = Join-Path $OutputDirectory "LocalArena-$releaseTag-linux"
-    # The exploded folder doubles as the Panel's portable home: its .csbip holds
-    # runtime state (upstream cache, diagnostics, config). Rebuilding the bundle
-    # must refresh package content only, never wipe that state.
-    $stateBackup = "$bundleDir.csbip-preserve"
-    $hadState = Test-Path -LiteralPath (Join-Path $bundleDir ".csbip")
-    if ($hadState) {
-        if (Test-Path -LiteralPath $stateBackup) { Remove-Item -LiteralPath $stateBackup -Recurse -Force }
-        Move-Item -LiteralPath (Join-Path $bundleDir ".csbip") -Destination $stateBackup -Force
-    }
-    if (Test-Path -LiteralPath $bundleDir) { Remove-Item -LiteralPath $bundleDir -Recurse -Force }
-    Expand-Archive -LiteralPath $fullZip -DestinationPath $OutputDirectory -Force
-    Copy-Item -LiteralPath $panelLinuxBinary -Destination (Join-Path $bundleDir "cs2-bot-improver-plus-panel") -Force
-    if ($hadState) {
-        Move-Item -LiteralPath $stateBackup -Destination (Join-Path $bundleDir ".csbip") -Force
-        Write-Host "Preserved .csbip runtime state across the rebuild."
-    }
-    Write-Host "Ready-to-run bundle: $bundleDir"
-}
-
-if (-not $Linux) {
-$panelStage = Join-Path $stage "panel-update"
-New-Item -ItemType Directory -Path $panelStage -Force | Out-Null
-Copy-Item -LiteralPath (Join-Path $releaseRoot "LocalArena.exe") -Destination $panelStage -Force
-# Releases through 1.4.2.5 look up this legacy name before the new updater can run.
-Copy-Item -LiteralPath (Join-Path $releaseRoot "LocalArena.exe") -Destination (Join-Path $panelStage "CS2BotImproverPlus.exe") -Force
-@{
-    schema_version = 1
-    component = "panel-online-update"
-    version = $displayVersion
-    first_install_supported = $false
-} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $panelStage "csbip-panel-update.json") -Encoding utf8
-if (Test-Path -LiteralPath (Join-Path $releaseRoot "WebView2Loader.dll")) {
-    Copy-Item -LiteralPath (Join-Path $releaseRoot "WebView2Loader.dll") -Destination $panelStage -Force
-}
-$panelZip = Join-Path $OutputDirectory "LocalArena-panel-$releaseTag-windows.zip"
-Compress-Archive -Path (Join-Path $panelStage "*") -DestinationPath $panelZip -CompressionLevel Optimal
-
-$pluginStage = Join-Path $stage "plugin-update"
-New-Item -ItemType Directory -Path $pluginStage -Force | Out-Null
-foreach ($name in @("addons", "cfg", "overrides", "plus-payload-manifest.json")) {
-    $source = Join-Path $releaseRoot $name
-    if (Test-Path -LiteralPath $source) { Copy-Item -LiteralPath $source -Destination $pluginStage -Recurse -Force }
-}
-$pluginZip = Join-Path $OutputDirectory "LocalArena-plugin-$releaseTag-windows.zip"
-Compress-Archive -Path (Join-Path $pluginStage "*") -DestinationPath $pluginZip -CompressionLevel Optimal
-
-# The schema v2 manifest lives in its own script so a CI publish job can rebuild it
-# from uploaded artifacts without re-running packaging.
-$latestPath = Join-Path $OutputDirectory "latest.json"
-& (Join-Path $PSScriptRoot "assemble-update-manifest.ps1") `
-    -Tag $releaseTag `
-    -OutputDirectory $OutputDirectory `
-    -MinimumPanelVersion $minimumPanelVersion
-if (-not (Test-Path -LiteralPath $latestPath -PathType Leaf)) {
-    throw "Update manifest assembly did not produce $latestPath."
-}
-$signaturePath = Join-Path $OutputDirectory "latest.json.sig"
-if ($env:CSBIP_UPDATE_SIGNING_KEY) {
-    $python = (Get-Command python -ErrorAction Stop).Source
-    & $python (Join-Path $PSScriptRoot "sign-update.py") $latestPath $signaturePath `
-        --public-key (Join-Path $PSScriptRoot "update-public-key.txt")
-    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $signaturePath)) { throw "Update signing failed." }
-}
-}
-
-$sumFiles = @($fullZip)
-if ($Linux) {
-    $sumFiles += $pluginZip
-}
-else {
-    $sumFiles += $panelZip, $pluginZip, $latestPath
-    if (Test-Path -LiteralPath $signaturePath) { $sumFiles += $signaturePath }
-}
-if ($panelLinuxBinary) { $sumFiles += $panelLinuxBinary }
-$sumLines = foreach ($file in $sumFiles) {
-    "$((Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant())  $([IO.Path]::GetFileName($file))"
-}
-$sums = Join-Path $OutputDirectory "SHA256SUMS.txt"
-Set-Content -LiteralPath $sums -Value $sumLines -Encoding ascii
-
-Write-Host "Package complete: $fullZip"
-if ($panelLinuxBinary) {
-    Write-Host "Panel Linux binary: $panelLinuxBinary"
-}
-if (-not $Linux) {
-    Write-Host "Panel update: $panelZip"
-    Write-Host "Plugin update: $pluginZip"
-}
-else {
-    Write-Host "Plugin update: $pluginZip"
-}
+Write-Host "Plugin bundle: $pluginZip"

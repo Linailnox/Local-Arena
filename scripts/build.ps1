@@ -11,6 +11,7 @@ param(
     [string]$NodeBin,
     [string]$Bun,
     [switch]$SkipBunInstall,
+    [switch]$PluginsOnly,
     [switch]$Linux
 )
 
@@ -79,7 +80,7 @@ if (-not $Rustc) { $Rustc = "rustc" }
 $onWindowsHost = [System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT
 $toolchainWasRequested = $PSBoundParameters.ContainsKey("RustToolchain")
 $DotNet = Resolve-ToolExecutable $DotNet "dotnet"
-if (-not $Linux) {
+if (-not $Linux -and -not $PluginsOnly) {
     $Cargo = Resolve-ToolExecutable $Cargo "cargo"
     $Rustc = Resolve-ToolExecutable $Rustc "rustc"
 }
@@ -169,7 +170,7 @@ try {
         if ($onWindowsHost -or $toolchainWasRequested) { $env:RUSTUP_TOOLCHAIN = $RustToolchain }
     }
 
-    if (-not $Linux) {
+    if (-not $Linux -and -not $PluginsOnly) {
         if (-not $LlvmBin) { $LlvmBin = Join-Path $cache "toolchains\llvm\bin" }
         if (-not $XwinCache) { $XwinCache = Join-Path $cache "xwin" }
         $clang = Resolve-PlatformTool $LlvmBin "clang-cl" "clang-cl"
@@ -188,12 +189,14 @@ try {
         $env:PATH = ($toolPaths -join [IO.Path]::PathSeparator) + [IO.Path]::PathSeparator + $env:PATH
     }
 
-    if (-not $SkipBunInstall) {
-        Invoke-Checked $bun @("install", "--frozen-lockfile") $panel
+    if (-not $PluginsOnly) {
+        if (-not $SkipBunInstall) {
+            Invoke-Checked $bun @("install", "--frozen-lockfile") $panel
+        }
+        Invoke-Checked $bun @("run", "test:stickers") $panel
+        Invoke-Checked $bun @("run", "test:install-gate") $panel
+        Invoke-Checked $bun @("run", "build") $panel
     }
-    Invoke-Checked $bun @("run", "test:stickers") $panel
-    Invoke-Checked $bun @("run", "test:install-gate") $panel
-    Invoke-Checked $bun @("run", "build") $panel
 
     $pluginProjects = @(
         @{ Path = "addons\counterstrikesharp\plugins\TeamLineupInjector\TeamLineupInjector.csproj"; Properties = @() },
@@ -211,7 +214,7 @@ try {
         "-c", "Release", "--nologo"
     )
 
-    if (-not $Linux) {
+    if (-not $Linux -and -not $PluginsOnly) {
         $tauriSource = Join-Path $panel "src-tauri"
         Invoke-Checked $cargo @("xwin", "test", "--target", $rustTarget, "--locked", "--no-run", "--target-dir", $targetDirectory) $tauriSource
 
