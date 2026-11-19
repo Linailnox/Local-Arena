@@ -57,10 +57,6 @@ fn blocking_file_check(code: &str, title: &str, path: &Path, action: &str) -> In
     check
 }
 
-fn source_file_check(code: &str, title: &str, payload_root: &Path, relative: &str) -> InstallCheckItem {
-    blocking_file_check(code, title, &payload_root.join(relative), "Download and extract the complete Plus package again")
-}
-
 fn target_file_check(code: &str, title: &str, target: &Path, relative: &str, installed: bool) -> InstallCheckItem {
     let mut check = file_check(code, title, &target.join(relative), "Use Repair installation, then run the checks again");
     if !installed && check.status == CheckStatus::Fail {
@@ -264,13 +260,6 @@ pub fn run(payload_root: &Path, state_root: &Path, target: &Path, cs2_running: b
             if installed { CheckStatus::Fail } else { CheckStatus::Warn },
             false,
         ));
-        checks.push(component_check(
-            &format!("PAYLOAD_{code}"),
-            &format!("Package {name}"),
-            payload_root.join(relative),
-            CheckStatus::Fail,
-            true,
-        ));
     }
     for (code, name, relative) in [
         ("MATCH_COORDINATOR_MANAGED", "PlusMatchCoordinator", "addons/counterstrikesharp/plugins/PlusMatchCoordinator/PlusMatchCoordinator.dll"),
@@ -284,13 +273,6 @@ pub fn run(payload_root: &Path, state_root: &Path, target: &Path, cs2_running: b
             if installed { CheckStatus::Fail } else { CheckStatus::Warn },
             false,
         ));
-        checks.push(managed_component_check(
-            &format!("PAYLOAD_{code}"),
-            &format!("Package {name}"),
-            payload_root.join(relative),
-            CheckStatus::Fail,
-            true,
-        ));
     }
     {
         let name = "TeamLineupInjector";
@@ -302,13 +284,6 @@ pub fn run(payload_root: &Path, state_root: &Path, target: &Path, cs2_running: b
             if installed { CheckStatus::Fail } else { CheckStatus::Warn },
             false,
         ));
-        checks.push(managed_component_check(
-            "PAYLOAD_TEAM_LINEUP_MANAGED",
-            &format!("Package {name}"),
-            payload_root.join(relative),
-            CheckStatus::Fail,
-            false,
-        ));
     }
     for (code, title, relative) in [
         ("MATCH_CATALOG", "Match catalog", "addons/counterstrikesharp/plugins/PlusMatchCoordinator/match_catalog.json"),
@@ -316,13 +291,11 @@ pub fn run(payload_root: &Path, state_root: &Path, target: &Path, cs2_running: b
         ("BOTHIDER_IDENTITIES", "BotHider identity catalog", "addons/BotHider/bot_info.json"),
     ] {
         checks.push(target_file_check(&format!("TARGET_{code}"), &format!("Installed {title}"), target, relative, installed));
-        checks.push(source_file_check(&format!("PAYLOAD_{code}"), &format!("Package {title}"), payload_root, relative));
     }
     for difficulty in ["Low", "Medium", "High"] {
         let relative = format!("addons/counterstrikesharp/plugins/PlusMatchCoordinator/profiles/{difficulty}/botprofile.db");
         let suffix = difficulty.to_ascii_uppercase();
         checks.push(target_file_check(&format!("TARGET_MATCH_PROFILE_{suffix}"), &format!("Installed {difficulty} match Bot profiles"), target, &relative, installed));
-        checks.push(source_file_check(&format!("PAYLOAD_MATCH_PROFILE_{suffix}"), &format!("Package {difficulty} match Bot profiles"), payload_root, &relative));
     }
 
     let pass_count = checks.iter().filter(|check| check.status == CheckStatus::Pass).count();
@@ -448,6 +421,23 @@ mod tests {
         assert!(!check.blocking);
         assert!(check.evidence.contains("missing: cfg/removed.cfg;\nmodified: cfg/tampered.cfg;"), "{}", check.evidence);
         assert!(!check.evidence.contains("cfg/kept.cfg"), "{}", check.evidence);
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn preflight_does_not_require_another_components_files_in_the_payload() {
+        let base = std::env::temp_dir().join(format!("cs2bi-checks-scope-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        let (payload, state, target) = managed_payload_fixture(&base);
+
+        let report = run(&payload, &state, &target, false, None).unwrap();
+        let package_side: Vec<&str> = report
+            .checks
+            .iter()
+            .filter(|check| check.code.starts_with("PAYLOAD_") && check.code != "PAYLOAD_HASHES")
+            .map(|check| check.code.as_str())
+            .collect();
+        assert!(package_side.is_empty(), "{package_side:?}");
         fs::remove_dir_all(base).unwrap();
     }
 }
