@@ -13,7 +13,7 @@ Local-Arena/
 ├── addons/            # C# CSSharp plugins; BotHider = pinned submodule
 ├── Panel/             # Tauri 2 app: src/ React frontend, src-tauri/ Rust backend
 ├── scripts/           # entire build/package/verify pipeline + linux bash wrappers
-├── artifacts/         # gitignored release outputs: full zip, panel zip, plugin zips, latest.json
+├── artifacts/         # gitignored release outputs: plugin zips, tauri bundles, latest.json
 ├── cfg/               # upstream-identical tree — deletable, never editable
 ├── overrides/         # upstream-identical tree — deletable, never editable
 └── .cache/package/    # digest-verified upstream zip cache (≈73 MB)
@@ -31,7 +31,7 @@ Local-Arena/
 | Build/package/release | `scripts/*.ps1`, `scripts/linux/*.sh` | every gate routes through scripts/ |
 | Repo layout change | `scripts/verify-workspace.ps1` | must update allowlists or the gate fails |
 | Upstream pin | `scripts/dependencies.json` | v1.4.5 @ d991445 + linuxAsset sha256 |
-| Downloadable components / update manifest | `Panel/src-tauri/src/component_registry.rs`, `scripts/assemble-update-manifest.ps1` | three peers: upstream suite, LA plugin archive, InventorySimulator; `latest.json` schema v2 (`la_plugins.{windows,linux}`) |
+| Downloadable components / update sources | `Panel/src-tauri/src/component_registry.rs`, `scripts/package.ps1` | three peers: upstream suite, LA plugin archive, InventorySimulator; the Panel comes from the Tauri updater, the LA archive from GitHub release assets (`LocalArena-plugin-<tag>-<os>.zip`) |
 | i18n key | `Panel/src/i18n/` | EN source of truth + partial overrides |
 | Plugin tests | `addons/counterstrikesharp/{plugins,shared}/` | console runners, no xunit |
 
@@ -43,8 +43,8 @@ Local-Arena/
 | `install_component` | fn | `Panel/src-tauri/src/installer.rs` | component install | ownership-filtered subset of the manifest (`"plus"` = LA plugin bundle); merges into the one per-target install record, skips identical files, never writes `active-payload.json` |
 | `install_la_plugins_component` | fn | `Panel/src-tauri/src/installer.rs` | `install_component` | BotHiderApi preflight via `component_registry::check_requirements`, then `install_component(.., "plus")` |
 | `upstream_package` | mod | `Panel/src-tauri/src/upstream_package.rs` | deps pin | GitHub digest verify, .part resume, merged payload root |
-| `update_core` | mod | `Panel/src-tauri/src/update_core.rs` | `online_update.rs` | `latest.json` schema v2 (`components.la_plugins.{windows,linux}`); `parse_update_manifest` converts a v1 `plugin` entry into `la_plugins.windows` |
-| `online_update` | mod | `Panel/src-tauri/src/online_update.rs` | component updates | host platform key selects the `la_plugins` archive; a release may publish only one platform |
+| `update_core` | mod | `Panel/src-tauri/src/update_core.rs` | `online_update.rs` | SemVer `DisplayVersion` (legacy 4-part folded into build metadata), SHA-256/size verification, safe zip extraction |
+| `online_update` | mod | `Panel/src-tauri/src/online_update.rs` | component updates | `tauri-plugin-updater` owns Panel checks/installs; `snapshot`/`check` resolve the host `LocalArena-plugin-<tag>-<os>.zip` from `releases/latest` via `release_source`; `prepare_plugin` downloads + verifies + merges with the cached upstream zip |
 | `inventory_plugin` | mod | `Panel/src-tauri/src/inventory_plugin.rs` | InventorySimulator | third-party download via `release_source` + `download::download_with_progress`, installed by the shared transaction; the installed version lives in `record.components["inventory_simulator"]` (the old `.installed.json` marker is gone) |
 | `match_system.rs` | mod | `Panel/src-tauri/src/` | catalog | parses match_catalog.json (`CATALOG_RELATIVE`) |
 | `apply_launch_mode` | fn | `Panel/src-tauri/src/mode_files.rs` | launch modes | rewrites gameinfo.gi from current Steam files |
@@ -57,8 +57,8 @@ Local-Arena/
 | `component_registry` | mod | `Panel/src-tauri/src/component_registry.rs` | 3 descriptors | compiled-in component set (upstream / la_plugins / inventory_simulator); `check_requirements` preflight — LA bundle requires the upstream `BotHiderApi.dll` |
 | `release_source` | mod | `Panel/src-tauri/src/release_source.rs` | `inventory_plugin.rs` | digest-required GitHub release resolution; trusted hosts only; `AssetSelector` |
 | `download` | mod | `Panel/src-tauri/src/download.rs` | update pipeline | shared streaming downloader: cache reuse, `.part` resume, progress + cancel, size/sha256 verify, atomic move |
-| `assemble-update-manifest.ps1` | script | `scripts/` | release | builds schema v2 `latest.json` from `artifacts/` by naming convention — panel + `la_plugins.windows` required, `la_plugins.linux` optional |
-| LA plugin bundle | artifact | `artifacts/LocalArena-plugin-<tag>-{windows,linux}.zip` | `latest.json`, `-PluginBundleRoot` gate | Windows = full Local Arena payload (3 plugins + 2 bot cfg overlays + full manifest; no upstream runtime — the Panel downloads upstream at install time); Linux = LA-only (3 plugins + 2 bot cfg overlays + plus-only manifest) |
+| `package.ps1` | script | `scripts/` | release | plugin-only packager: builds the LA bundle (3 plugins + 2 bot cfg overlays + plus-only manifest), runs the OpenRating gate and `-PluginBundleRoot` verification, writes `LocalArena-plugin-<tag>-<os>.zip` |
+| LA plugin bundle | artifact | `artifacts/LocalArena-plugin-<tag>-{windows,linux}.zip` | plugin channel, `-PluginBundleRoot` gate | same plus-only shape on both platforms (3 plugins + 2 bot cfg overlays + plus-only manifest); no upstream runtime, no Panel executable |
 | `LaPluginBundleCard` | tsx | `Panel/src/components/LaPluginBundleCard.tsx` | `InstallationPage` | third of the three peer cards (upstream cache section / `InventoryPluginCard` / this one); `la_plugins` progress events, `install_la_plugin_bundle` command, `laBundle.*` i18n keys |
 
 ## CONVENTIONS
@@ -78,9 +78,9 @@ Local-Arena/
 - Moving/renaming anything under `addons/` is a cross-repo change — paths hardcoded in ~10 files (`installer/lib/match_system/mode_layout/install_checks.rs`, `installCheckLocalization.ts`, `scripts/*`).
 
 ## UNIQUE STYLES
-- Version default triplicated: `package.ps1:10`, `verify-workspace.ps1:4`, `.github/workflows/release.yml:6` (regex `^\d+\.\d+\.\d+\.\d+(?:-Preview\.\d+)?$`); plus `1.4.3+3` in `Panel/src-tauri/Cargo.toml` AND `tauri.conf.json` — all bump together. PMC `ModuleVersion` 1.4.3.3 tracks it.
+- Version default triplicated: `package.ps1:5`, `verify-workspace.ps1:4`, `.github/workflows/release.yml:6` (SemVer `^\d+\.\d+\.\d+(?:-...)?$`); plus the same version in `Panel/package.json`, `Panel/src-tauri/Cargo.toml`, `tauri.conf.json` and PMC `ModuleVersion` — all bump together.
 - Upstream pinning via GitHub `assets[].digest` sha256 in `dependencies.json`.
-- Release assets: `LocalArena-<tag>-<os>.zip` (full), `LocalArena-panel-<tag>-windows.zip`, `LocalArena-plugin-<tag>-{windows,linux}.zip`, `latest.json` (+ `.sig`), `SHA256SUMS.txt`; the Windows plugin asset carries the merged root's `addons|cfg|overrides`, while the Linux one copies only the LA-owned subset.
+- Release assets: Tauri bundles (Windows NSIS `.exe`, Linux `.AppImage`/`.deb`) + `.sig`, `LocalArena-plugin-<tag>-{windows,linux}.zip`, `latest.json` (Tauri updater schema), `SHA256SUMS.txt`; `tauri-action` creates/updates the release on each matrix leg and merges the `latest.json` platform map.
 - Install payload defined by `plus-payload-manifest.json` (walks `addons|cfg|overrides` only).
 
 ## COMMANDS
@@ -90,7 +90,7 @@ pwsh scripts/build.ps1 [-Linux]
 pwsh scripts/package.ps1 [-Linux] [-ReleaseVersion x.y.z.w]
 pwsh scripts/verify-workspace.ps1 [-Linux]
 pwsh scripts/verify-workspace.ps1 -PluginBundleRoot <dir> [-Linux]   # LA-only plugin bundle layout
-pwsh scripts/assemble-update-manifest.ps1 -Tag vX.Y.Z.W -OutputDirectory artifacts   # schema v2 latest.json
+pwsh scripts/package.ps1 [-Linux] [-ReleaseVersion x.y.z]   # plugin bundle only
 # Linux gate suite / cross-build
 scripts/linux/build.sh [--only pwsh|bun|dotnet|cargo|verify]
 scripts/linux/release.sh --check | --version X   # env: LLVM_BIN PWSH XWIN_CACHE
@@ -114,7 +114,7 @@ node scripts/generate-sticker-catalog.mjs
 - `Panel/src/styles/fonts.css` is imported by nothing; `modern` font preset silently falls back to Segoe UI (known dead wire).
 - Debug inspector: no devtools feature — debug builds have it by default (`cd Panel && bunx tauri build --debug --no-bundle`).
 - `Panel/src/panels/TeamsSection.tsx` is an orphan (no importer) — dead code kept in tree.
-- CI: `build.yml` (push to update/build; Node 22 + dotnet 10.0.x; submodules recursive; two jobs — `build` on windows-latest and `linux` on ubuntu-latest), `release.yml` (tags `v1.4.3.3-Preview.*`; per-platform `build` matrix + a `publish` job that re-runs `assemble-update-manifest.ps1`, signs and publishes `latest.json` once every platform archive exists).
+- CI: `build.yml` (push to update/build; panel built by `tauri-action --no-bundle` on Windows+Linux, plugins packaged by `package.ps1`), `release.yml` (tags `v*.*.*`; panel matrix publishes signed NSIS/AppImage/deb bundles through `tauri-action`, the plugin matrix uploads `LocalArena-plugin-<tag>-<os>.zip`, a checksums job publishes `SHA256SUMS.txt`).
 - OfflineMatchTelemetry (net8 + Microsoft.Data.Sqlite) ships its `libe_sqlite3.so` via `package.ps1 -Linux`; OMT settles at the winner panel (`_matchSettled`, OfflineMatchTelemetry.cs:545) — once settled nothing may append to the ledger.
 
 ## Agent skills

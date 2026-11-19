@@ -70,13 +70,12 @@
 > [!WARNING]
 > 安装、修复、恢复、更新插件、切换难度或切换模式前必须完整关闭 CS2
 
-- Local Arena 当前提供 Windows 版本
-- 打开面板前先把完整 ZIP 解压到普通文件夹
-- 旧版可执行文件、`addons`、`cfg`、`overrides` 和 `plus-payload-manifest.json` 必须保持在同一个目录
-- 不要直接在压缩包里面运行面板
+- Local Arena 提供 Windows NSIS 安装包与 Linux AppImage/deb 包
+- 运行安装器后，从开始菜单或应用启动器打开 Local Arena
+- 游戏负载由面板自行管理：`addons`、`cfg`、`overrides` 与 `plus-payload-manifest.json` 会安装到所选的 `game/csgo` 目录
 - 正确的游戏目录末尾应为 `Counter-Strike Global Offensive\game\csgo`
 - 饰品预览和增强人机模式会使用 `-insecure`，不能进入官方匹配
-- Linux 版本与仅上游原版插件的安装请查看[上游项目](https://github.com/ed0ard/CS2-Bot-Improver)；使用 Local Arena 请参见[Linux 安装](#linux-安装手动)
+- Linux 版本与仅上游原版插件的安装请查看[上游项目](https://github.com/ed0ard/CS2-Bot-Improver)；使用 Local Arena 请参见 [Linux 安装](#linux-安装)
 
 ## 四步完成首次安装
 
@@ -84,7 +83,7 @@
 
 语言选择只会改变面板显示，不会向 CS2 写入任何文件
 
-面板记忆、设置、日志、更新缓存和保留的玩家预设会存放在面板旁边的便携式 `.csbip` 文件夹
+面板记忆、设置、日志、更新缓存和保留的玩家预设会存放在用户级 `localarena` 配置目录（Windows 为 `%APPDATA%\localarena`，Linux 为 `$XDG_CONFIG_HOME/localarena`）
 
 <p align="center">
   <img src="./Panel/src/assets/guide/08-first-language.jpg" alt="选择面板语言" width="100%">
@@ -134,12 +133,12 @@ Local Arena 自身的包只有几 MB，约 73 MB 的上游运行时会在安装�
 | 组件 | 来源 | 说明 |
 | --- | --- | --- |
 | 上游套件 | [ed0ard/CS2-Bot-Improver](https://github.com/ed0ard/CS2-Bot-Improver) 的 release（`CS2BotImprover.zip`，约 73 MB） | 由面板下载，安装前用公布的 SHA-256 摘要校验，缓存后复用 |
-| Local Arena 插件压缩包 | 本仓库的 release，按平台发布 | `LocalArena-plugin-<版本>-windows.zip` 与 `LocalArena-plugin-<版本>-linux.zip`，在签名后的 `latest.json` 中列于 `components.la_plugins` |
+| Local Arena 插件压缩包 | 本仓库的 release，按平台发布 | `LocalArena-plugin-<版本>-windows.zip` 与 `LocalArena-plugin-<版本>-linux.zip`，通过 GitHub API 从 release 资产解析，并用公布的 SHA-256 摘要校验 |
 | InventorySimulator | [它自己的 release](https://github.com/ianlucas/cs2-css-inventory-simulator) | 第三方插件，从不随包发布，由面板按需下载并安装 |
 
 Linux 压缩包是仅含 Local Arena 内容的插件包：PlusMatchCoordinator、TeamLineupInjector、OfflineMatchTelemetry 三个插件，两份人机 cfg 覆盖文件（`cfg/my_bot_ffa_config.cfg`、`cfg/my_bot_normal_config.cfg`），以及一份只列出 Local Arena 自有条目的 `plus-payload-manifest.json`。它不含上游运行时、不含 `gameinfo.gi`、不含 `backup/` 目录、也不含 InventorySimulator，因此可以直接解压覆盖到已有的手动安装上，只更新 Local Arena 自己的插件
 
-Windows 压缩包保留 Local Arena 的全部负载——三个插件、两份人机 cfg 覆盖文件与完整的 `plus-payload-manifest.json`——但不含上游运行时：上游套件由面板单独下载，并在安装时与 Local Arena 负载合并；因此 Windows 完整包仅含面板可执行文件与 Local Arena 自有内容，只有 Linux 完整包才内置钉版的上游基底，构成自包含的手动安装，原生构建的面板二进制在可用时会随包一并发布
+Windows 压缩包保留 Local Arena 的全部负载——三个插件、两份人机 cfg 覆盖文件与完整的 `plus-payload-manifest.json`——但不含上游运行时：上游套件由面板单独下载，并在安装时与 Local Arena 负载合并
 
 单独安装插件压缩包需要先有上游套件：Local Arena 插件链接的是 `BotHiderApi.dll`，该文件只由上游负载提供，缺失时面板会在预检阶段拒绝安装
 
@@ -153,18 +152,18 @@ Windows 压缩包保留 Local Arena 的全部负载——三个插件、两份�
   <img src="./Panel/src/assets/guide/11-first-complete.jpg" alt="安装完成" width="100%">
 </p>
 
-## Linux 安装（手动）
+## Linux 安装
 
-Linux 包 `LocalArena-vX.Y.Z.W-linux.zip` 为自包含完整包，采用与上游一致的手动安装流程；面板亦可从源码在 Linux 原生构建运行（`Panel/src-tauri` 下 `cargo build --features custom-protocol`；缺该特性会连 dev 服务器 localhost:1420 而报 Connection refused），预编译面板包仍为 Windows
+从 releases 页面下载 AppImage（可自动更新）或 deb 包（手动更新）。面板也可从源码在 Linux 原生构建运行（`Panel/src-tauri` 下 `cargo build --features custom-protocol`）
 
-1. 下载并解压 Linux 包
-2. 打开 CS2 安装目录并进入 `game/csgo`
-3. 把解压出的全部文件拷入 `game/csgo`——包内已带预处理好的 `gameinfo.gi` 与 `backup/Online`、`backup/WithBots` 两份模式变体，无需手动修改 gameinfo
+1. 给 AppImage 添加可执行权限并运行，或安装 deb 包
+2. 打开面板并选择 CS2 的 `game/csgo` 目录
+3. 通过组件卡片安装上游套件与 Local Arena 插件
 4. 在 Steam 的 CS2 启动选项中添加 `-insecure`
 
-三个 Local Arena 独占插件（PlusMatchCoordinator、TeamLineupInjector、OfflineMatchTelemetry）及其配置均已包含；更新与修复通过解压新包覆盖旧安装完成
+三个 Local Arena 独占插件（PlusMatchCoordinator、TeamLineupInjector、OfflineMatchTelemetry）及其配置由面板安装；上游运行时与插件包分别下载并校验
 
-只想更新 Local Arena 自己的插件时，把 `LocalArena-plugin-vX.Y.Z.W-linux.zip` 解压覆盖到同一目录即可；该包只含三个插件、两份人机 cfg 覆盖文件和一份仅含 plus 条目的清单，不会覆盖上游运行时
+只想更新 Local Arena 自己的插件时，使用面板中的插件卡片；该包只含三个插件、两份人机 cfg 覆盖文件和一份仅含 plus 条目的清单，不会覆盖上游运行时
 
 玩家饰品使用 [InventorySimulator](https://github.com/ianlucas/cs2-css-inventory-simulator)，它**不随包发布**。请从其 Releases 下载 `InventorySimulator-v<版本>.zip` 并解压到 `game/csgo`（会得到 `addons/counterstrikesharp/plugins/InventorySimulator/` 与 `addons/counterstrikesharp/gamedata/inventory-simulator.json`）。面板把清单保存在 `.csbip/cosmetics/inventories.json`，并通过 `cfg/autoexec.cfg` 中的托管块把 `invsim_file` 指过去——启动时若默认路径存在合法文件，插件会加载失败
 
@@ -174,9 +173,9 @@ Linux 包 `LocalArena-vX.Y.Z.W-linux.zip` 为自包含完整包，采用与上�
 
 组件更新在安装前会重新获取上游包；当前上游版本已有缓存时直接复用，不会重复下载
 
-手动更新压缩包时，先关闭 CS2 和旧面板，把新包解压到原来的便携面板目录，并保留隐藏的 `.csbip` 文件夹
+手动更新时，直接在现有安装上安装新版本；用户级 `localarena` 配置目录不会被改动
 
-如果必须更换面板目录，需要先把旧目录中的完整 `.csbip` 文件夹复制到新面板旁边，再打开新面板，这样原始备份、安装登记、玩家预设和日志才不会断开
+从便携版升级：把旧的 `.csbip` 文件夹复制到 `%APPDATA%\localarena`（Windows）或 `$XDG_CONFIG_HOME/localarena`（Linux），原始备份、安装登记、玩家预设和日志才不会断开
 
 安装器可以区分已经纳管的 Local Arena、旧版安装、上游原版增强人机插件和不完整的混合环境
 
@@ -299,9 +298,9 @@ Linux 包 `LocalArena-vX.Y.Z.W-linux.zip` 为自包含完整包，采用与上�
 - 启动检查不会阻塞面板，并且会缓存六小时
 - 手动检查更新会绕过缓存
 - 插件更新前必须关闭所选目录对应的 CS2
-- 下载内容通过签名、大小和 SHA-256 验证后才会安装；每个组件单独显示进度，进行中的下载可以取消并续传
-- 签名后的 `latest.json` 为 schema v2，按平台在 `components.la_plugins`（`windows`、`linux`）下列出 Local Arena 插件压缩包；Linux 压缩包只在有 Linux 构建产物时发布
-- 旧版本发布的 `latest.json`（schema v1，只有一个 `plugin` 条目）仍然可用，会被当作 Windows 平台的 `la_plugins` 压缩包读取，已有更新渠道不会失效
+- 下载内容通过 Tauri 更新器签名、大小和 SHA-256 验证后才会安装；每个组件单独显示进度，进行中的下载可以取消并续传
+- 面板读取随 release 发布的 Tauri `latest.json`，由 `tauri-plugin-updater` 用内嵌公钥校验每个 bundle
+- Local Arena 插件包通过 GitHub API 从 release 资产解析（`LocalArena-plugin-<tag>-<os>.zip`），用资产摘要校验后作为独立组件安装
 - 安装 Local Arena 插件压缩包时只写入该包自己的文件，并合并进现有安装记录；上游套件（及其 `BotHiderApi.dll`）未安装时拒绝安装
 - 上游运行时包在**设置 → 安装**中单独管理，可重新下载、清除缓存或导入本地 ZIP
 - InventorySimulator 仍来自它自己的 release，由面板下载并安装，从不随包发布；**恢复原版 CS2** 会像清理其他已识别第三方插件一样删除它

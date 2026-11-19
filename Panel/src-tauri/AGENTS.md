@@ -19,14 +19,14 @@ carry inline `mod tests` (287 `#[test]`s). No `tests/` dir — cross-crate tests
 | Match system | `src/match_system.rs` (889) |
 | Launch modes / gameinfo.gi | `src/mode_files.rs` (`apply_launch_mode` rewrites from current Steam files) |
 | Steam discovery | `src/steam.rs` (cross-platform roots incl. non-Windows) |
-| Online update | `src/online_update.rs` (1114) — `snapshot`/`check` read the signed manifest; `host_platform()` keys the LA bundle to `la_plugins.{windows,linux}`, and a release that carries only the other platform errors instead of falling back; `prepare_plugin` downloads + verifies + merges with the cached upstream zip and activates the payload; `client(Duration)` is the one HTTPS-only `reqwest` client every component shares |
-| Update manifest schema v2 | `src/update_core.rs` (719) — `components.la_plugins.{windows,linux}`; `parse_update_manifest` converts a v1 `plugin` entry to `la_plugins.windows` (`linux: None`); `validate_v2` requires at least one platform; sha256/signature helpers + `extract_zip_safely` |
-| Component registry | `src/component_registry.rs` (242) — compiled-in `UPSTREAM_BUNDLE` / `LA_PLUGIN_BUNDLE` / `INVENTORY_SIMULATOR` (`ALL`); `ComponentSource` = `GitHubRelease { repository, asset: AssetName }` or `SignedLatestJson { field }`; `AssetName::selector()` builds the `release_source::AssetSelector`, so the matching rules live only in `release_source`; `Requirement::BotHiderApi` + fail-closed `check_requirements(target, requires)`. `by_id` is production code: `inventory_plugin::registry_source()` returns `Result` and rejects a descriptor whose source is not a GitHub release |
-| GitHub release resolution | `src/release_source.rs` (232) — `resolve_latest` / `resolve_tag`, digest-required, trusted GitHub hosts only, `AssetSelector::{Prefix, ExactName}` |
+| Online update | `src/online_update.rs` — `tauri-plugin-updater` owns Panel checks/installs; `snapshot`/`check` resolve the host `LocalArena-plugin-<tag>-<os>.zip` from `releases/latest` via `release_source`; `prepare_plugin` downloads + verifies + merges with the cached upstream zip; `client(Duration)` is the one HTTPS-only `reqwest` client every component shares |
+| Update helpers | `src/update_core.rs` — SemVer `DisplayVersion` (legacy 4-part → build metadata), sha256/size verification, `extract_zip_safely` |
+| Component registry | `src/component_registry.rs` — compiled-in `UPSTREAM_BUNDLE` / `LA_PLUGIN_BUNDLE` / `INVENTORY_SIMULATOR` (`ALL`); `ComponentSource::GitHubRelease { repository, asset: AssetName }`; `AssetName::LaPluginBundle` selects the host platform's archive; `AssetName::selector()` builds the `release_source::AssetSelector`; `Requirement::BotHiderApi` + fail-closed `check_requirements(target, requires)` |
+| GitHub release resolution | `src/release_source.rs` — `resolve_latest` / `resolve_latest_optional` / `resolve_tag`, digest-required, trusted GitHub hosts only, `AssetSelector::{Prefix, PrefixSuffix, ExactName}` |
 | Shared streaming download | `src/download.rs` (596) — `download_with_progress`: cache reuse, `.part` resume, progress + cancel, size/sha256 verify, atomic move |
 | Install health / diagnostics | `src/install_checks.rs`, `diagnostics.rs` |
 | Cosmetics (InventorySimulator) | `src/cosmetics_source.rs` (local↔direct switch), `cosmetics_inventory.rs` (JSON mapping + `_panel` sidecar), `inventory_plugin.rs` (722; third-party, never shipped: `registry_source()` resolves repo + selector from the registry, the shared client and `download_with_progress` fill a per-tag cache, `extract_zip_safely` stages it, and one `installer::install_component` transaction writes only its whitelisted payload paths — there is no `.installed.json` marker any more: the version lives in `record.components["inventory_simulator"]`, and a leftover marker from an older Panel is neither read nor trusted) |
-| App state root | `src/app_storage.rs` — `.csbip` next to the exe (override `CS2BI_STATE_ROOT`); all writes via `atomic_fs.rs` (temp + replace) |
+| App state root | `src/app_storage.rs` — per-user `localarena` config directory (`%APPDATA%` / `$XDG_CONFIG_HOME`; override `CS2BI_STATE_ROOT`); all writes via `atomic_fs.rs` (temp + replace) |
 | Cross-crate core tests | `core-tests/` (re-includes 11 modules via `#[path]`, separate manifest; it does NOT cover `component_registry`/`release_source` — they need `reqwest`, absent from the harness manifest — so the crate currently fails to compile with 5 `E0433`s: 3 pre-existing `cosmetics_source`, 2 added by the component refactor; no gate compiles it, see the `//!` header of `core-tests/src/lib.rs`) |
 
 ## CONVENTIONS
@@ -37,7 +37,7 @@ carry inline `mod tests` (287 `#[test]`s). No `tests/` dir — cross-crate tests
 - Windows file ops retry on a fixed ladder (`installer::FILE_RETRY_DELAYS`, 80 ms → 2.2 s).
 - `crate-type = ["rlib"]` deliberate (Cargo.toml comment: unused cdylib over-exports symbols past PE ordinal table).
 - Feature `custom-protocol` REQUIRED for any non-`tauri dev` build (Cargo.toml).
-- Tauri v2 (`tauri.conf.json` schema 2); frameless (`decorations:false, transparent:true`); NSIS-only bundle.
+- Tauri v2 (`tauri.conf.json` schema 2); frameless (`decorations:false, transparent:true`); NSIS bundle with `createUpdaterArtifacts` and `downloadBootstrapper`.
 - **`invoke` payload keys are camelCase.** Tauri derives the command argument name from the Rust parameter, so `component_id` must be sent as `componentId` (`api.ts` passes `componentId`/`sessionId`/`steamId` for exactly this reason). A snake_case key fails at runtime with a missing-argument IPC error while `tsc`, `bun run build` and both frontend gates stay green — grep the payload keys, never trust the typechecker for this.
 
 ## ANTI-PATTERNS / TRAPS

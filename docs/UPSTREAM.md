@@ -6,7 +6,7 @@
 - Synced upstream source commit: `d9914454d8691b509bae4cd671a7a8bd9dcb174f` (upstream `main` = tag `v1.4.5`, 2026-10-02)
 - Last synced upstream release: `d9914454d8691b509bae4cd671a7a8bd9dcb174f` (`v1.4.5`), the newest upstream tag
 - Pinned Windows runtime asset: `CS2BotImprover.zip` (`v1.4.5`, see `scripts/dependencies.json`)
-- Plus release line: `1.4.3.x` test line; the merged payload tracks the upstream `v1.4.5` enhanced-bot submodules
+- Plus release line: `1.5.x` test line; the merged payload tracks the upstream `v1.4.5` enhanced-bot submodules
 - `scripts/dependencies.json`: `upstream.baseCommit` stays on the pinned release commit, `upstream.sourceCommit`
   follows the upstream revision whose sources are merged. Packaging verification asserts every submodule gitlink and
   upstream-owned tree against `sourceCommit`, so bump it whenever a sync merge lands.
@@ -152,8 +152,8 @@ The machine-readable source of truth is `scripts/dependencies.json`.
   other payload files.
 - The upstream `Panel v*.exe` shipped inside the release zip is relocated next to `LocalArena.exe` and can be
   launched optionally from the Installation management page.
-- Local Arena's own panel/plugin update artifacts remain signed and SHA-256 verified through `latest.json`;
-  only the upstream zip follows the digest/HTTPS policy above.
+- Local Arena's own Panel bundles are signed and verified by `tauri-plugin-updater`; the plugin archive uses
+  the GitHub release asset digest. Only the upstream zip follows the digest/HTTPS policy above.
 
 ## 2026-10 Download-and-Merge Architecture
 
@@ -167,15 +167,11 @@ The machine-readable source of truth is `scripts/dependencies.json`.
   duplicated `cfg` files were removed from the repository; RayTrace support was removed end to end.
 - Settings → Installation gained an upstream package management section (download, cache, offline ZIP import,
   installed-state display, page-triggered install and repair).
-- **Linux distribution (game side)**: `package.ps1 -Linux` assembles a self-contained manual-install zip
-  `LocalArena-<ver>-linux.zip` from the pinned `upstream.linuxAsset` (`CS2BotImprover_for_Linux.zip`,
-  sha256 in `scripts/dependencies.json`) plus the four LA plugins, the two LA cfgs, and `libe_sqlite3.so`
-  for OfflineMatchTelemetry. It ships the prepared `gameinfo.gi`/mode backups like the upstream Linux
-  package, contains no Panel executable or `win64` payloads, and is asserted by
-  `verify-workspace.ps1 -Linux`. The Panel desktop app builds and runs natively on
-  Linux from source (Steam root discovery, `steam` process launch, `xdg-open`, and
-  `cs2`/`cs2.exe` process detection are ported); prebuilt Panel packages remain
-  Windows/nsis-only.
+- **Linux distribution**: `package.ps1 -Linux` produces only the LA plugin bundle
+  `LocalArena-plugin-<ver>-linux.zip` (three plugins, two cfgs, `libe_sqlite3.so`, plus-only manifest).
+  The Panel itself ships as a signed AppImage/deb built by `tauri-action`; there is no self-contained
+  full zip any more. The Panel desktop app builds and runs natively on Linux from source, and the
+  installer bundles cover Windows (NSIS) and Linux (AppImage/deb).
 
 ## Synchronizing
 
