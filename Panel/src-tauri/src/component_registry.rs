@@ -13,6 +13,9 @@ use crate::AppError;
 const BOTHIDER_API_DLL: &str =
     "addons/counterstrikesharp/shared/BotHiderApi/BotHiderApi.dll";
 
+/// Repository that publishes the Panel and its LA plugin archive.
+pub const LA_PLUGIN_REPOSITORY: &str = "Linailnox/Local-Arena";
+
 /// Where a component's latest release comes from.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ComponentSource {
@@ -21,8 +24,6 @@ pub enum ComponentSource {
         repository: &'static str,
         asset: AssetName,
     },
-    /// Field of the signed `latest.json` manifest.
-    SignedLatestJson { field: &'static str },
 }
 
 /// Which GitHub release asset belongs to a component, as compile-time data.
@@ -35,6 +36,8 @@ pub enum ComponentSource {
 pub enum AssetName {
     /// Asset name starts with this prefix.
     Prefix(&'static str),
+    /// The host platform's LA plugin archive: `LocalArena-plugin-<tag>-<os>.zip`.
+    LaPluginBundle,
     /// Asset name matches exactly.
     Exact(&'static str),
 }
@@ -46,6 +49,14 @@ impl AssetName {
             AssetName::Prefix(prefix) => {
                 crate::release_source::AssetSelector::Prefix((*prefix).to_string())
             }
+            AssetName::LaPluginBundle => crate::release_source::AssetSelector::PrefixSuffix {
+                prefix: "LocalArena-plugin-".to_string(),
+                suffix: if cfg!(windows) {
+                    "-windows.zip".to_string()
+                } else {
+                    "-linux.zip".to_string()
+                },
+            },
             AssetName::Exact(name) => {
                 crate::release_source::AssetSelector::ExactName((*name).to_string())
             }
@@ -83,7 +94,10 @@ pub const UPSTREAM_BUNDLE: ComponentDescriptor = ComponentDescriptor {
 pub const LA_PLUGIN_BUNDLE: ComponentDescriptor = ComponentDescriptor {
     id: "la_plugins",
     display_key: "laBundle.title",
-    source: ComponentSource::SignedLatestJson { field: "la_plugins" },
+    source: ComponentSource::GitHubRelease {
+        repository: LA_PLUGIN_REPOSITORY,
+        asset: AssetName::LaPluginBundle,
+    },
     requires: &[Requirement::BotHiderApi],
 };
 
@@ -164,7 +178,10 @@ mod tests {
         assert_eq!(LA_PLUGIN_BUNDLE.display_key, "laBundle.title");
         assert_eq!(
             LA_PLUGIN_BUNDLE.source,
-            ComponentSource::SignedLatestJson { field: "la_plugins" }
+            ComponentSource::GitHubRelease {
+                repository: LA_PLUGIN_REPOSITORY,
+                asset: AssetName::LaPluginBundle,
+            }
         );
         assert_eq!(
             LA_PLUGIN_BUNDLE.requires,

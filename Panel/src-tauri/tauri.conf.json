@@ -3,6 +3,7 @@
   "productName": "Local Arena",
   "version": "1.5.0",
   "identifier": "com.localarena.panel",
+  "mainBinaryName": "LocalArena",
   "build": {
     "beforeDevCommand": "bun run dev",
     "devUrl": "http://localhost:1420/",
@@ -28,6 +29,7 @@
   "bundle": {
     "active": true,
     "targets": ["nsis"],
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -35,6 +37,14 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "windows": { "webviewInstallMode": { "type": "skip" } }
+    "windows": { "webviewInstallMode": { "type": "downloadBootstrapper" } }
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/Linailnox/Local-Arena/releases/latest/download/latest.json"
+      ],
+      "pubkey": "REPLACE_WITH_TAURI_SIGNER_PUBLIC_KEY"
+    }
   }
 }

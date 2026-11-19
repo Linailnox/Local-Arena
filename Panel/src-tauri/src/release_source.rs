@@ -27,6 +27,9 @@ pub enum AssetSelector {
     /// part of the predicate on purpose: release pages also publish `*.zip.sha256` siblings, and a
     /// bare prefix match would hand the checksum file to the downloader.
     Prefix(String),
+    /// Matches a zip archive with both the given prefix and suffix, e.g.
+    /// `LocalArena-plugin-` + `-windows.zip`.
+    PrefixSuffix { prefix: String, suffix: String },
     /// Matches the asset whose name equals the given name exactly.
     ExactName(String),
 }
@@ -35,6 +38,9 @@ impl AssetSelector {
     pub fn matches(&self, name: &str) -> bool {
         match self {
             AssetSelector::Prefix(prefix) => name.starts_with(prefix.as_str()) && name.ends_with(".zip"),
+            AssetSelector::PrefixSuffix { prefix, suffix } => {
+                name.starts_with(prefix.as_str()) && name.ends_with(suffix.as_str())
+            }
             AssetSelector::ExactName(exact) => name == exact,
         }
     }
@@ -46,6 +52,26 @@ pub fn resolve_latest(
     selector: &AssetSelector,
 ) -> Result<ResolvedAsset> {
     let url = format!("{API_BASE}/{repository}/releases/latest");
+    fetch_release(client, &url, repository, selector)?
+        .ok_or_else(|| {
+            AppError::update(format!(
+                "Release has no matching asset for {repository}"
+            ))
+        })
+}
+
+/// Like [`resolve_latest`], but a missing release or a release without a matching
+/// asset is `None` rather than an error.
+///
+/// The LA plugin bundle is published in the Panel's own release, so a Panel-only
+/// hotfix release legitimately carries no plugin archive. That is "nothing to
+/// install", not a failed check.
+pub fn resolve_latest_optional(
+    client: &reqwest::blocking::Client,
+    repository: &str,
+    selector: &AssetSelector,
+) -> Result<Option<ResolvedAsset>> {
+    let url = format!("{API_BASE}/{repository}/releases/latest");
     fetch_release(client, &url, repository, selector)
 }
 
@@ -56,7 +82,12 @@ pub fn resolve_tag(
     selector: &AssetSelector,
 ) -> Result<ResolvedAsset> {
     let url = format!("{API_BASE}/{repository}/releases/tags/{tag}");
-    fetch_release(client, &url, repository, selector)
+    fetch_release(client, &url, repository, selector)?
+        .ok_or_else(|| {
+            AppError::update(format!(
+                "Release has no matching asset for {repository}"
+            ))
+        })
 }
 
 fn fetch_release(
@@ -64,12 +95,15 @@ fn fetch_release(
     url: &str,
     repository: &str,
     selector: &AssetSelector,
-) -> Result<ResolvedAsset> {
+) -> Result<Option<ResolvedAsset>> {
     let response = client
         .get(url)
         .header("Accept", "application/vnd.github+json")
         .send()
         .map_err(|error| AppError::update(format!("GitHub release request failed: {error}")))?;
+    if response.status() == reqwest::StatusCode::NOT_FOUND {
+        return Ok(None);
+    }
     if !response.status().is_success() {
         return Err(AppError::update(format!(
             "GitHub release request returned {}",
@@ -79,21 +113,34 @@ fn fetch_release(
     let value: serde_json::Value = response
         .json()
         .map_err(|error| AppError::update(format!("GitHub release JSON is invalid: {error}")))?;
-    parse_release_value(&value, repository, selector)
+    parse_release_value_optional(&value, repository, selector)
 }
 
 /// Parses an already-decoded GitHub release document.
+#[cfg(test)]
 pub(crate) fn parse_release_value(
     value: &serde_json::Value,
     repository: &str,
     selector: &AssetSelector,
 ) -> Result<ResolvedAsset> {
+    parse_release_value_optional(value, repository, selector)?.ok_or_else(|| {
+        AppError::update(format!(
+            "Release has no matching asset for {repository}"
+        ))
+    })
+}
+
+pub(crate) fn parse_release_value_optional(
+    value: &serde_json::Value,
+    repository: &str,
+    selector: &AssetSelector,
+) -> Result<Option<ResolvedAsset>> {
     let tag = value
         .get("tag_name")
         .and_then(|tag| tag.as_str())
         .filter(|tag| !tag.trim().is_empty())
         .ok_or_else(|| AppError::update("Release has no tag_name"))?;
-    let asset = value
+    let Some(asset) = value
         .get("assets")
         .and_then(|assets| assets.as_array())
         .and_then(|assets| {
@@ -104,11 +151,9 @@ pub(crate) fn parse_release_value(
                     .is_some_and(|name| selector.matches(name))
             })
         })
-        .ok_or_else(|| {
-            AppError::update(format!(
-                "Release has no matching asset for {repository}"
-            ))
-        })?;
+    else {
+        return Ok(None);
+    };
     let digest = asset
         .get("digest")
         .and_then(|digest| digest.as_str())
@@ -129,13 +174,14 @@ pub(crate) fn parse_release_value(
         .and_then(|name| name.as_str())
         .unwrap_or_default()
         .to_string();
-    Ok(ResolvedAsset {
+    debug_assert!(!repository.is_empty());
+    Ok(Some(ResolvedAsset {
         tag: tag.to_string(),
         url: url.to_string(),
         size: asset.get("size").and_then(|size| size.as_u64()).unwrap_or(0),
         sha256,
         asset_name,
-    })
+    }))
 }
 
 #[cfg(test)]
@@ -167,6 +213,45 @@ mod tests {
         });
         let resolved = parse_release_value(&value, REPOSITORY, &selector).unwrap();
         assert_eq!(resolved.asset_name, "InventorySimulator-v3.7.0.zip");
+    }
+
+    #[test]
+    fn prefix_suffix_selector_picks_the_platform_bundle() {
+        let windows = AssetSelector::PrefixSuffix {
+            prefix: "LocalArena-plugin-".to_string(),
+            suffix: "-windows.zip".to_string(),
+        };
+        let linux = AssetSelector::PrefixSuffix {
+            prefix: "LocalArena-plugin-".to_string(),
+            suffix: "-linux.zip".to_string(),
+        };
+        assert!(windows.matches("LocalArena-plugin-v1.5.0-windows.zip"));
+        assert!(!windows.matches("LocalArena-plugin-v1.5.0-linux.zip"));
+        assert!(!windows.matches("LocalArena-plugin-v1.5.0-windows.zip.sha256"));
+        assert!(linux.matches("LocalArena-plugin-v1.5.0-linux.zip"));
+        assert!(!linux.matches("LocalArena-plugin-v1.5.0-windows.zip"));
+    }
+
+    #[test]
+    fn optional_resolution_returns_none_without_a_plugin_asset() {
+        let selector = AssetSelector::PrefixSuffix {
+            prefix: "LocalArena-plugin-".to_string(),
+            suffix: "-windows.zip".to_string(),
+        };
+        let panel_only = serde_json::json!({
+            "tag_name": "v1.5.1",
+            "assets": [{
+                "name": "Local-Arena_1.5.1_x64-setup.exe",
+                "browser_download_url": "https://github.com/Linailnox/Local-Arena/releases/download/v1.5.1/Local-Arena_1.5.1_x64-setup.exe",
+                "size": 1024,
+                "digest": format!("sha256:{DIGEST}")
+            }]
+        });
+        assert!(
+            parse_release_value_optional(&panel_only, "Linailnox/Local-Arena", &selector)
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]

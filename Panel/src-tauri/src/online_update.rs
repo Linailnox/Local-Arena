@@ -1,24 +1,28 @@
-use crate::{AppError, Result, app_storage, app_version, atomic_fs, installer, logging, update_core};
+//! Panel and component updates.
+//!
+//! The Panel itself is updated by `tauri-plugin-updater`: the plugin reads the
+//! Tauri `latest.json` published with the release, verifies the bundle signature
+//! against the embedded public key, and installs the NSIS/AppImage payload.
+//! Component payloads (the LA plugin archive) cannot be expressed as Tauri
+//! bundles, so they come straight from the release assets through
+//! [`release_source`] — the same digest-verified path InventorySimulator uses.
+
+use crate::{
+    AppError, Result, app_storage, app_version, atomic_fs, component_registry,
+    installer, release_source, update_core,
+};
 use serde::{Deserialize, Serialize};
-use std::fs::{self, File};
-use std::io::Read;
+use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter};
+use tauri_plugin_updater::UpdaterExt;
 
-pub const MANIFEST_URL: &str =
-    "https://github.com/numakkiyu/Local-Arena/releases/latest/download/latest.json";
-const SIGNATURE_URL: &str =
-    "https://github.com/numakkiyu/Local-Arena/releases/latest/download/latest.json.sig";
-const UPDATE_PUBLIC_KEY: &str = "RbIjlfASpYVu740SsmQMLuLO7ExxiDBYTdnYThfqU/4=";
 const CACHE_SECONDS: u64 = 6 * 60 * 60;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(15 * 60);
-const PANEL_EXECUTABLE_NAME: &str = "LocalArena.exe";
-const LEGACY_PANEL_EXECUTABLE_NAME: &str = "CS2BotImproverPlus.exe";
 
 static CANCELLED: AtomicBool = AtomicBool::new(false);
 static RUNTIME: OnceLock<Mutex<RuntimeState>> = OnceLock::new();
@@ -81,19 +85,17 @@ pub struct UpdateBatchResult {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-struct CacheMetadata {
+struct PanelCheckCache {
     schema_version: u8,
     checked_at: u64,
+    latest_version: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-struct PanelUpdatePlan {
+struct PluginCheckCache {
     schema_version: u8,
-    old_pid: u32,
-    current: String,
-    target: String,
-    staged: String,
-    backup: String,
+    checked_at: u64,
+    asset: release_source::ResolvedAsset,
 }
 
 fn runtime() -> &'static Mutex<RuntimeState> {
@@ -122,144 +124,119 @@ pub(crate) fn client(timeout: Duration) -> Result<reqwest::blocking::Client> {
         .map_err(|error| AppError::update(format!("Cannot initialize update client: {error}")))
 }
 
-fn read_limited_response(mut response: reqwest::blocking::Response, limit: u64) -> Result<Vec<u8>> {
-    if !response.status().is_success() {
-        return Err(AppError::update(format!(
-            "GitHub update request failed with HTTP {}",
-            response.status()
-        )));
-    }
-    update_core::validate_https_github_url(response.url().as_str()).map_err(AppError::update)?;
-    if response.content_length().is_some_and(|size| size > limit) {
-        return Err(AppError::update(
-            "GitHub update response exceeded the size limit",
-        ));
-    }
-    let mut bytes = Vec::new();
-    response
-        .by_ref()
-        .take(limit + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|error| {
-            AppError::update(format!("Cannot read GitHub update response: {error}"))
-        })?;
-    if bytes.len() as u64 > limit {
-        return Err(AppError::update(
-            "GitHub update response exceeded the size limit",
-        ));
-    }
-    Ok(bytes)
+fn is_fresh(checked_at: u64) -> bool {
+    unix_time().saturating_sub(checked_at) < CACHE_SECONDS
 }
 
-/// Parses an already-authenticated manifest into the schema-2 shape. A schema
-/// 1 payload is converted here, so every consumer below only ever sees
-/// `la_plugins { windows, linux }`.
-fn parse_manifest(manifest: &[u8]) -> Result<update_core::RemoteUpdateManifestV2> {
-    update_core::parse_update_manifest(manifest).map_err(AppError::update)
+fn panel_cache_path() -> Result<PathBuf> {
+    Ok(update_root()?.join("panel-check.json"))
 }
 
-fn verify_manifest(
-    manifest: &[u8],
-    signature: &[u8],
-) -> Result<update_core::RemoteUpdateManifestV2> {
-    let signature = std::str::from_utf8(signature)
-        .map_err(|_| AppError::update("Update signature is not valid UTF-8"))?;
-    // Signature first: never parse unsigned bytes.
-    update_core::verify_manifest_signature(manifest, signature, UPDATE_PUBLIC_KEY)
-        .map_err(AppError::update)?;
-    parse_manifest(manifest)
-}
-
-/// The platform key used to select the LA plugin archive of a release.
-fn host_platform() -> &'static str {
-    if cfg!(windows) {
-        "windows"
-    } else {
-        "linux"
-    }
-}
-
-fn la_plugins_for<'a>(
-    manifest: &'a update_core::RemoteUpdateManifestV2,
-    platform: &str,
-) -> Option<&'a update_core::RemoteComponent> {
-    match platform {
-        "windows" => manifest.components.la_plugins.windows.as_ref(),
-        "linux" => manifest.components.la_plugins.linux.as_ref(),
-        _ => None,
-    }
-}
-
-fn host_la_plugins(
-    manifest: &update_core::RemoteUpdateManifestV2,
-) -> Option<&update_core::RemoteComponent> {
-    la_plugins_for(manifest, host_platform())
-}
-
-fn cached_manifest(
-    allow_stale: bool,
-) -> Result<Option<(update_core::RemoteUpdateManifestV2, u64)>> {
-    let root = update_root()?;
-    let manifest_path = root.join("latest.json");
-    let signature_path = root.join("latest.json.sig");
-    let metadata_path = root.join("cache.json");
-    if !manifest_path.is_file() || !signature_path.is_file() || !metadata_path.is_file() {
+fn read_panel_cache() -> Result<Option<PanelCheckCache>> {
+    let path = panel_cache_path()?;
+    let bytes = match fs::read(&path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(AppError::transaction_io(error)),
+    };
+    let cache: PanelCheckCache = serde_json::from_slice(&bytes)
+        .map_err(|error| AppError::update(format!("Invalid Panel update cache: {error}")))?;
+    if cache.schema_version != 1 {
         return Ok(None);
     }
-    let metadata: CacheMetadata =
-        serde_json::from_slice(&fs::read(metadata_path).map_err(AppError::transaction_io)?)
-            .map_err(|error| AppError::update(format!("Invalid update cache metadata: {error}")))?;
-    if metadata.schema_version != 1 {
-        return Ok(None);
-    }
-    if !allow_stale && unix_time().saturating_sub(metadata.checked_at) >= CACHE_SECONDS {
-        return Ok(None);
-    }
-    let manifest = fs::read(manifest_path).map_err(AppError::transaction_io)?;
-    let signature = fs::read(signature_path).map_err(AppError::transaction_io)?;
-    Ok(Some((
-        verify_manifest(&manifest, &signature)?,
-        metadata.checked_at,
-    )))
+    Ok(Some(cache))
 }
 
-fn write_cache(manifest: &[u8], signature: &[u8], checked_at: u64) -> Result<()> {
-    let root = update_root()?;
-    atomic_fs::write_replace(&root.join("latest.json"), manifest)
-        .map_err(AppError::transaction_io)?;
-    atomic_fs::write_replace(&root.join("latest.json.sig"), signature)
-        .map_err(AppError::transaction_io)?;
-    let metadata = serde_json::to_vec_pretty(&CacheMetadata {
+fn write_panel_cache(latest_version: Option<String>, checked_at: u64) -> Result<()> {
+    let bytes = serde_json::to_vec_pretty(&PanelCheckCache {
         schema_version: 1,
         checked_at,
+        latest_version,
     })
     .map_err(|error| AppError::update(error.to_string()))?;
-    atomic_fs::write_replace(&root.join("cache.json"), &metadata).map_err(AppError::transaction_io)
+    atomic_fs::write_replace(&panel_cache_path()?, &bytes).map_err(AppError::transaction_io)
+}
+
+fn plugin_cache_path() -> Result<PathBuf> {
+    Ok(update_root()?.join("plugin-check.json"))
+}
+
+fn read_plugin_cache() -> Result<Option<PluginCheckCache>> {
+    let path = plugin_cache_path()?;
+    let bytes = match fs::read(&path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(AppError::transaction_io(error)),
+    };
+    let cache: PluginCheckCache = serde_json::from_slice(&bytes)
+        .map_err(|error| AppError::update(format!("Invalid plugin update cache: {error}")))?;
+    if cache.schema_version != 1 {
+        return Ok(None);
+    }
+    Ok(Some(cache))
+}
+
+fn write_plugin_cache(asset: &release_source::ResolvedAsset, checked_at: u64) -> Result<()> {
+    let bytes = serde_json::to_vec_pretty(&PluginCheckCache {
+        schema_version: 1,
+        checked_at,
+        asset: asset.clone(),
+    })
+    .map_err(|error| AppError::update(error.to_string()))?;
+    atomic_fs::write_replace(&plugin_cache_path()?, &bytes).map_err(AppError::transaction_io)
+}
+
+fn plugin_selector() -> release_source::AssetSelector {
+    component_registry::AssetName::LaPluginBundle.selector()
+}
+
+fn resolve_plugin_release() -> Result<Option<release_source::ResolvedAsset>> {
+    let client = client(REQUEST_TIMEOUT)?;
+    release_source::resolve_latest_optional(
+        &client,
+        component_registry::LA_PLUGIN_REPOSITORY,
+        &plugin_selector(),
+    )
+}
+
+fn plugin_asset(force: bool) -> Result<Option<release_source::ResolvedAsset>> {
+    if !force {
+        if let Some(cache) = read_plugin_cache()? {
+            if is_fresh(cache.checked_at) {
+                return Ok(Some(cache.asset));
+            }
+        }
+    }
+    let asset = resolve_plugin_release()?;
+    if let Some(asset) = asset.as_ref() {
+        write_plugin_cache(asset, unix_time())?;
+    }
+    Ok(asset)
+}
+
+fn version_from_tag(tag: &str) -> String {
+    tag.trim().trim_start_matches(['v', 'V']).to_string()
+}
+
+fn newer(latest: &str, current: &str) -> bool {
+    match (
+        update_core::DisplayVersion::parse(current),
+        update_core::DisplayVersion::parse(latest),
+    ) {
+        (Ok(current), Ok(latest)) => latest > current,
+        _ => false,
+    }
 }
 
 fn component_state(
     current: &str,
-    component: Option<&update_core::RemoteComponent>,
+    latest: Option<&str>,
+    compatible: bool,
+    total_bytes: u64,
     selected_progress: Option<&UpdateProgress>,
     error: Option<String>,
 ) -> UpdateComponentState {
-    let latest = component.map(|value| value.version.clone());
-    let update_available = component
-        .and_then(|value| {
-            Some(
-                update_core::DisplayVersion::parse(&value.version).ok()?
-                    > update_core::DisplayVersion::parse(current).ok()?,
-            )
-        })
-        .unwrap_or(false);
-    let compatible = component
-        .and_then(|value| {
-            Some(
-                update_core::DisplayVersion::parse(app_version::display()).ok()?
-                    >= update_core::DisplayVersion::parse(&value.min_panel_version).ok()?,
-            )
-        })
-        .unwrap_or(true);
+    let update_available = latest.is_some_and(|latest| newer(latest, current));
     let (status, downloaded_bytes, total_bytes) = if let Some(progress) = selected_progress {
         (
             progress.stage.clone(),
@@ -267,11 +244,7 @@ fn component_state(
             progress.total_bytes,
         )
     } else if error.is_some() {
-        (
-            "error".into(),
-            0,
-            component.map(|value| value.size).unwrap_or(0),
-        )
+        ("error".into(), 0, total_bytes)
     } else if update_available {
         (
             if compatible {
@@ -281,18 +254,14 @@ fn component_state(
             }
             .into(),
             0,
-            component.map(|value| value.size).unwrap_or(0),
+            total_bytes,
         )
     } else {
-        (
-            "current".into(),
-            0,
-            component.map(|value| value.size).unwrap_or(0),
-        )
+        ("current".into(), 0, total_bytes)
     };
     UpdateComponentState {
         current_version: current.into(),
-        latest_version: latest,
+        latest_version: latest.map(str::to_owned),
         update_available,
         compatible,
         status,
@@ -313,12 +282,28 @@ fn la_plugins_current(installed: Option<&str>) -> Option<String> {
 }
 
 pub fn snapshot(plugin_version: Option<&str>) -> Result<OnlineUpdateSnapshot> {
-    let cached = cached_manifest(true).ok().flatten();
     let state = runtime()
         .lock()
         .map_err(|_| AppError::update("Update state lock is poisoned"))?
         .clone();
-    let manifest = cached.as_ref().map(|value| &value.0);
+    let panel_cache = read_panel_cache()?;
+    let plugin_cache = read_plugin_cache()?;
+    let checked_at = [panel_cache.as_ref().map(|cache| cache.checked_at), plugin_cache.as_ref().map(|cache| cache.checked_at)]
+        .into_iter()
+        .flatten()
+        .max();
+
+    let panel_latest = panel_cache
+        .as_ref()
+        .and_then(|cache| cache.latest_version.as_deref());
+    let plugin_latest = plugin_cache
+        .as_ref()
+        .map(|cache| version_from_tag(&cache.asset.tag));
+    let plugin_size = plugin_cache
+        .as_ref()
+        .map(|cache| cache.asset.size)
+        .unwrap_or(0);
+
     let panel_progress = state
         .progress
         .as_ref()
@@ -330,21 +315,28 @@ pub fn snapshot(plugin_version: Option<&str>) -> Result<OnlineUpdateSnapshot> {
     // Empty means "not installed" — see `la_plugins_current`.
     let plugin_current_version = la_plugins_current(plugin_version).unwrap_or_default();
     Ok(OnlineUpdateSnapshot {
-        checked_at: cached.as_ref().map(|value| value.1),
-        release_version: manifest.map(|value| value.release_version.clone()),
-        release_notes_url: manifest.map(|value| value.release_notes_url.clone()),
+        checked_at,
+        release_version: panel_latest.map(str::to_owned),
+        release_notes_url: panel_latest.map(|version| {
+            format!(
+                "https://github.com/{}/releases/tag/v{}",
+                component_registry::LA_PLUGIN_REPOSITORY,
+                version.trim_start_matches(['v', 'V'])
+            )
+        }),
         panel: component_state(
             app_version::display(),
-            manifest.map(|value| &value.components.panel),
+            panel_latest,
+            true,
+            0,
             panel_progress,
             state.last_error.clone(),
         ),
-        // A release may publish only one platform (schema 1 is Windows-only).
-        // A missing key for this host is a normal "nothing to install" state,
-        // never an error: `component_state(None, ..)` reports `current`.
         la_plugins: component_state(
             &plugin_current_version,
-            manifest.and_then(host_la_plugins),
+            plugin_latest.as_deref(),
+            true,
+            plugin_size,
             la_plugins_progress,
             state.last_error.clone(),
         ),
@@ -353,26 +345,49 @@ pub fn snapshot(plugin_version: Option<&str>) -> Result<OnlineUpdateSnapshot> {
     })
 }
 
-pub fn check(force: bool, plugin_version: Option<&str>) -> Result<OnlineUpdateSnapshot> {
-    if !force && cached_manifest(false)?.is_some() {
-        return snapshot(plugin_version);
+async fn panel_update(app: &AppHandle) -> Result<Option<tauri_plugin_updater::Update>> {
+    let updater = app
+        .updater()
+        .map_err(|error| AppError::update(format!("Updater is not configured: {error}")))?;
+    updater
+        .check()
+        .await
+        .map_err(|error| AppError::update(format!("Cannot check the Panel update feed: {error}")))
+}
+
+pub async fn check(
+    app: &AppHandle,
+    force: bool,
+    plugin_version: Option<&str>,
+) -> Result<OnlineUpdateSnapshot> {
+    let panel_cache = read_panel_cache()?;
+    let panel_needs_check = force
+        || panel_cache
+            .as_ref()
+            .is_none_or(|cache| !is_fresh(cache.checked_at));
+    if panel_needs_check {
+        let checked_at = unix_time();
+        let latest = match panel_update(app).await? {
+            Some(update) => update.version,
+            None => app_version::display().to_string(),
+        };
+        write_panel_cache(Some(latest), checked_at)?;
     }
-    let checked_at = unix_time();
-    let client = client(REQUEST_TIMEOUT)?;
-    let manifest = read_limited_response(
-        client.get(MANIFEST_URL).send().map_err(|error| {
-            AppError::update(format!("Cannot contact GitHub update service: {error}"))
-        })?,
-        update_core::MAX_MANIFEST_BYTES,
-    )?;
-    let signature = read_limited_response(
-        client.get(SIGNATURE_URL).send().map_err(|error| {
-            AppError::update(format!("Cannot download update signature: {error}"))
-        })?,
-        4096,
-    )?;
-    verify_manifest(&manifest, &signature)?;
-    write_cache(&manifest, &signature, checked_at)?;
+
+    let plugin_cache = read_plugin_cache()?;
+    let plugin_needs_check = force
+        || plugin_cache
+            .as_ref()
+            .is_none_or(|cache| !is_fresh(cache.checked_at));
+    if plugin_needs_check {
+        let asset = tauri::async_runtime::spawn_blocking(resolve_plugin_release)
+            .await
+            .map_err(|error| AppError::update(format!("Plugin release task failed: {error}")))??;
+        if let Some(asset) = asset {
+            write_plugin_cache(&asset, unix_time())?;
+        }
+    }
+
     if let Ok(mut state) = runtime().lock() {
         state.last_error = None;
     }
@@ -418,60 +433,45 @@ impl Drop for OperationGuard {
     }
 }
 
-fn selected_component(name: &str) -> Result<update_core::RemoteComponent> {
-    let Some((manifest, _)) = cached_manifest(true)? else {
-        return Err(AppError::update("Check for updates before installing"));
-    };
-    Ok(match name {
-        "panel" => manifest.components.panel,
-        "la_plugins" => host_la_plugins(&manifest).cloned().ok_or_else(|| {
-            AppError::update("This release has no LA plugin archive for this platform")
-        })?,
-        _ => return Err(AppError::update("Unknown update component")),
+/// Installs the signed Tauri bundle for the Panel.
+///
+/// The Tauri updater verifies the bundle signature before extraction and installs
+/// it through the platform installer (NSIS on Windows, AppImage replacement on
+/// Linux). The caller restarts the application afterwards.
+pub async fn install_panel(app: &AppHandle) -> Result<UpdateResult> {
+    let update = panel_update(app)
+        .await?
+        .ok_or_else(|| AppError::update("The Panel is already up to date"))?;
+    let version = update.version.clone();
+    let progress_app = app.clone();
+    let mut downloaded = 0_u64;
+    update
+        .download_and_install(
+            move |chunk_length, content_length| {
+                downloaded += chunk_length as u64;
+                set_progress(
+                    &progress_app,
+                    UpdateProgress {
+                        component: "panel".into(),
+                        stage: "downloading".into(),
+                        downloaded_bytes: downloaded,
+                        total_bytes: content_length.unwrap_or(0),
+                    },
+                );
+            },
+            || {},
+        )
+        .await
+        .map_err(|error| AppError::update(format!("Cannot install the Panel update: {error}")))?;
+    write_panel_cache(Some(version.clone()), unix_time())?;
+    Ok(UpdateResult {
+        component: "panel".into(),
+        version,
+        installed: true,
+        restart_required: true,
+        rollback_succeeded: None,
+        detail: "Panel update installed; restart required".into(),
     })
-}
-
-fn download_component(
-    app: &AppHandle,
-    name: &str,
-) -> Result<(update_core::RemoteComponent, PathBuf)> {
-    let component = selected_component(name)?;
-    if update_core::DisplayVersion::parse(app_version::display()).map_err(AppError::update)?
-        < update_core::DisplayVersion::parse(&component.min_panel_version)
-            .map_err(AppError::update)?
-    {
-        return Err(AppError::update(
-            "Update the Panel before installing this plugin version",
-        ));
-    }
-    let directory = update_root()?.join("downloads").join(&component.version);
-    fs::create_dir_all(&directory).map_err(AppError::transaction_io)?;
-    let archive = directory.join(format!("{name}.zip"));
-    // The shared downloader reuses a verified archive, resumes `<dest>.part`,
-    // and honours the same cancellation flag as the rest of the Panel.
-    // Pre-existing `.zip.download` temp files left by the old inline loop are
-    // not resumed by the `.part` logic: nothing reads them, so a stale copy is
-    // never promoted to a verified archive.
-    crate::download::download_with_progress(
-        &client(DOWNLOAD_TIMEOUT)?,
-        &component.url,
-        component.size,
-        &component.sha256,
-        &archive,
-        |downloaded_bytes, total_bytes| {
-            set_progress(
-                app,
-                UpdateProgress {
-                    component: name.into(),
-                    stage: "downloading".into(),
-                    downloaded_bytes,
-                    total_bytes,
-                },
-            );
-        },
-        cancelled,
-    )?;
-    Ok((component, archive))
 }
 
 pub(crate) fn clear_directory(path: &Path) -> Result<()> {
@@ -500,19 +500,47 @@ fn find_payload_root(extracted: &Path) -> Option<PathBuf> {
 }
 
 pub fn prepare_plugin(app: &AppHandle, target: &Path) -> Result<(String, PathBuf)> {
-    let (component, archive) = download_component(app, "la_plugins")?;
+    let asset = plugin_asset(false)?.ok_or_else(|| {
+        AppError::update("This release has no LA plugin archive for this platform")
+    })?;
+    let version = version_from_tag(&asset.tag);
+    let directory = update_root()?.join("downloads").join(&version);
+    fs::create_dir_all(&directory).map_err(AppError::transaction_io)?;
+    let archive = directory.join("la_plugins.zip");
+    // The shared downloader reuses a verified archive, resumes `<dest>.part`,
+    // and honours the same cancellation flag as the rest of the Panel.
+    crate::download::download_with_progress(
+        &client(DOWNLOAD_TIMEOUT)?,
+        &asset.url,
+        asset.size,
+        &asset.sha256,
+        &archive,
+        |downloaded_bytes, total_bytes| {
+            set_progress(
+                app,
+                UpdateProgress {
+                    component: "la_plugins".into(),
+                    stage: "downloading".into(),
+                    downloaded_bytes,
+                    total_bytes,
+                },
+            );
+        },
+        cancelled,
+    )?;
+
     set_progress(
         app,
         UpdateProgress {
             component: "la_plugins".into(),
             stage: "extracting".into(),
-            downloaded_bytes: component.size,
-            total_bytes: component.size,
+            downloaded_bytes: asset.size,
+            total_bytes: asset.size,
         },
     );
-    let directory = update_root()?.join("payloads").join(&component.version);
+    let directory = update_root()?.join("payloads").join(&version);
     clear_directory(&directory)?;
-    let file = File::open(archive).map_err(AppError::transaction_io)?;
+    let file = fs::File::open(archive).map_err(AppError::transaction_io)?;
     if let Err(error) = update_core::extract_zip_safely(file, &directory) {
         let _ = fs::remove_dir_all(&directory);
         return Err(AppError::update(error));
@@ -520,9 +548,9 @@ pub fn prepare_plugin(app: &AppHandle, target: &Path) -> Result<(String, PathBuf
     let plugin_root = find_payload_root(&directory)
         .ok_or_else(|| AppError::payload("Plugin update ZIP has no payload manifest"))?;
     let manifest = installer::verify_payload(&plugin_root)?;
-    if manifest.package_version != component.version {
+    if manifest.package_version != version {
         return Err(AppError::payload(
-            "Plugin payload version does not match the signed update manifest",
+            "Plugin payload version does not match the published release",
         ));
     }
     // Decision #7: a plugin update is installed from an upstream + LA merge.
@@ -546,8 +574,8 @@ pub fn prepare_plugin(app: &AppHandle, target: &Path) -> Result<(String, PathBuf
         installer::ComponentId::LaPlugins,
         &plugin_root,
     )?;
-    cleanup_cache(Some(&component.version))?;
-    Ok((component.version, merged))
+    cleanup_cache(Some(&version))?;
+    Ok((version, merged))
 }
 
 /// Path of the pointer file this design retired.
@@ -569,100 +597,16 @@ pub fn retire_legacy_active_payload() -> Result<bool> {
     }
 }
 
-pub fn prepare_panel(app: &AppHandle) -> Result<UpdateResult> {
-    let (component, archive) = download_component(app, "panel")?;
-    set_progress(
-        app,
-        UpdateProgress {
-            component: "panel".into(),
-            stage: "extracting".into(),
-            downloaded_bytes: component.size,
-            total_bytes: component.size,
-        },
-    );
-    let directory = update_root()?.join("panel").join(&component.version);
-    clear_directory(&directory)?;
-    update_core::extract_zip_safely(
-        File::open(archive).map_err(AppError::transaction_io)?,
-        &directory,
-    )
-    .map_err(AppError::update)?;
-    let staged = if directory.join(PANEL_EXECUTABLE_NAME).is_file() {
-        directory.join(PANEL_EXECUTABLE_NAME)
-    } else {
-        fs::read_dir(&directory)
-            .map_err(AppError::transaction_io)?
-            .flatten()
-            .map(|entry| entry.path().join(PANEL_EXECUTABLE_NAME))
-            .find(|path| path.is_file())
-            .ok_or_else(|| {
-                AppError::payload(format!(
-                    "Panel update ZIP has no {PANEL_EXECUTABLE_NAME}"
-                ))
-            })?
-    };
-    schedule_panel_replace(&component.version, &staged)?;
-    Ok(UpdateResult {
-        component: "panel".into(),
-        version: component.version,
-        installed: true,
-        restart_required: true,
-        rollback_succeeded: None,
-        detail: "Panel update is staged and will be applied after restart".into(),
-    })
-}
-
-fn schedule_panel_replace(version: &str, staged: &Path) -> Result<()> {
-    let current = std::env::current_exe().map_err(AppError::transaction_io)?;
-    let parent = current
-        .parent()
-        .ok_or_else(|| AppError::update("Panel executable has no parent directory"))?;
-    let current_name = current.file_name().and_then(|name| name.to_str());
-    if !matches!(
-        current_name,
-        Some(name)
-            if name.eq_ignore_ascii_case(PANEL_EXECUTABLE_NAME)
-                || name.eq_ignore_ascii_case(LEGACY_PANEL_EXECUTABLE_NAME)
-    ) {
-        return Err(AppError::update(
-            format!(
-                "Online Panel updates require {PANEL_EXECUTABLE_NAME} or the legacy filename {LEGACY_PANEL_EXECUTABLE_NAME}"
-            ),
-        ));
-    }
-    let target = parent.join(PANEL_EXECUTABLE_NAME);
-    let helper_dir = update_root()?.join("helper");
-    fs::create_dir_all(&helper_dir).map_err(AppError::transaction_io)?;
-    let helper = helper_dir.join("LocalArena-update-helper.exe");
-    fs::copy(&current, &helper).map_err(AppError::transaction_io)?;
-    let plan_path = helper_dir.join("panel-update-plan.json");
-    let backup = update_root()?
-        .join("panel-backups")
-        .join(format!("{version}-previous.exe"));
-    let plan = serde_json::to_vec_pretty(&PanelUpdatePlan {
-        schema_version: 1,
-        old_pid: std::process::id(),
-        current: current.to_string_lossy().into_owned(),
-        target: target.to_string_lossy().into_owned(),
-        staged: staged.to_string_lossy().into_owned(),
-        backup: backup.to_string_lossy().into_owned(),
-    })
-    .map_err(|error| AppError::update(error.to_string()))?;
-    atomic_fs::write_replace(&plan_path, &plan).map_err(AppError::transaction_io)?;
-    Command::new(helper)
-        .arg("--apply-panel-update")
-        .arg(plan_path)
-        .spawn()
-        .map_err(|error| AppError::update(format!("Cannot start Panel update helper: {error}")))?;
-    Ok(())
-}
-
 pub fn cancel() {
     CANCELLED.store(true, Ordering::Release);
 }
 
 pub fn cleanup_cache(active_version: Option<&str>) -> Result<usize> {
     let root = update_root()?;
+    // Files written by the retired signed-manifest updater.
+    for legacy in ["latest.json", "latest.json.sig", "cache.json"] {
+        let _ = fs::remove_file(root.join(legacy));
+    }
     let mut versions = fs::read_dir(root.join("payloads"))
         .ok()
         .into_iter()
@@ -699,92 +643,6 @@ pub fn cleanup_cache(active_version: Option<&str>) -> Result<usize> {
     Ok(removed)
 }
 
-#[cfg(windows)]
-fn process_exists(pid: u32) -> bool {
-    use windows_sys::Win32::Foundation::CloseHandle;
-    use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
-    let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
-    if handle.is_null() {
-        false
-    } else {
-        unsafe {
-            CloseHandle(handle);
-        }
-        true
-    }
-}
-
-#[cfg(not(windows))]
-fn process_exists(_pid: u32) -> bool {
-    false
-}
-
-pub fn maybe_apply_panel_update() -> bool {
-    let mut arguments = std::env::args_os();
-    let _ = arguments.next();
-    if arguments.next().as_deref() != Some(std::ffi::OsStr::new("--apply-panel-update")) {
-        return false;
-    }
-    let Some(plan_path) = arguments.next() else {
-        return true;
-    };
-    let outcome = (|| -> std::result::Result<(), String> {
-        let plan: PanelUpdatePlan =
-            serde_json::from_slice(&fs::read(&plan_path).map_err(|error| error.to_string())?)
-                .map_err(|error| error.to_string())?;
-        if plan.schema_version != 1 {
-            return Err("Unsupported Panel update plan".into());
-        }
-        for _ in 0..300 {
-            if !process_exists(plan.old_pid) {
-                break;
-            }
-            std::thread::sleep(Duration::from_millis(100));
-        }
-        if process_exists(plan.old_pid) {
-            return Err("Timed out waiting for the old Panel process".into());
-        }
-        let target = PathBuf::from(&plan.target);
-        let current = PathBuf::from(&plan.current);
-        let staged = PathBuf::from(&plan.staged);
-        let backup = PathBuf::from(&plan.backup);
-        update_core::install_file_with_backup(&staged, &current, &target, &backup)?;
-        if let Err(error) = Command::new(&target).spawn() {
-            let migrated = !current.eq_ignore_ascii_case(&target);
-            let rollback = if migrated {
-                let target_removed = !target.exists() || fs::remove_file(&target).is_ok();
-                target_removed && fs::copy(&backup, &current).is_ok()
-            } else {
-                fs::copy(&backup, &target).is_ok()
-            };
-            return Err(format!(
-                "Panel updated but could not restart; rollback_succeeded={rollback}: {error}"
-            ));
-        }
-        if !current.eq_ignore_ascii_case(&target) {
-            let _ = fs::remove_file(current);
-        }
-        let _ = fs::remove_file(plan_path);
-        Ok(())
-    })();
-    if let Err(error) = outcome {
-        if let Ok(root) = app_storage::root() {
-            logging::append(&root, "ERROR", "update.panel_helper_failed", &error);
-        }
-    }
-    true
-}
-
-trait EqIgnoreAsciiCasePath {
-    fn eq_ignore_ascii_case(&self, other: &Path) -> bool;
-}
-impl EqIgnoreAsciiCasePath for PathBuf {
-    fn eq_ignore_ascii_case(&self, other: &Path) -> bool {
-        self.to_string_lossy()
-            .eq_ignore_ascii_case(&other.to_string_lossy())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -793,128 +651,12 @@ mod tests {
         std::env::temp_dir().join(format!("{prefix}-{}-{}", std::process::id(), unix_time()))
     }
 
-    fn component_json(version: &str) -> serde_json::Value {
-        serde_json::json!({
-            "version": version,
-            "url": "https://github.com/numakkiyu/Local-Arena/releases/download/v1.4.3.4/Local-Arena-la-plugins.zip",
-            "size": 1024,
-            "sha256": "a".repeat(64),
-            "min_panel_version": "1.4.3.0",
-        })
-    }
-
-    fn v2_manifest(
-        windows: Option<&str>,
-        linux: Option<&str>,
-    ) -> update_core::RemoteUpdateManifestV2 {
-        let manifest = serde_json::json!({
-            "schema_version": 2,
-            "release_version": "1.4.3.4",
-            "published_at": "2026-11-05T00:00:00Z",
-            "release_notes_url": "https://github.com/numakkiyu/Local-Arena/releases/tag/v1.4.3.4",
-            "components": {
-                "panel": component_json("1.4.3.4"),
-                "la_plugins": {
-                    "windows": windows.map(component_json),
-                    "linux": linux.map(component_json),
-                },
-            },
-        });
-        parse_manifest(manifest.to_string().as_bytes()).unwrap()
-    }
-
-    fn v1_manifest(plugin_version: &str) -> Vec<u8> {
-        serde_json::json!({
-            "schema_version": 1,
-            "release_version": "1.4.3.3",
-            "published_at": "2026-10-31T00:00:00Z",
-            "release_notes_url": "https://github.com/numakkiyu/Local-Arena/releases/tag/v1.4.3.3",
-            "components": {
-                "panel": component_json("1.4.3.3"),
-                "plugin": component_json(plugin_version),
-            },
-        })
-        .to_string()
-        .into_bytes()
-    }
-
     #[test]
-    fn platform_key_selects_the_host_la_plugins_archive() {
-        let manifest = v2_manifest(Some("1.4.3.10"), Some("1.4.3.20"));
-        assert_eq!(
-            la_plugins_for(&manifest, "windows").map(|value| value.version.as_str()),
-            Some("1.4.3.10")
-        );
-        assert_eq!(
-            la_plugins_for(&manifest, "linux").map(|value| value.version.as_str()),
-            Some("1.4.3.20")
-        );
-        assert!(la_plugins_for(&manifest, "darwin").is_none());
-        // The snapshot path uses exactly this lookup for the current host.
-        let state = component_state(
-            "1.4.3.1",
-            la_plugins_for(&manifest, "linux"),
-            None,
-            None,
-        );
-        assert_eq!(state.latest_version.as_deref(), Some("1.4.3.20"));
-        assert!(state.update_available);
-        assert!(state.compatible);
-        assert_eq!(state.status, "available");
-        assert!(state.error.is_none());
-    }
-
-    #[test]
-    fn converted_v1_manifest_is_graceful_on_a_linux_host() {
-        let manifest = parse_manifest(&v1_manifest("1.4.3.2")).unwrap();
-        // Schema 1 only ever published a Windows archive; the linux key is None.
-        assert_eq!(
-            la_plugins_for(&manifest, "windows").map(|value| value.version.as_str()),
-            Some("1.4.3.2")
-        );
-        assert!(la_plugins_for(&manifest, "linux").is_none());
-        let state = component_state(
-            "1.4.3.2",
-            la_plugins_for(&manifest, "linux"),
-            None,
-            None,
-        );
-        assert_eq!(state.latest_version, None);
-        assert!(!state.update_available);
-        assert!(state.compatible);
-        assert_eq!(state.status, "current");
-        assert_eq!(state.total_bytes, 0);
-        assert!(state.error.is_none());
-    }
-
-    #[test]
-    fn windows_only_v2_release_is_graceful_on_a_linux_host() {
-        let manifest = v2_manifest(Some("1.4.3.40"), None);
-        assert!(la_plugins_for(&manifest, "linux").is_none());
-        let state = component_state(
-            "1.4.3.4",
-            la_plugins_for(&manifest, "linux"),
-            None,
-            None,
-        );
-        assert_eq!(state.latest_version, None);
-        assert!(!state.update_available);
-        assert_eq!(state.status, "current");
-        assert!(state.error.is_none());
-    }
-
-    #[test]
-    fn unsupported_schema_surfaces_through_the_online_update_parser() {
-        let mut value: serde_json::Value =
-            serde_json::from_slice(&v1_manifest("1.4.3.2")).unwrap();
-        value["schema_version"] = serde_json::json!(3);
-        let error = parse_manifest(value.to_string().as_bytes()).unwrap_err();
-        assert_eq!(error.code, "E1601");
-        assert!(
-            error.detail.contains("schema"),
-            "schema errors must surface: {}",
-            error.detail
-        );
+    fn operation_guard_rejects_overlap_and_releases_on_drop() {
+        let first = OperationGuard::acquire().unwrap();
+        assert!(OperationGuard::acquire().is_err());
+        drop(first);
+        assert!(OperationGuard::acquire().is_ok());
     }
 
     #[test]
@@ -923,7 +665,7 @@ mod tests {
         // hand-edited one from an older build must not be able to redirect an install, and its
         // absence is the normal case.
         let _guard = app_storage::TEST_STATE_ENV_LOCK.lock().unwrap_or_else(|error| error.into_inner());
-        let base = test_root("cs2bi-legacy-active-payload");
+        let base = test_root("localarena-legacy-active-payload");
         unsafe { std::env::set_var("CS2BI_STATE_ROOT", &base); }
         let updates = base.join("updates");
         fs::create_dir_all(&updates).unwrap();
@@ -943,32 +685,6 @@ mod tests {
     }
 
     #[test]
-    fn operation_guard_rejects_overlap_and_releases_on_drop() {
-        let first = OperationGuard::acquire().unwrap();
-        assert!(OperationGuard::acquire().is_err());
-        drop(first);
-        assert!(OperationGuard::acquire().is_ok());
-    }
-
-    #[test]
-    fn stale_cache_is_not_reused() {
-        let _guard = app_storage::TEST_STATE_ENV_LOCK.lock().unwrap_or_else(|error| error.into_inner());
-        let base = test_root("cs2bi-stale-update-cache");
-        unsafe { std::env::set_var("CS2BI_STATE_ROOT", &base); }
-        let updates = base.join("updates");
-        fs::create_dir_all(&updates).unwrap();
-        fs::write(updates.join("latest.json"), b"invalid").unwrap();
-        fs::write(updates.join("latest.json.sig"), b"invalid").unwrap();
-        fs::write(updates.join("cache.json"), serde_json::to_vec(&CacheMetadata {
-            schema_version: 1,
-            checked_at: 0,
-        }).unwrap()).unwrap();
-        assert!(cached_manifest(false).unwrap().is_none());
-        fs::remove_dir_all(&base).unwrap();
-        unsafe { std::env::remove_var("CS2BI_STATE_ROOT"); }
-    }
-
-    #[test]
     fn la_plugins_current_never_substitutes_the_panel_version() {
         // A clean machine has no install record: the version stays unknown rather than
         // borrowing the Panel's own version (which would report the bundle as installed).
@@ -981,134 +697,68 @@ mod tests {
     #[test]
     fn la_plugins_current_reports_the_installed_version_verbatim() {
         assert_eq!(
-            la_plugins_current(Some("1.4.3.3")),
-            Some("1.4.3.3".to_owned())
+            la_plugins_current(Some("1.5.0")),
+            Some("1.5.0".to_owned())
         );
     }
 
     #[test]
-    fn snapshot_reports_the_la_component_version_verbatim() {
-        // The LA component version reaches the snapshot through exactly one path — the install
-        // record read by lib.rs::installed_plugin_version — so a third-party tag can never appear
-        // where the LA bundle's version belongs.
+    fn version_from_tag_strips_the_v_prefix() {
+        assert_eq!(version_from_tag("v1.5.0"), "1.5.0");
+        assert_eq!(version_from_tag("1.5.0"), "1.5.0");
+        assert_eq!(version_from_tag("v1.5.0-Preview.1"), "1.5.0-Preview.1");
+    }
+
+    #[test]
+    fn newer_uses_semver_ordering() {
+        assert!(newer("1.5.0", "1.4.9"));
+        assert!(newer("1.5.0", "1.5.0-Preview.2"));
+        assert!(!newer("1.5.0-Preview.1", "1.5.0"));
+        assert!(!newer("1.5.0", "1.5.0"));
+        assert!(!newer("1.5.0", ""));
+    }
+
+    #[test]
+    fn snapshot_without_a_probe_reports_no_update() {
         let _guard = app_storage::TEST_STATE_ENV_LOCK.lock().unwrap_or_else(|error| error.into_inner());
-        let base = test_root("cs2bi-snapshot-la-component-version");
-        unsafe { std::env::set_var("CS2BI_STATE_ROOT", &base); }
-        let snapshot = snapshot(Some("1.4.4.0")).unwrap();
-        assert_eq!(snapshot.la_plugins.current_version, "1.4.4.0");
-        assert_ne!(snapshot.la_plugins.current_version, "3.7.0");
-        if let Ok(dump) = std::env::var("QA_SNAPSHOT_DUMP") {
-            fs::write(&dump, serde_json::to_vec_pretty(&snapshot).unwrap()).unwrap();
-            println!(
-                "snapshot_reports_the_la_component_version_verbatim: la_plugins={} -> {dump}",
-                snapshot.la_plugins.current_version
-            );
-        }
-        fs::remove_dir_all(&base).unwrap();
-        unsafe { std::env::remove_var("CS2BI_STATE_ROOT"); }
-    }
-
-    #[test]
-    fn missing_installation_reports_no_current_version_or_update() {
-        let manifest = v2_manifest(Some("1.4.3.40"), Some("1.4.3.40"));
-        let current = la_plugins_current(None).unwrap_or_default();
-        let state = component_state(
-            &current,
-            la_plugins_for(&manifest, host_platform()),
-            None,
-            None,
-        );
-        assert!(
-            state.current_version.is_empty(),
-            "a clean install must not claim a version: {:?}",
-            state.current_version
-        );
-        assert!(!state.update_available);
-        assert_eq!(state.status, "current");
-    }
-
-    #[test]
-    fn installed_bundle_version_still_drives_update_detection() {
-        let manifest = v2_manifest(Some("1.4.3.40"), Some("1.4.3.40"));
-        let current = la_plugins_current(Some("1.4.3.3")).unwrap_or_default();
-        let state = component_state(
-            &current,
-            la_plugins_for(&manifest, host_platform()),
-            None,
-            None,
-        );
-        assert_eq!(state.current_version, "1.4.3.3");
-        assert!(state.update_available);
-        assert_eq!(state.status, "available");
-    }
-
-    #[test]
-    fn snapshot_without_install_record_reports_la_plugins_as_not_installed() {
-        let _guard = app_storage::TEST_STATE_ENV_LOCK.lock().unwrap_or_else(|error| error.into_inner());
-        let base = test_root("cs2bi-snapshot-clean");
+        let base = test_root("localarena-snapshot-clean");
         unsafe { std::env::set_var("CS2BI_STATE_ROOT", &base); }
         let snapshot = snapshot(None).unwrap();
-        assert!(
-            snapshot.la_plugins.current_version.is_empty(),
-            "no install record must yield no current version: {:?}",
-            snapshot.la_plugins.current_version
-        );
+        assert_eq!(snapshot.panel.current_version, app_version::display());
+        assert!(!snapshot.panel.update_available);
+        assert!(snapshot.la_plugins.current_version.is_empty());
         assert!(!snapshot.la_plugins.update_available);
         assert!(snapshot.la_plugins.latest_version.is_none());
-        // The panel component keeps its own app-version fallback untouched.
-        assert_eq!(snapshot.panel.current_version, app_version::display());
         fs::remove_dir_all(&base).ok();
         unsafe { std::env::remove_var("CS2BI_STATE_ROOT"); }
     }
 
     #[test]
-    fn snapshot_platform_keying_reports_the_host_archive_version() {
-        // Pins the platform keying `snapshot()` composes for la_plugins:
-        // `manifest.and_then(host_la_plugins)` -> `la_plugins_for(_, host_platform())`
-        // -> `component_state`, exactly as in the production snapshot body.
-        // The manifest itself cannot enter `snapshot()` from a test: the cache
-        // is signature-verified against the release public key, whose private
-        // half only exists as the CI secret `CSBIP_UPDATE_SIGNING_KEY`. So
-        // every link of the chain is asserted with the values `snapshot()`
-        // passes, including `host_platform()` itself — hardcoding it to
-        // `"windows"` would fail here on a Linux host.
-        assert_eq!(host_platform(), if cfg!(windows) { "windows" } else { "linux" });
-        let manifest = v2_manifest(Some("1.4.3.10"), Some("1.4.3.20"));
-        let expected = if cfg!(windows) { "1.4.3.10" } else { "1.4.3.20" };
-        assert_eq!(
-            host_la_plugins(&manifest).map(|value| value.version.as_str()),
-            Some(expected)
-        );
-        // This is the snapshot body's la_plugins composition, verbatim:
-        // `cached.as_ref().map(...)` is Option<&manifest> there.
-        let cached: Option<&update_core::RemoteUpdateManifestV2> = Some(&manifest);
-        let plugin_current_version =
-            la_plugins_current(Some("1.4.3.1")).unwrap_or_default();
-        let state = component_state(
-            &plugin_current_version,
-            cached.and_then(host_la_plugins),
-            None,
-            None,
-        );
-        assert_eq!(state.latest_version.as_deref(), Some(expected));
-        assert_eq!(state.current_version, "1.4.3.1");
-        assert!(state.update_available);
+    fn cleanup_keeps_only_active_and_one_previous_payload() {
+        let _guard = app_storage::TEST_STATE_ENV_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+        let base = test_root("localarena-update-cleanup");
+        unsafe { std::env::set_var("CS2BI_STATE_ROOT", &base); }
+        let payloads = base.join("updates/payloads");
+        for version in ["1.4.2", "1.4.3", "1.5.0"] {
+            fs::create_dir_all(payloads.join(version)).unwrap();
+        }
+        assert_eq!(cleanup_cache(Some("1.4.2")).unwrap(), 1);
+        let remaining = fs::read_dir(&payloads).unwrap().flatten().count();
+        assert_eq!(remaining, 2);
+        assert!(payloads.join("1.4.2").is_dir());
+        fs::remove_dir_all(&base).unwrap();
+        unsafe { std::env::remove_var("CS2BI_STATE_ROOT"); }
     }
 
     #[test]
-    fn cleanup_keeps_only_active_and_one_previous_payload() {
-        let _guard = app_storage::TEST_STATE_ENV_LOCK.lock().unwrap_or_else(|error| error.into_inner());
-        let base = test_root("cs2bi-update-cleanup");
-        unsafe { std::env::set_var("CS2BI_STATE_ROOT", &base); }
-        let payloads = base.join("updates/payloads");
-        for version in ["1.4.2.2", "1.4.2.3", "1.4.2.4"] {
-            fs::create_dir_all(payloads.join(version)).unwrap();
-        }
-        assert_eq!(cleanup_cache(Some("1.4.2.2")).unwrap(), 1);
-        let remaining = fs::read_dir(&payloads).unwrap().flatten().count();
-        assert_eq!(remaining, 2);
-        assert!(payloads.join("1.4.2.2").is_dir());
-        fs::remove_dir_all(&base).unwrap();
-        unsafe { std::env::remove_var("CS2BI_STATE_ROOT"); }
+    fn component_state_flags_only_real_upgrades() {
+        let state = component_state("1.4.9", Some("1.5.0"), true, 100, None, None);
+        assert!(state.update_available);
+        assert_eq!(state.status, "available");
+        assert_eq!(state.total_bytes, 100);
+
+        let current = component_state("1.5.0", Some("1.5.0"), true, 100, None, None);
+        assert!(!current.update_available);
+        assert_eq!(current.status, "current");
     }
 }

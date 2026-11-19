@@ -59,9 +59,6 @@ fn registry_source() -> Result<(&'static str, release_source::AssetSelector), Ap
         .ok_or_else(|| AppError::update(format!("component registry has no {COMPONENT_ID} descriptor")))?;
     match descriptor.source {
         ComponentSource::GitHubRelease { repository, asset } => Ok((repository, asset.selector())),
-        ComponentSource::SignedLatestJson { field } => Err(AppError::update(format!(
-            "{COMPONENT_ID} registry source changed: SignedLatestJson({field})"
-        ))),
     }
 }
 
