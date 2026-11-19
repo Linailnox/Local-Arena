@@ -69,6 +69,10 @@ export type Store = {
   statsConfigRequest: number;
   requestStatsConfig: () => void;
   consumeStatsConfigRequest: () => void;
+  /** Bumped when a flow asks to open Settings → Installation. */
+  installationRequest: number;
+  requestInstallation: () => void;
+  consumeInstallationRequest: () => void;
   refreshDirectory: () => Promise<DirectoryInfo | null>;
   refreshFiles: () => Promise<void>;
   refreshDifficulty: () => Promise<void>;
@@ -214,6 +218,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [statsConfigRequest, setStatsConfigRequest] = useState(0);
   const requestStatsConfig = useCallback(() => setStatsConfigRequest((value) => value + 1), []);
   const consumeStatsConfigRequest = useCallback(() => setStatsConfigRequest(0), []);
+  const [installationRequest, setInstallationRequest] = useState(0);
+  const requestInstallation = useCallback(() => setInstallationRequest((value) => value + 1), []);
+  const consumeInstallationRequest = useCallback(() => setInstallationRequest(0), []);
 
   const refreshFiles = useCallback(async () => {
     const csgo = directory?.valid ? directory.selected : null;
@@ -706,6 +713,9 @@ nadesPending,
     statsConfigRequest,
     requestStatsConfig,
     consumeStatsConfigRequest,
+    installationRequest,
+    requestInstallation,
+    consumeInstallationRequest,
     refreshDirectory,
     refreshFiles,
     refreshDifficulty,

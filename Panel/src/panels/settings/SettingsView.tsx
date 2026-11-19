@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { BadgeInfo, FileCheck2, FlaskConical, Languages, Palette, type LucideIcon } from "lucide-react";
 import { BackIcon, ChevronRight } from "../../components/icons";
 import AboutPage, { type AboutTarget } from "./AboutPage";
@@ -47,8 +47,13 @@ type Tone = "green" | "yellow" | "blue" | "neutral";
 
 export default function SettingsView({ onClose }: { onClose?: () => void }) {
   const [page, setPage] = useState<Page>("root");
-  const { config, installation } = useStore();
+  const { config, installation, installationRequest, consumeInstallationRequest } = useStore();
   const t = useT();
+  useEffect(() => {
+    if (installationRequest <= 0) return;
+    setPage("installation");
+    consumeInstallationRequest();
+  }, [consumeInstallationRequest, installationRequest]);
   const back = () => {
     if (page === "root") onClose?.();
     else if (page === "aboutThirdParty" || page === "aboutAgreement" || page === "aboutPrivacy") setPage("about");
