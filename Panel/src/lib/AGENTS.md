@@ -17,7 +17,7 @@ frontend logic. 11 files, 1,827 LOC; `api.ts` (901) is imported by 41 modules.
 | Install-check texts | `installCheckLocalization.ts` | maps `install_checks.rs` result codes → i18n keys |
 | Global hotkeys | `keycapture.ts` | `captureKeyName` |
 | Picker scroll sync | `useSelectedPickerScroll.ts` | used by all four cosmetic preset modals (glove/weapon/knife/music-kit) |
-| Version | `version.ts` | `APP_SEMVER`/`APP_DISPLAY_VERSION` sourced from `Panel/package.json` (`1.4.3+3` → displays `1.4.3.3`) |
+| Version | `version.ts` | `APP_SEMVER`/`APP_DISPLAY_VERSION` sourced from `Panel/package.json` (`1.5.0`, three-part SemVer) |
 
 ## CONVENTIONS
 - `toAppError`/`isAppError` normalize every failure to stable machine-readable codes (TS mirrors Rust `error.rs`); codes are never localized prose — `errcat.*` i18n keys resolve them.

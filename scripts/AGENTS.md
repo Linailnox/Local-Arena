@@ -13,20 +13,20 @@ Gate matrix — which script proves what:
 | Code builds; Panel exe is production-compiled | `build.ps1` | greps tauri output for `cargo:dev=false` / absence of `cargo:rustc-cfg=dev` (:261-275) |
 | Repo layout / pins / source invariants | `verify-workspace.ps1` | 781 LOC; no args = workspace gate |
 | Released payload LA-only + manifest-complete | `verify-workspace.ps1 -PackageRoot <dir> -ExpectedPackageVersion X` | package mode |
-| Release shape, OpenRating gate, signing, checksums | `package.ps1` | full zip, `LocalArena-panel-<tag>-windows.zip`, `LocalArena-plugin-<tag>-{windows,linux}.zip`, SHA256SUMS, PREVIEW-NOTICE |
-| Schema v2 update manifest | `assemble-update-manifest.ps1 -Tag vX.Y.Z.W -OutputDirectory artifacts` | builds `latest.json` by artifact naming convention: panel + `la_plugins.windows` required, `la_plugins.linux` optional; `package.ps1` calls it, and `release.yml`'s `publish` job re-runs it on ubuntu after the per-platform `build` matrix so one manifest covers both platforms |
-| LA-only plugin bundle shape | `verify-workspace.ps1 -PluginBundleRoot <dir> [-Linux]` | three plugins + two bot cfg overlays + plus-only manifest; forbids upstream paths, `gameinfo.gi`, `backup/`, InventorySimulator; shares `Get-PlusPayloadFiles` with package mode. `package.ps1` calls it on the staged tree (:374) before zipping, so a rejected bundle aborts packaging |
+| Release shape, OpenRating gate | `package.ps1` | plugin-only bundle `LocalArena-plugin-<tag>-{windows,linux}.zip` (3 plugins + 2 bot cfg overlays + plus-only manifest), OpenRating gate, `-PluginBundleRoot` verification |
+| Panel updater bundle + `latest.json` | `tauri-action` in `release.yml` | tauri-action builds/signs NSIS/AppImage/deb, creates the release and merges the `latest.json` platform map across matrix legs |
+| LA-only plugin bundle shape | `verify-workspace.ps1 -PluginBundleRoot <dir> [-Linux]` | three plugins + two bot cfg overlays + plus-only manifest; forbids upstream paths, `gameinfo.gi`, `backup/`, InventorySimulator. `package.ps1` runs it on the staged tree before zipping, so a rejected bundle aborts packaging |
 | Five local gates on Linux | `linux/build.sh` | step keys `pwsh\|bun\|dotnet\|cargo\|verify`; `--only <step>` |
 | Cross-compile prerequisites | `linux/release.sh --check` | `--version X` cross-builds via package.ps1; env `LLVM_BIN PWSH XWIN_CACHE` |
 | Panel TS logic invariants | `test-sticker-editor.mjs`, `test-install-gate.mjs` | wired from `Panel/package.json`; run from Panel/ |
-| Update-payload authenticity | `sign-update.py` + `update-public-key.txt` | Ed25519; runs only when `CSBIP_UPDATE_SIGNING_KEY` set |
+| Update-payload authenticity | Tauri updater key + `release_source.rs` | Panel bundles are signed by `tauri-action` and verified by `tauri-plugin-updater`; plugin archives use the GitHub asset digest |
 | Upstream pin | `dependencies.json` | single source; `upstream_package.rs` re-validates downloads |
 | Cosmetics preset migration | `migrate-cosmetics-to-inventory.ps1` | manual only — Panel must not call it |
 | Data regeneration | `generate-*.mjs` | sticker catalog works; placements generator BROKEN (see ANTI-PATTERNS) |
 
 ## CONVENTIONS
 - Failure style: `verify-workspace.ps1` collects via `Add-Failure`, exits 1 at end (one run reports all violations); `build.ps1`/`package.ps1` throw on first failure.
-- Version triplication — bump together: `package.ps1:10` `$ReleaseVersion`, `verify-workspace.ps1:4` `$ExpectedPackageVersion`, `release.yml:6` tag filter (all `1.4.3.3`); format regex `^\d+\.\d+\.\d+\.\d+(?:-Preview\.\d+)?$`.
+- Version triplication — bump together: `package.ps1:5` `$ReleaseVersion`, `verify-workspace.ps1:4` `$ExpectedPackageVersion`, `release.yml:6` tag filter; format is SemVer `^\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?$`.
 - `build.ps1` dot-sources `.local-build.ps1`; `verify-workspace.ps1:56-59` also fails if `build.ps1` exposes the private tool-dir name — that literal is written as `"portable" + "-toolchain"`, so plain grep misses it.
 - Pinned-asset download (`Get-PinnedAsset`/`Get-VerifiedAsset`): fetch to `*.download` → sha256 vs `dependencies.json` → rename; cache hits re-hashed, refreshed on mismatch.
 - `linux/build.sh` does more than locate tools: synthesizes temp `icon.png`, writes the `.local-build.ps1` stub, owns the 7-name `KNOWN_WINDOWS_ONLY` cargo-test whitelist (heredoc literal, :24) — Windows-semantic failures outside the list fail the gate.
@@ -34,7 +34,7 @@ Gate matrix — which script proves what:
 - Generators pin upstream commits as literals (ByMykel `342d496`, SteamTracking `88d5684`, cosmetic API `c3953df`) and emit sha256 into `stickerCatalog.source.json`; the gate recomputes hashes + counts (35 placements / 81 charms / 35 CT + 44 T agents).
 
 ## ANTI-PATTERNS
-- `Assert-ChildPath` guards ONLY `$stage`/`$extract` under `.cache/package` (:88-89); `package.ps1` also writes `-OutputDirectory` (default `artifacts/`) and copies into `Panel/src-tauri/target/release`. Never claim it "mutates nothing outside `.cache/package`".
+- `package.ps1` only stages and zips the plugin payload; it never runs cargo or touches the Panel. Panel bundles belong to `tauri-action`.
 - `generate-player-cosmetic-placements.mjs` re-run throws ENOENT — its inputs under `plugins/BotRandomizer/` are deleted (0 tracked files). Gate only asserts output counts + `charmAnchors`; don't regenerate without new inputs.
 - Layout/package change must update all three `verify-workspace.ps1` allowlists: `$requiredSources` (176-200), `$requiredPackageFiles` (374-379), `$forbiddenInPackage` (406-434, Linux variant 436-447). The `-PluginBundleRoot` gate reuses `Get-PlusPayloadFiles` (364), so the bundle and the package cannot drift apart — but the three allowlists still move together.
 - Never strip the OpenRating holdout assertion in `package.ps1` (release_gate.passed, dataset_sha256, holdout MAE/spearman bounds, 7 finite weights).

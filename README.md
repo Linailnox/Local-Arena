@@ -70,10 +70,9 @@ Beginning with the next version, Local Arena will adopt a new UI design language
 > [!WARNING]
 > Close CS2 before installing, repairing, restoring, updating plugins, changing difficulty, or switching modes
 
-- Local Arena is currently packaged for Windows
-- Extract the complete ZIP to a normal folder before opening the Panel
-- Keep the legacy executable, `addons`, `cfg`, `overrides`, and `plus-payload-manifest.json` together
-- Do not run the Panel from inside the ZIP
+- Local Arena ships as a Windows NSIS installer and a Linux AppImage/deb package
+- Run the installer, then open Local Arena from the Start menu or your application launcher
+- The Panel manages the game payload itself; `addons`, `cfg`, `overrides` and `plus-payload-manifest.json` are installed into the selected `game/csgo` directory
 - The correct game directory ends with `Counter-Strike Global Offensive\game\csgo`
 - Cosmetic preview and enhanced-bot mode use `-insecure` and cannot enter official matchmaking
 - For upstream-only installation without Local Arena, use the [upstream project](https://github.com/ed0ard/CS2-Bot-Improver); for Local Arena on Linux see [Linux Installation](#linux-installation-manual)
@@ -84,7 +83,7 @@ Beginning with the next version, Local Arena will adopt a new UI design language
 
 The language selection only changes the Panel and does not write anything to CS2
 
-Panel memory, settings, logs, update cache, and preserved presets are stored in the portable `.csbip` folder beside the Panel
+Panel memory, settings, logs, update cache, and preserved presets are stored in the per-user `localarena` configuration directory (`%APPDATA%\localarena` on Windows, `$XDG_CONFIG_HOME/localarena` on Linux)
 
 <p align="center">
   <img src="./Panel/src/assets/guide/08-first-language.jpg" alt="Choose the Panel language" width="100%">
@@ -134,12 +133,12 @@ Three components are published and installed separately, and each has its own ca
 | Component | Where it comes from | Notes |
 | --- | --- | --- |
 | Upstream suite | [ed0ard/CS2-Bot-Improver](https://github.com/ed0ard/CS2-Bot-Improver) releases (`CS2BotImprover.zip`, about 73 MB) | Downloaded by the Panel, verified against the published SHA-256 digest, cached and reused |
-| Local Arena plugin archive | This repository's releases, per platform | `LocalArena-plugin-<version>-windows.zip` and `LocalArena-plugin-<version>-linux.zip`, listed in the signed `latest.json` under `components.la_plugins` |
+| Local Arena plugin archive | This repository's releases, per platform | `LocalArena-plugin-<version>-windows.zip` and `LocalArena-plugin-<version>-linux.zip`, resolved from the release assets through the GitHub API and verified against the published SHA-256 digest |
 | InventorySimulator | [its own releases](https://github.com/ianlucas/cs2-css-inventory-simulator) | Third-party; never bundled, downloaded and installed on request from the Panel |
 
 The Linux archive is a Local Arena-only bundle: PlusMatchCoordinator, TeamLineupInjector and OfflineMatchTelemetry, the two bot cfg overlays (`cfg/my_bot_ffa_config.cfg`, `cfg/my_bot_normal_config.cfg`), and a `plus-payload-manifest.json` that lists only Local Arena-owned entries. It contains no upstream runtime, no `gameinfo.gi`, no `backup/` tree and no InventorySimulator, so it can be extracted over an existing manual install to update just Local Arena's plugins
 
-The Windows archive keeps the complete Local Arena payload — the three plugins, the two bot cfg overlays and the full `plus-payload-manifest.json` — but no upstream runtime: the upstream suite is downloaded separately by the Panel and merged with the Local Arena payload at install time, so the Windows full package is just the Panel executable plus Local Arena's own content, and only the Linux full package bakes the pinned upstream base in, with the natively built Panel binary shipped beside it when available
+The Windows archive keeps the complete Local Arena payload — the three plugins, the two bot cfg overlays and the full `plus-payload-manifest.json` — but no upstream runtime: the upstream suite is downloaded separately by the Panel and merged with the Local Arena payload at install time
 
 Installing the plugin archive on its own requires the upstream suite: the Local Arena plugins link against `BotHiderApi.dll`, which only the upstream payload ships, and the Panel refuses the install with a preflight error when that file is missing
 
@@ -153,18 +152,18 @@ Do not launch CS2, close the Panel, or repeatedly click the install button while
   <img src="./Panel/src/assets/guide/11-first-complete.jpg" alt="Installation completed" width="100%">
 </p>
 
-## Linux Installation (manual)
+## Linux Installation
 
-The Linux package `LocalArena-vX.Y.Z.W-linux.zip` is self-contained and follows the upstream manual-install flow; the Panel can also be built and run natively on Linux from source (`cargo build --features custom-protocol` in `Panel/src-tauri`; the feature is required or the app tries the dev server at localhost:1420), while prebuilt Panel packages remain Windows-only
+Download the AppImage (self-updating) or the deb package (manual updates) from the releases page. The Panel can also be built and run natively from source (`cargo build --features custom-protocol` in `Panel/src-tauri`)
 
-1. Download and extract the Linux package
-2. Open your CS2 installation and navigate to `game/csgo`
-3. Copy every file from the extracted package into `game/csgo` — the package ships a prepared `gameinfo.gi` plus the `backup/Online` and `backup/WithBots` mode variants, so no manual gameinfo editing is needed
+1. Make the AppImage executable and run it, or install the deb package
+2. Open the Panel and select your CS2 `game/csgo` directory
+3. Use the component cards to install the upstream suite and the Local Arena plugins
 4. Add `-insecure` to the CS2 launch options in Steam
 
-The three Local Arena plugins (PlusMatchCoordinator, TeamLineupInjector, OfflineMatchTelemetry) and their configuration are included; updates and repair are performed by re-extracting a newer package over the existing install
+The three Local Arena plugins (PlusMatchCoordinator, TeamLineupInjector, OfflineMatchTelemetry) and their configuration are installed by the Panel; the upstream runtime and the plugin bundle are downloaded and verified separately
 
-To update only Local Arena's plugins, extract `LocalArena-plugin-vX.Y.Z.W-linux.zip` over the same directory; that archive holds just the three plugins, the two bot cfg overlays, and a plus-only manifest, so it never overwrites the upstream runtime
+To update only Local Arena's plugins, use the plugin card in the Panel; the bundle holds just the three plugins, the two bot cfg overlays, and a plus-only manifest, so it never overwrites the upstream runtime
 
 Player cosmetics use [InventorySimulator](https://github.com/ianlucas/cs2-css-inventory-simulator), which is **not** bundled. Download `InventorySimulator-v<latest>.zip` from its releases page and extract it into `game/csgo` (it adds `addons/counterstrikesharp/plugins/InventorySimulator/` and `addons/counterstrikesharp/gamedata/inventory-simulator.json`). The Panel keeps the inventory in `.csbip/cosmetics/inventories.json` and points `invsim_file` at it from a managed block in `cfg/autoexec.cfg`: a valid file at the plugin's default path aborts plugin load at startup
 
@@ -174,9 +173,9 @@ Prefer **Settings → Online Update** when it is available
 
 Component updates fetch the upstream package again before installing; a cached copy of the current upstream version is reused instead of re-downloading it
 
-For a manual package update, close CS2 and the old Panel, extract the new package into the existing portable Panel folder, and keep the hidden `.csbip` folder
+For a manual update, install the newer release over the existing installation; the per-user `localarena` configuration directory is left untouched
 
-If the new package must use a different folder, copy the complete old `.csbip` folder beside the new Panel before opening it so the original backups, installation records, presets, and logs remain connected
+Upgrading from a portable build? Copy the old `.csbip` folder into `%APPDATA%\localarena` (Windows) or `$XDG_CONFIG_HOME/localarena` (Linux) so backups, installation records, presets, and logs remain connected
 
 The installer can distinguish a managed Local Arena installation, a legacy installation, the original upstream plugin, and a partial mixed environment
 
@@ -299,9 +298,9 @@ The Panel, the Local Arena plugin bundle, and InventorySimulator are checked and
 - Startup checks are non-blocking and cached for six hours
 - Manual checks bypass the cache
 - Plugin updates require the selected CS2 process to be closed
-- Downloads are verified by signature, size, and SHA-256 before installation; progress is shown per component and a running download can be cancelled and resumed
-- The signed `latest.json` is schema v2 and lists the Local Arena plugin archives per platform under `components.la_plugins` (`windows`, `linux`); the Linux archive is published when a Linux build produced it
-- A `latest.json` from an older release (schema v1, a single `plugin` entry) is still accepted and read as the Windows `la_plugins` archive, so an existing update channel keeps working
+- Downloads are verified by the Tauri updater signature, size, and SHA-256 before installation; progress is shown per component and a running download can be cancelled and resumed
+- The Panel reads the Tauri `latest.json` published with the release; `tauri-plugin-updater` verifies each bundle against the embedded public key
+- The Local Arena plugin archive is resolved from the release assets through the GitHub API (`LocalArena-plugin-<tag>-<os>.zip`), verified against the asset digest, and installed as its own component
 - Installing the Local Arena plugin bundle writes only the files that bundle owns and merges them into the existing installation record; it refuses to run when the upstream suite (and its `BotHiderApi.dll`) is not installed
 - The upstream runtime package has its own cache on **Settings → Installation**, where you can re-download it, clear it, or import a local ZIP
 - InventorySimulator still comes from its own releases — the Panel downloads and installs it, it is never bundled, and **Restore pristine CS2** removes it like any other recognized third-party plugin
