@@ -15,7 +15,7 @@ public sealed class PlusMatchCoordinatorPlugin : BasePlugin
     private static readonly PluginCapability<IBotHiderApi> BotHiderCapability = new("bothider:api");
 
     public override string ModuleName => "PLUS Match Coordinator";
-    public override string ModuleVersion => "1.4.3.3";
+    public override string ModuleVersion => "1.5.0";
     public override string ModuleAuthor => "CS2BotImproverPlus contributors";
     public override string ModuleDescription => "Offline MR12 match sessions and GOTV demos";
 

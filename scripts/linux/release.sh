@@ -5,7 +5,7 @@
 # cargo-xwin + clang-cl for the x86_64-pc-windows-msvc target).
 #
 #   scripts/linux/release.sh --check                verify toolchain, print the command, run nothing
-#   scripts/linux/release.sh --version 1.4.3.3      full build + package into artifacts/
+#   scripts/linux/release.sh --version 1.5.0        full build + package into artifacts/
 #
 # Environment: LLVM_BIN (dir containing clang-cl/lld-link/llvm-rc), PWSH,
 # XWIN_CACHE (default .cache/xwin). Missing pieces are reported by --check with

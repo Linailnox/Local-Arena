@@ -3,7 +3,7 @@ name: Build release (test)
 on:
   push:
     tags:
-      - "v1.4.3.3-Preview.*"
+      - "v[0-9]+.[0-9]+.[0-9]+*"
 
 permissions:
   contents: write

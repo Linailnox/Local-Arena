@@ -7,8 +7,8 @@ param(
     [string]$LlvmBin,
     [string]$XwinCache,
     [string]$OutputDirectory,
-    [string]$ReleaseVersion = "1.4.3.3",
-    [string]$MinimumPanelVersion = "1.4.2.4",
+    [string]$ReleaseVersion = "1.5.0",
+    [string]$MinimumPanelVersion = "1.5.0",
     [switch]$Linux,
     [switch]$Explode,
     [switch]$SkipBuild,
@@ -18,12 +18,12 @@ param(
 $ErrorActionPreference = "Stop"
 $repo = Split-Path -Parent $PSScriptRoot
 $displayVersion = $ReleaseVersion.Trim().TrimStart('v', 'V')
-if ($displayVersion -notmatch '^\d+\.\d+\.\d+\.\d+(?:-Preview\.\d+)?$') {
-    throw "ReleaseVersion must use four numeric parts with an optional -Preview.N suffix."
+if ($displayVersion -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)?$') {
+    throw "ReleaseVersion must use SemVer (MAJOR.MINOR.PATCH) with an optional pre-release suffix."
 }
 $minimumPanelVersion = $MinimumPanelVersion.Trim().TrimStart('v', 'V')
-if ($minimumPanelVersion -notmatch '^\d+\.\d+\.\d+\.\d+(?:-Preview\.\d+)?$') {
-    throw "MinimumPanelVersion must use four numeric parts with an optional -Preview.N suffix."
+if ($minimumPanelVersion -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)?$') {
+    throw "MinimumPanelVersion must use SemVer (MAJOR.MINOR.PATCH) with an optional pre-release suffix."
 }
 $isPreview = $displayVersion -match '-Preview\.\d+$'
 $releaseTag = "v$displayVersion"
@@ -253,11 +253,11 @@ if ($isPreview) {
     $packageReadme = Join-Path $releaseRoot "README.md"
     $packageReadmeZh = Join-Path $releaseRoot "README.zh-CN.md"
     (Get-Content -LiteralPath $packageReadme -Raw).Replace(
-        "The current ``main`` branch targets **1.4.3.3**",
+        "The current ``main`` branch targets **1.5.0**",
         "This local test package is **$displayVersion** (preview; may contain bugs; please report problems)"
     ) | Set-Content -LiteralPath $packageReadme -Encoding utf8
     (Get-Content -LiteralPath $packageReadmeZh -Raw).Replace(
-        "当前 ``main`` 分支源码版本为 **1.4.3.3**",
+        "当前 ``main`` 分支源码版本为 **1.5.0**",
         "当前本地测试包版本为 **$displayVersion**（预览版本，可能包含 Bug，请反馈）"
     ) | Set-Content -LiteralPath $packageReadmeZh -Encoding utf8
     @"
