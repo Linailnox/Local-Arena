@@ -1010,7 +1010,6 @@ export const EN = {
   "upstream.check": "Check for updates",
   "upstream.checking": "Checking…",
   "upstream.notChecked": "Not checked yet",
-  "upstream.advanced": "Advanced",
   "upstream.downloader": "Downloader",
   "upstream.downloaderBuiltin": "Built-in",
   "upstream.downloaderAria2": "aria2",
