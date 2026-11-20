@@ -8,7 +8,7 @@ import { api, toAppError, type InstallCheckReport, type InstallationSource, type
 import Segmented from "../../components/Segmented";
 import InventoryPluginCard from "../../components/InventoryPluginCard";
 import LaPluginBundleCard from "../../components/LaPluginBundleCard";
-import UpdateCard from "../../components/UpdateCard";
+import UpdateCard, { type UpdateCardStatusKind } from "../../components/UpdateCard";
 import { OnlineUpdateSection } from "./OnlineUpdatePage";
 import { localizeInstallCheck } from "../../lib/installCheckLocalization";
 import Modal from "../../components/Modal";
@@ -66,6 +66,13 @@ export default function InstallationPage() {
   const alternatives = directoryCandidates.filter((path) => path !== directory?.selected);
   const upstreamOutdated = !!releaseInfo?.update_available;
   const upstreamUpToDate = !!upstreamState && !!releaseInfo && !releaseInfo.update_available;
+  const upstreamStatus: UpdateCardStatusKind = !upstreamState
+    ? "not-installed"
+    : !releaseInfo
+      ? "not-checked"
+      : releaseInfo.update_available
+        ? "available"
+        : "current";
   const backupInfo = (() => {
     const full = installation?.backup_path;
     if (!full) return null;
@@ -127,6 +134,11 @@ export default function InstallationPage() {
     try { setReleaseInfo(await api.upstreamReleaseInfo(true)); }
     catch (error) { setUpstreamError(toAppError(error).detail); }
     finally { setUpstreamWorking(null); }
+  };
+
+  const cancelUpstream = async () => {
+    try { await api.upstreamCancel(); }
+    catch (error) { setUpstreamError(toAppError(error).detail); }
   };
 
   const launchUpstream = async () => {
@@ -311,35 +323,17 @@ export default function InstallationPage() {
           icon={<PackageCheck size={20} />}
           title={t("upstream.title")}
           description={t("upstream.titleDesc")}
-          status={{
-            label: !upstreamState
-              ? t("upstream.notInstalled")
-              : !releaseInfo
-                ? t("upstream.notChecked")
-                : releaseInfo.update_available
-                  ? t("update.available")
-                  : t("update.current"),
-            tone: !upstreamState || !releaseInfo || !releaseInfo.update_available ? "current" : "available",
+          status={upstreamStatus}
+          actions={{
+            onCheck: checkUpstream,
+            onInstall: installUpstream,
+            installed: !!upstreamState,
+            checkBusy: upstreamWorking === "check",
+            installBusy: working === "install",
+            checkDisabled: !!upstreamWorking || !!working,
+            installDisabled: !csgoPath || !!upstreamWorking || !!working || upstreamUpToDate,
+            cancel: working === "install" ? { onClick: () => void cancelUpstream() } : undefined,
           }}
-          actions={
-            <>
-              <button className="upd-mini-btn" disabled={!!upstreamWorking || !!working} onClick={checkUpstream}>
-                <RefreshCw size={13} />{upstreamWorking === "check" ? t("update.checking") : t("update.check")}
-              </button>
-              <button
-                className="upd-mini-btn"
-                disabled={!csgoPath || !!upstreamWorking || !!working || upstreamUpToDate}
-                onClick={installUpstream}
-              >
-                <Download size={13} />
-                {working === "install"
-                  ? t("install.working")
-                  : !!upstreamState
-                    ? t("component.update")
-                    : t("component.install")}
-              </button>
-            </>
-          }
           current={{
             label: t("update.currentVersion"),
             value: upstreamState ? upstreamState.upstream_tag : "--",

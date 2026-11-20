@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Boxes, Download, RefreshCw, X } from "lucide-react";
+import { Boxes } from "lucide-react";
 import { api, type UpdateComponentState, type UpdateProgress } from "../lib/api";
 import { useT } from "../i18n";
 import { listenAppEvent } from "../lib/platform";
@@ -94,27 +94,17 @@ export default function LaPluginBundleCard({ csgoPath, onError }: Props) {
       icon={<Boxes size={20} />}
       title={t("laBundle.title")}
       description={t("laBundle.desc")}
-      status={{
-        label: updateAvailable ? t("update.available") : t("update.current"),
-        tone: updateAvailable ? "available" : "current",
+      status={!state ? "not-checked" : !present ? "not-installed" : updateAvailable ? "available" : "current"}
+      actions={{
+        onCheck: () => void check(),
+        onInstall: () => void installComponent(),
+        installed: present,
+        checkBusy: busy === "check",
+        installBusy: busy === "install",
+        checkDisabled: !csgoPath,
+        installDisabled: !csgoPath || (present && !!state && !updateAvailable),
+        cancel: installing ? { onClick: cancel } : undefined,
       }}
-      actions={
-        <>
-          <button className="upd-mini-btn" disabled={!csgoPath || !!busy} onClick={() => void check()}>
-            <RefreshCw size={13} />{busy === "check" ? t("update.checking") : t("update.check")}
-          </button>
-          <button className="upd-mini-btn" disabled={!csgoPath || !!busy || (present && !!state && !updateAvailable)} onClick={() => void installComponent()}>
-            <Download size={13} />{busy === "install"
-              ? t("laBundle.installing")
-              : present ? t("component.update") : t("component.install")}
-          </button>
-          {installing && (
-            <button className="upd-mini-btn" onClick={cancel}>
-              <X size={13} /> {t("update.cancel")}
-            </button>
-          )}
-        </>
-      }
       current={{
         label: t("laBundle.installedVersion"),
         value: present ? installed ?? t("laBundle.unknownVersion") : t("laBundle.notInstalled"),
