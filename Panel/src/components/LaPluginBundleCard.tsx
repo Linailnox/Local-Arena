@@ -59,22 +59,6 @@ export default function LaPluginBundleCard({ csgoPath, onError }: Props) {
     }
   };
 
-  const install = async () => {
-    if (!csgoPath || busy) return;
-    setBusy("install");
-    setProgressCleared(false);
-    try {
-      await api.installLaPluginBundle(csgoPath);
-      const snap = await api.getUpdateSnapshot();
-      setState(snap.la_plugins);
-    } catch (error) {
-      onError?.(error);
-    } finally {
-      setBusy(null);
-      setProgressCleared(true);
-    }
-  };
-
   const installComponent = async () => {
     if (!csgoPath || busy) return;
     setBusy("install");
@@ -117,17 +101,12 @@ export default function LaPluginBundleCard({ csgoPath, onError }: Props) {
       actions={
         <>
           <button className="upd-mini-btn" disabled={!csgoPath || !!busy} onClick={() => void check()}>
-            <RefreshCw size={13} />{busy === "check" ? t("laBundle.checking") : t("laBundle.check")}
+            <RefreshCw size={13} />{busy === "check" ? t("update.checking") : t("update.check")}
           </button>
-          <button className="is-primary" disabled={!csgoPath || !!busy || (present && !!state && !updateAvailable)} onClick={() => void installComponent()}>
-            {busy === "install"
-              ? t("laBundle.installing")
-              : present ? t("component.update") : t("component.install")}
-          </button>
-          <button className="upd-mini-btn" disabled={!csgoPath || !!busy} onClick={() => void install()}>
+          <button className="upd-mini-btn" disabled={!csgoPath || !!busy || (present && !!state && !updateAvailable)} onClick={() => void installComponent()}>
             <Download size={13} />{busy === "install"
               ? t("laBundle.installing")
-              : present ? t("laBundle.update") : t("laBundle.install")}
+              : present ? t("component.update") : t("component.install")}
           </button>
           {installing && (
             <button className="upd-mini-btn" onClick={cancel}>

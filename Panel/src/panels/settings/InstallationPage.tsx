@@ -385,13 +385,14 @@ export default function InstallationPage() {
           actions={
             <>
               <button className="upd-mini-btn" disabled={!!upstreamWorking || !!working} onClick={checkUpstream}>
-                <RefreshCw size={13} />{upstreamWorking === "check" ? t("upstream.checking") : t("upstream.check")}
+                <RefreshCw size={13} />{upstreamWorking === "check" ? t("update.checking") : t("update.check")}
               </button>
               <button
-                className="is-primary"
+                className="upd-mini-btn"
                 disabled={!csgoPath || !!upstreamWorking || !!working || upstreamUpToDate}
                 onClick={installUpstream}
               >
+                <Download size={13} />
                 {working === "install"
                   ? t("install.working")
                   : !!upstreamState
