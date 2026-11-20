@@ -94,29 +94,16 @@ export function OnlineUpdateSection({ children, toolbarExtra }: { children?: Rea
       icon={<Download size={20} />}
       title={t("update.panel")}
       description={t("update.panelDesc")}
-      status={{
-        label: panelAvailable ? t("update.available") : t("update.current"),
-        tone: panelAvailable ? "available" : "current",
+      status={panelAvailable ? "available" : "current"}
+      actions={{
+        onCheck: check,
+        onInstall: installPanel,
+        installed: true,
+        checkBusy: working === "check",
+        installBusy: panelInstalling,
+        checkDisabled: !!snapshot?.busy,
+        installDisabled: !panelAvailable,
       }}
-      actions={
-        <>
-          <button
-            className="upd-mini-btn"
-            disabled={!!working || !!snapshot?.busy}
-            onClick={check}
-            title={t("update.check") as string}
-          >
-            <RefreshCw size={13} />{working === "check" ? t("update.checking") : t("update.check")}
-          </button>
-          <button
-            className="upd-mini-btn"
-            disabled={!panelAvailable || !!working || !!snapshot?.busy}
-            onClick={installPanel}
-          >
-            <Download size={13} />{panelInstalling ? t("update.updatingAll") : t("update.installPanel")}
-          </button>
-        </>
-      }
       current={{ label: t("update.currentVersion"), value: panelState?.current_version ?? "--" }}
       latest={{
         label: t("update.latestVersion"),

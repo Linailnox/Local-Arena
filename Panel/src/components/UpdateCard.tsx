@@ -1,9 +1,11 @@
 import type { ReactNode } from "react";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Download, RefreshCw, X } from "lucide-react";
+import { useT, type I18nKey } from "../i18n";
 
 export type UpdateCardTone = "panel" | "la_plugins" | "plugin" | "la_bundle" | "upstream";
 
-export type UpdateCardStatusTone = "available" | "current" | "error";
+export type UpdateCardStatusKind = "not-installed" | "not-checked" | "available" | "current";
+type UpdateCardStatusTone = "available" | "current" | "error";
 
 export type UpdateVersion = {
   label: string;
@@ -11,19 +13,40 @@ export type UpdateVersion = {
   highlight?: boolean;
 };
 
+/** The only action set a component card may render. */
+export type UpdateCardActions = {
+  onCheck: () => void;
+  onInstall: () => void;
+  /** Chooses `component.update` vs `component.install` and `[installed]`. */
+  installed: boolean;
+  checkBusy?: boolean;
+  installBusy?: boolean;
+  checkDisabled?: boolean;
+  installDisabled?: boolean;
+  /** Only the component cards pass this; the Panel updater cannot be cancelled. */
+  cancel?: { onClick: () => void };
+};
+
 type Props = {
   tone: UpdateCardTone;
   icon: ReactNode;
   title: string;
   description: string;
-  status?: { label: string; tone: UpdateCardStatusTone };
-  actions: ReactNode;
+  status: UpdateCardStatusKind;
+  actions: UpdateCardActions;
   current: UpdateVersion;
   latest: UpdateVersion;
   size?: UpdateVersion;
   progress?: { percent: number; label: string } | null;
   notes?: ReactNode;
   footnote?: ReactNode;
+};
+
+const STATUS: Record<UpdateCardStatusKind, { key: I18nKey; tone: UpdateCardStatusTone }> = {
+  "not-installed": { key: "update.notInstalled", tone: "current" },
+  "not-checked": { key: "update.notChecked", tone: "current" },
+  available: { key: "update.available", tone: "available" },
+  current: { key: "update.current", tone: "current" },
 };
 
 export function formatBytes(value: number) {
@@ -35,9 +58,12 @@ export function formatBytes(value: number) {
 
 /**
  * Shared shape of every component card in the settings updates grid: icon +
- * title/description, status chip with the check/install actions, current →
- * latest versions, optional progress bar and footnotes. Styles are the
- * `.upd-card*` rules in `panels/settings/settings.css`.
+ * title/description, status chip, the fixed check / install / cancel action
+ * set, current → latest versions, optional progress bar and footnotes. Styles
+ * are the `.upd-card*` rules in `panels/settings/settings.css`.
+ *
+ * Actions are rendered here on purpose: consumers pass behaviour, never raw
+ * button JSX, so button count, classes and labels cannot drift again.
  */
 export default function UpdateCard({
   tone,
@@ -53,6 +79,9 @@ export default function UpdateCard({
   notes,
   footnote,
 }: Props) {
+  const t = useT();
+  const statusMeta = STATUS[status];
+  const busy = !!actions.checkBusy || !!actions.installBusy;
   return (
     <section className="upd-card">
       <div className="upd-card__head">
@@ -62,10 +91,29 @@ export default function UpdateCard({
           <small>{description}</small>
         </div>
         <div className="upd-card__actions">
-          {status && (
-            <span className={`update-status update-status--${status.tone}`}>{status.label}</span>
+          <span className={`update-status update-status--${statusMeta.tone}`}>{t(statusMeta.key)}</span>
+          <button
+            className="upd-mini-btn"
+            disabled={busy || !!actions.checkDisabled}
+            onClick={actions.onCheck}
+          >
+            <RefreshCw size={13} />{actions.checkBusy ? t("update.checking") : t("update.check")}
+          </button>
+          <button
+            className="upd-mini-btn"
+            disabled={busy || !!actions.installDisabled}
+            onClick={actions.onInstall}
+          >
+            <Download size={13} />
+            {actions.installBusy
+              ? t("update.installing")
+              : t(actions.installed ? "component.update" : "component.install")}
+          </button>
+          {actions.cancel && (
+            <button className="upd-mini-btn" onClick={actions.cancel.onClick}>
+              <X size={13} />{t("update.cancel")}
+            </button>
           )}
-          {actions}
         </div>
       </div>
       <div className="upd-card__versions">
