@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { ArchiveRestore, CheckCircle2, CircleAlert, CircleX, ClipboardCheck, Copy, Download, FileCheck2, FolderOpen, PackageCheck, PlayCircle, RefreshCw, Stethoscope, Trash2, X } from "lucide-react";
+import { ArchiveRestore, CheckCircle2, CircleAlert, CircleX, ClipboardCheck, Copy, Download, FileCheck2, FolderOpen, PackageCheck, PlayCircle, RefreshCw, Stethoscope, Trash2 } from "lucide-react";
 import { useStore } from "../../state/store";
 import { useT, type I18nKey } from "../../i18n";
 import { useToast } from "../../components/Toast";
-import { api, toAppError, type InstallCheckReport, type InstallationSource, type UpstreamCacheInfo, type UpstreamInstalledState, type UpstreamProgress, type UpstreamReleaseInfo } from "../../lib/api";
+import { api, toAppError, type InstallCheckReport, type InstallationSource, type UpstreamInstalledState, type UpstreamProgress, type UpstreamReleaseInfo } from "../../lib/api";
 
 import Segmented from "../../components/Segmented";
 import InventoryPluginCard from "../../components/InventoryPluginCard";
@@ -52,7 +52,6 @@ export default function InstallationPage() {
   const [checks, setChecks] = useState<InstallCheckReport | null>(null);
   const [confirmAction, setConfirmAction] = useState<"restore" | "pristine" | null>(null);
   const [releaseInfo, setReleaseInfo] = useState<UpstreamReleaseInfo | null>(null);
-  const [cache, setCache] = useState<UpstreamCacheInfo | null>(null);
   const [upstreamState, setUpstreamState] = useState<UpstreamInstalledState | null>(null);
   const [progress, setProgress] = useState<UpstreamProgress | null>(null);
   const [upstreamWorking, setUpstreamWorking] = useState<string | null>(null);
@@ -60,7 +59,6 @@ export default function InstallationPage() {
   const [aria2Available, setAria2Available] = useState(false);
   const damaged = (installation?.missing.length ?? 0) + (installation?.corrupt.length ?? 0);
   const blocked = !!process?.running && (process.matches_selected || !process.path_accessible);
-  const downloading = upstreamWorking === "download";
   const progressPct = progress && progress.total_bytes
     ? Math.min(100, Math.round((progress.downloaded_bytes / progress.total_bytes) * 100))
     : 0;
@@ -104,8 +102,6 @@ export default function InstallationPage() {
   const refreshUpstream = async () => {
     try { setReleaseInfo(await api.upstreamReleaseInfo()); }
     catch (error) { setUpstreamError(toAppError(error).detail); }
-    try { setCache(await api.upstreamCacheInfo()); }
-    catch { /* cache stats are secondary */ }
     try { setUpstreamState(await api.upstreamInstalledState()); }
     catch { /* a missing record means "not installed yet" */ }
   };
@@ -131,62 +127,6 @@ export default function InstallationPage() {
     try { setReleaseInfo(await api.upstreamReleaseInfo(true)); }
     catch (error) { setUpstreamError(toAppError(error).detail); }
     finally { setUpstreamWorking(null); }
-  };
-
-  const downloadUpstream = async () => {
-    const tag = releaseInfo?.release.tag;
-    if (!tag) return;
-    setUpstreamWorking("download");
-    setUpstreamError(null);
-    setProgress(null);
-    try {
-      await api.upstreamDownload(tag);
-      await refreshUpstream();
-    } catch (error) {
-      setUpstreamError(toAppError(error).detail);
-    } finally {
-      setUpstreamWorking(null);
-      setProgress(null);
-    }
-  };
-
-  const cancelUpstream = async () => {
-    try { await api.upstreamCancel(); }
-    catch (error) { setUpstreamError(toAppError(error).detail); }
-  };
-
-  const clearUpstreamCache = async () => {
-    setUpstreamWorking("clear");
-    try {
-      const freed = await api.upstreamCacheClear();
-      toast.show(t("upstream.cleared", { size: formatBytes(freed) }), "green");
-      await refreshUpstream();
-    } catch (error) {
-      setUpstreamError(toAppError(error).detail);
-    } finally {
-      setUpstreamWorking(null);
-    }
-  };
-
-  const importLocalZip = async () => {
-    setUpstreamWorking("import");
-    setUpstreamError(null);
-    try {
-      const picked = await openDialog({
-        multiple: false,
-        directory: false,
-        title: "Select the upstream CS2BotImprover.zip",
-        filters: [{ name: "ZIP", extensions: ["zip"] }],
-      });
-      if (typeof picked !== "string") return;
-      const imported = await api.upstreamImportLocal(picked);
-      toast.show(t("upstream.imported", { tag: imported.tag }), "green");
-      await refreshUpstream();
-    } catch (error) {
-      setUpstreamError(toAppError(error).detail);
-    } finally {
-      setUpstreamWorking(null);
-    }
   };
 
   const launchUpstream = async () => {
@@ -366,7 +306,6 @@ export default function InstallationPage() {
           </label>
         }
       >
-        <div className="upd-stack">
         <UpdateCard
           tone="upstream"
           icon={<PackageCheck size={20} />}
@@ -415,7 +354,7 @@ export default function InstallationPage() {
             value: releaseInfo ? formatBytes(releaseInfo.release.size) : "--",
           }}
           progress={
-            (downloading || (progress && progress.stage !== "done")) && progress
+            progress && progress.stage !== "done"
               ? {
                   percent: progressPct,
                   label: progress?.stage === "verifying"
@@ -430,34 +369,6 @@ export default function InstallationPage() {
           }
           footnote={upstreamError ? <div className="update-error">{upstreamError}</div> : null}
         />
-        <details className="upd-advanced">
-          <summary>{t("upstream.advanced")}</summary>
-          <div className="upd-advanced__body">
-            <div className="installation-actions">
-              {releaseInfo && (
-                <button className="upd-mini-btn" disabled={!releaseInfo || !!upstreamWorking || !!working} onClick={downloadUpstream}>
-                  <Download size={13} />{downloading ? t("upstream.downloading", { n: progressPct }) : releaseInfo?.cached ? t("upstream.redownload") : t("upstream.download")}
-                </button>
-              )}
-              {downloading && (
-                <button onClick={cancelUpstream}><X size={17} />{t("upstream.cancel")}</button>
-              )}
-              <button disabled={!cache || cache.total_bytes === 0 || !!upstreamWorking} onClick={clearUpstreamCache}>
-                <Trash2 size={17} />{upstreamWorking === "clear" ? t("install.working") : t("upstream.clear")}
-              </button>
-              <button disabled={!!upstreamWorking} onClick={importLocalZip}>
-                <FolderOpen size={17} />{upstreamWorking === "import" ? t("install.working") : t("upstream.manual")}
-              </button>
-            </div>
-            {downloading && <p className="inst-diagnostics-scope">{t("upstream.resume")}</p>}
-            {cache && cache.entries.length > 0 && (
-              <p className="inst-diagnostics-scope">
-                {t("upstream.cache")}: {formatBytes(cache.total_bytes)} · {cache.entries.map((entry) => t("upstream.cacheSize", { size: formatBytes(entry.size), tag: entry.tag })).join(" · ")}
-              </p>
-            )}
-          </div>
-        </details>
-        </div>
 
         <InventoryPluginCard csgoPath={csgoPath} onError={reportError} />
         <LaPluginBundleCard csgoPath={csgoPath} onError={reportError} />
