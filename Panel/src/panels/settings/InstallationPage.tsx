@@ -336,11 +336,11 @@ export default function InstallationPage() {
           }}
           current={{
             label: t("update.currentVersion"),
-            value: upstreamState ? upstreamState.upstream_tag : "--",
+            value: upstreamState ? upstreamState.upstream_tag : t("update.notInstalled"),
           }}
           latest={{
             label: t("update.latestVersion"),
-            value: releaseInfo ? releaseInfo.release.tag : "--",
+            value: releaseInfo ? releaseInfo.release.tag : t("update.notChecked"),
             highlight: upstreamOutdated,
           }}
           size={{
