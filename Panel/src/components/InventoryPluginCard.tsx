@@ -104,11 +104,11 @@ export default function InventoryPluginCard({ csgoPath, onError }: Props) {
       }}
       current={{
         label: t("inventoryPlugin.installedVersion"),
-        value: present ? installed ?? t("inventoryPlugin.unknownVersion") : t("inventoryPlugin.notInstalled"),
+        value: present ? installed ?? t("inventoryPlugin.unknownVersion") : t("update.notInstalled"),
       }}
       latest={{
         label: t("inventoryPlugin.latestVersion"),
-        value: release ? release.tag : t("inventoryPlugin.notChecked"),
+        value: release ? release.tag : t("update.notChecked"),
         highlight: updateAvailable,
       }}
       size={{ label: t("update.size"), value: formatBytes(release?.size ?? 0) }}

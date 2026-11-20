@@ -107,11 +107,11 @@ export default function LaPluginBundleCard({ csgoPath, onError }: Props) {
       }}
       current={{
         label: t("laBundle.installedVersion"),
-        value: present ? installed ?? t("laBundle.unknownVersion") : t("laBundle.notInstalled"),
+        value: present ? installed ?? t("laBundle.unknownVersion") : t("update.notInstalled"),
       }}
       latest={{
         label: t("laBundle.latestVersion"),
-        value: state?.latest_version ?? t("laBundle.notChecked"),
+        value: state?.latest_version ?? t("update.notChecked"),
         highlight: updateAvailable,
       }}
       size={{ label: t("update.size"), value: formatBytes(state?.total_bytes ?? 0) }}

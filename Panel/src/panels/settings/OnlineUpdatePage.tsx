@@ -107,7 +107,7 @@ export function OnlineUpdateSection({ children, toolbarExtra }: { children?: Rea
       current={{ label: t("update.currentVersion"), value: panelState?.current_version ?? "--" }}
       latest={{
         label: t("update.latestVersion"),
-        value: panelState?.latest_version ?? "--",
+        value: panelState?.latest_version ?? t("update.notChecked"),
         highlight: panelAvailable,
       }}
       size={{ label: t("update.size"), value: formatBytes(panelState?.total_bytes ?? 0) }}
