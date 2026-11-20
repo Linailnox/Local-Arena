@@ -119,7 +119,7 @@ export default function LaPluginBundleCard({ csgoPath, onError }: Props) {
           <button className="upd-mini-btn" disabled={!csgoPath || !!busy} onClick={() => void check()}>
             <RefreshCw size={13} />{busy === "check" ? t("laBundle.checking") : t("laBundle.check")}
           </button>
-          <button className="is-primary" disabled={!csgoPath || !!busy} onClick={() => void installComponent()}>
+          <button className="is-primary" disabled={!csgoPath || !!busy || (present && !!state && !updateAvailable)} onClick={() => void installComponent()}>
             {busy === "install"
               ? t("laBundle.installing")
               : present ? t("component.update") : t("component.install")}

@@ -65,6 +65,9 @@ static RELEASE_INFO: OnceLock<Mutex<Option<CachedReleaseInfo>>> = OnceLock::new(
 pub struct UpstreamRelease {
     pub tag: String,
     pub asset_url: String,
+    /// Size of the published archive in bytes; 0 when the release API did not
+    /// report one (redirect fallback) or the archive is a local import.
+    pub size: u64,
     /// `"sha256:…"` from the GitHub API; `None` on the redirect fallback and
     /// manual imports (decision #5).
     pub digest: Option<String>,
@@ -76,6 +79,9 @@ pub struct UpstreamReleaseInfo {
     pub release: UpstreamRelease,
     pub cached: bool,
     pub checked_at: Option<u64>,
+    /// `true` when the installed upstream tag is older than the resolved
+    /// release; `false` when it is equal/newer or nothing is installed.
+    pub update_available: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -409,6 +415,7 @@ fn fallback_release() -> UpstreamRelease {
     UpstreamRelease {
         tag: "latest".into(),
         asset_url: LATEST_DOWNLOAD_FALLBACK.into(),
+        size: 0,
         digest: None,
         from_api: false,
     }
@@ -419,6 +426,8 @@ pub(crate) fn parse_release_document(body: &str) -> Result<UpstreamRelease> {
     struct ApiAsset {
         name: String,
         browser_download_url: String,
+        #[serde(default)]
+        size: u64,
         #[serde(default)]
         digest: Option<String>,
     }
@@ -459,6 +468,7 @@ pub(crate) fn parse_release_document(body: &str) -> Result<UpstreamRelease> {
     Ok(UpstreamRelease {
         tag: document.tag_name,
         asset_url: asset.browser_download_url.clone(),
+        size: asset.size,
         digest,
         from_api: true,
     })
@@ -492,10 +502,21 @@ fn info_from(release: UpstreamRelease, checked_at: Option<u64>) -> Result<Upstre
     let cached = cache_zip_path(&release.tag)
         .map(|path| zip_is_cached(&path))
         .unwrap_or(false);
+    let update_available = read_installed_state()
+        .ok()
+        .flatten()
+        .is_some_and(|state| match (
+            update_core::DisplayVersion::parse(&state.upstream_tag),
+            update_core::DisplayVersion::parse(&release.tag),
+        ) {
+            (Ok(installed), Ok(latest)) => latest > installed,
+            _ => state.upstream_tag != release.tag,
+        });
     Ok(UpstreamReleaseInfo {
         release,
         cached,
         checked_at,
+        update_available,
     })
 }
 
@@ -884,6 +905,11 @@ pub fn download_by_tag(app: &AppHandle, tag: &str, downloader: &str) -> Result<U
 /// cache does not already hold it (§6.5). Falls back to the newest cache entry
 /// when the release API is unreachable.
 pub fn ensure_cached(app: &AppHandle) -> Result<CachedUpstream> {
+    ensure_cached_with(app, DOWNLOADER_BUILTIN)
+}
+
+/// Same as [`ensure_cached`], but honours the caller's downloader choice.
+pub fn ensure_cached_with(app: &AppHandle, downloader: &str) -> Result<CachedUpstream> {
     if let Ok(info) = release_info(false) {
         let zip = cache_zip_path(&info.release.tag)?;
         if zip_is_cached(&zip) {
@@ -892,7 +918,7 @@ pub fn ensure_cached(app: &AppHandle) -> Result<CachedUpstream> {
                 zip,
             });
         }
-        let release = download_by_tag(app, &info.release.tag, DOWNLOADER_BUILTIN)?;
+        let release = download_by_tag(app, &info.release.tag, downloader)?;
         let zip = cache_zip_path(&release.tag)?;
         return Ok(CachedUpstream { release, zip });
     }
@@ -901,6 +927,7 @@ pub fn ensure_cached(app: &AppHandle) -> Result<CachedUpstream> {
             release: UpstreamRelease {
                 tag,
                 asset_url: LATEST_DOWNLOAD_FALLBACK.into(),
+                size: 0,
                 digest: None,
                 from_api: false,
             },
@@ -963,6 +990,7 @@ pub(crate) fn import_local_at(source: &Path, cache_root: &Path) -> Result<Upstre
     Ok(UpstreamRelease {
         tag,
         asset_url: source.to_string_lossy().into_owned(),
+        size: fs::metadata(source).map(|metadata| metadata.len()).unwrap_or(0),
         digest: None,
         from_api: false,
     })
@@ -1421,6 +1449,17 @@ pub fn stage_upstream_only() -> Result<PathBuf> {
     let selected = select_cached_upstream()?;
     stage_upstream_only_with_selection(
         selected,
+        &online_update::update_root()?,
+        &exe_parent_dir()?,
+    )
+}
+
+/// Stages a specific cached release. Install flows use this instead of
+/// `stage_upstream_only` so a just-resolved latest tag is never replaced by the
+/// cache selector's "installed tag first" preference.
+pub fn stage_upstream_tag(tag: &str, zip: &Path) -> Result<PathBuf> {
+    stage_upstream_only_with_selection(
+        Some((tag.to_string(), zip.to_path_buf())),
         &online_update::update_root()?,
         &exe_parent_dir()?,
     )
@@ -3144,6 +3183,40 @@ mod tests {
                 "task4_failure: invalid_tag={} missing_manifest={}",
                 invalid.code, missing.code
             );
+        });
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn release_info_compares_the_installed_tag_with_semver() {
+        let (base, ()) = with_state_root("release-info-update", |_base| {
+            let state = app_storage::root().unwrap();
+            fs::write(
+                state.join(INSTALLED_STATE_FILE),
+                serde_json::json!({
+                    "schema_version": 1,
+                    "upstream_tag": "v1.4.4",
+                    "upstream_source": "api",
+                    "upstream_installed_at": 0,
+                    "la_version": "1.5.0",
+                    "la_installed_at": 0,
+                    "target": "C:/game/csgo",
+                    "upstream_panel_exe": null,
+                })
+                .to_string(),
+            )
+            .unwrap();
+            let release = |tag: &str| UpstreamRelease {
+                tag: tag.into(),
+                asset_url: "https://github.com/ed0ard/CS2-Bot-Improver/releases/download/v1.4.5/CS2BotImprover.zip".into(),
+                size: 1024,
+                digest: None,
+                from_api: true,
+            };
+            assert!(info_from(release("v1.4.5"), None).unwrap().update_available);
+            assert!(!info_from(release("v1.4.4"), None).unwrap().update_available);
+            // A tag that is not SemVer falls back to string inequality.
+            assert!(info_from(release("latest-build"), None).unwrap().update_available);
         });
         fs::remove_dir_all(base).unwrap();
     }

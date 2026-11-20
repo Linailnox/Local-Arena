@@ -60,14 +60,14 @@ export default function InstallationPage() {
   const [aria2Available, setAria2Available] = useState(false);
   const damaged = (installation?.missing.length ?? 0) + (installation?.corrupt.length ?? 0);
   const blocked = !!process?.running && (process.matches_selected || !process.path_accessible);
-  const upstreamReady = !!releaseInfo?.cached;
   const downloading = upstreamWorking === "download";
   const progressPct = progress && progress.total_bytes
     ? Math.min(100, Math.round((progress.downloaded_bytes / progress.total_bytes) * 100))
     : 0;
   const directoryCandidates = directory?.candidates ?? [];
   const alternatives = directoryCandidates.filter((path) => path !== directory?.selected);
-  const upstreamOutdated = !!upstreamState && !!releaseInfo && upstreamState.upstream_tag !== releaseInfo.release.tag;
+  const upstreamOutdated = !!releaseInfo?.update_available;
+  const upstreamUpToDate = !!upstreamState && !!releaseInfo && !releaseInfo.update_available;
   const backupInfo = (() => {
     const full = installation?.backup_path;
     if (!full) return null;
@@ -128,7 +128,7 @@ export default function InstallationPage() {
   const checkUpstream = async () => {
     setUpstreamWorking("check");
     setUpstreamError(null);
-    try { setReleaseInfo(await api.upstreamReleaseInfo()); }
+    try { setReleaseInfo(await api.upstreamReleaseInfo(true)); }
     catch (error) { setUpstreamError(toAppError(error).detail); }
     finally { setUpstreamWorking(null); }
   };
@@ -366,21 +366,32 @@ export default function InstallationPage() {
           </label>
         }
       >
+        <div className="upd-stack">
         <UpdateCard
           tone="upstream"
           icon={<PackageCheck size={20} />}
           title={t("upstream.title")}
           description={t("upstream.titleDesc")}
           status={{
-            label: upstreamReady ? t("upstream.ready") : t("upstream.notReady"),
-            tone: upstreamReady ? "current" : "available",
+            label: !upstreamState
+              ? t("upstream.notInstalled")
+              : !releaseInfo
+                ? t("upstream.notChecked")
+                : releaseInfo.update_available
+                  ? t("update.available")
+                  : t("update.current"),
+            tone: !upstreamState || !releaseInfo || !releaseInfo.update_available ? "current" : "available",
           }}
           actions={
             <>
-              <button className="upd-mini-btn" disabled={!releaseInfo || !!upstreamWorking} onClick={checkUpstream}>
+              <button className="upd-mini-btn" disabled={!!upstreamWorking || !!working} onClick={checkUpstream}>
                 <RefreshCw size={13} />{upstreamWorking === "check" ? t("upstream.checking") : t("upstream.check")}
               </button>
-              <button className="is-primary" disabled={!csgoPath || !!upstreamWorking || !!working} onClick={installUpstream}>
+              <button
+                className="is-primary"
+                disabled={!csgoPath || !!upstreamWorking || !!working || upstreamUpToDate}
+                onClick={installUpstream}
+              >
                 {working === "install"
                   ? t("install.working")
                   : !!upstreamState
@@ -398,7 +409,10 @@ export default function InstallationPage() {
             value: releaseInfo ? releaseInfo.release.tag : "--",
             highlight: upstreamOutdated,
           }}
-          size={{ label: t("upstream.cache"), value: cache ? formatBytes(cache.total_bytes) : "--" }}
+          size={{
+            label: t("update.size"),
+            value: releaseInfo ? formatBytes(releaseInfo.release.size) : "--",
+          }}
           progress={
             (downloading || (progress && progress.stage !== "done")) && progress
               ? {
@@ -413,34 +427,36 @@ export default function InstallationPage() {
                 }
               : null
           }
-          footnote={
-            <>
-              {cache && cache.entries.length > 0 && (
-                <p className="inst-diagnostics-scope">
-                  {cache.entries.map((entry) => t("upstream.cacheSize", { size: formatBytes(entry.size), tag: entry.tag })).join(" · ")}
-                </p>
-              )}
-              {upstreamError && <div className="update-error">{upstreamError}</div>}
-            </>
-          }
+          footnote={upstreamError ? <div className="update-error">{upstreamError}</div> : null}
         />
-        <div className="installation-actions">
-          {releaseInfo && (
-            <button className="upd-mini-btn" disabled={!releaseInfo || !!upstreamWorking} onClick={downloadUpstream}>
-              <Download size={13} />{downloading ? t("upstream.downloading", { n: progressPct }) : releaseInfo?.cached ? t("upstream.redownload") : t("upstream.download")}
-            </button>
-          )}
-          {downloading && (
-            <button onClick={cancelUpstream}><X size={17} />{t("upstream.cancel")}</button>
-          )}
-          <button disabled={!cache || cache.total_bytes === 0 || !!upstreamWorking} onClick={clearUpstreamCache}>
-            <Trash2 size={17} />{upstreamWorking === "clear" ? t("install.working") : t("upstream.clear")}
-          </button>
-          <button disabled={!!upstreamWorking} onClick={importLocalZip}>
-            <FolderOpen size={17} />{upstreamWorking === "import" ? t("install.working") : t("upstream.manual")}
-          </button>
+        <details className="upd-advanced">
+          <summary>{t("upstream.advanced")}</summary>
+          <div className="upd-advanced__body">
+            <div className="installation-actions">
+              {releaseInfo && (
+                <button className="upd-mini-btn" disabled={!releaseInfo || !!upstreamWorking || !!working} onClick={downloadUpstream}>
+                  <Download size={13} />{downloading ? t("upstream.downloading", { n: progressPct }) : releaseInfo?.cached ? t("upstream.redownload") : t("upstream.download")}
+                </button>
+              )}
+              {downloading && (
+                <button onClick={cancelUpstream}><X size={17} />{t("upstream.cancel")}</button>
+              )}
+              <button disabled={!cache || cache.total_bytes === 0 || !!upstreamWorking} onClick={clearUpstreamCache}>
+                <Trash2 size={17} />{upstreamWorking === "clear" ? t("install.working") : t("upstream.clear")}
+              </button>
+              <button disabled={!!upstreamWorking} onClick={importLocalZip}>
+                <FolderOpen size={17} />{upstreamWorking === "import" ? t("install.working") : t("upstream.manual")}
+              </button>
+            </div>
+            {downloading && <p className="inst-diagnostics-scope">{t("upstream.resume")}</p>}
+            {cache && cache.entries.length > 0 && (
+              <p className="inst-diagnostics-scope">
+                {t("upstream.cache")}: {formatBytes(cache.total_bytes)} · {cache.entries.map((entry) => t("upstream.cacheSize", { size: formatBytes(entry.size), tag: entry.tag })).join(" · ")}
+              </p>
+            )}
+          </div>
+        </details>
         </div>
-        {downloading && <p className="inst-diagnostics-scope">{t("upstream.resume")}</p>}
 
         <InventoryPluginCard csgoPath={csgoPath} onError={reportError} />
         <LaPluginBundleCard csgoPath={csgoPath} onError={reportError} />
