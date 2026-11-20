@@ -112,7 +112,7 @@ export default function InventoryPluginCard({ csgoPath, onError }: Props) {
           <button className="upd-mini-btn" disabled={!csgoPath || !!busy} onClick={() => void check()}>
             <RefreshCw size={13} />{busy === "check" ? t("inventoryPlugin.checking") : t("inventoryPlugin.check")}
           </button>
-          <button className="is-primary" disabled={!csgoPath || !!busy} onClick={() => void installComponent()}>
+          <button className="is-primary" disabled={!csgoPath || !!busy || (present && !!release && !updateAvailable)} onClick={() => void installComponent()}>
             {busy === "install"
               ? t("inventoryPlugin.installing")
               : present ? t("component.update") : t("component.install")}

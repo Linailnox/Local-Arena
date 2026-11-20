@@ -3303,24 +3303,31 @@ fn component_install_result(
     }
 }
 
-/// Installs the upstream component from the cached upstream release. There is no `latest.json`
-/// field for upstream, so the local cache is its only source; an empty cache is an error that
-/// names the download action instead of a silent network fetch inside "install everything".
+/// Installs the upstream component. With `allow_download` a missing or outdated
+/// cache is resolved through `ensure_cached` first (same one-click behaviour as
+/// InventorySimulator and the LA bundle); repair keeps using the existing cache.
 fn install_upstream_blocking(
     app: &AppHandle,
     root: &Path,
     state: &Path,
+    allow_download: bool,
 ) -> Result<online_update::UpdateResult> {
     let config = read_config(app)?;
     let restore_preview = config.mode.as_deref() == Some("preview");
-    let (tag, _zip) = upstream_package::select_cached_upstream()?.ok_or_else(|| {
-        AppError::payload(
-            "The upstream component has not been downloaded yet. Open Settings → Installation, download the upstream component, then try again.",
-        )
-    })?;
+    let (tag, zip) = if allow_download {
+        let downloader = upstream_package::effective_downloader(config.downloader.as_deref());
+        let cached = upstream_package::ensure_cached_with(app, downloader)?;
+        (cached.release.tag, cached.zip)
+    } else {
+        upstream_package::select_cached_upstream()?.ok_or_else(|| {
+            AppError::payload(
+                "The upstream component has not been downloaded yet. Open Settings → Installation, download the upstream component, then try again.",
+            )
+        })?
+    };
     ensure_target_not_running(root)?;
     ensure_steam_app_idle(root)?;
-    let payload = upstream_package::stage_upstream_only()?;
+    let payload = upstream_package::stage_upstream_tag(&tag, &zip)?;
     let report = collect_component_checks(ComponentId::Upstream, &payload, state, root, None)?;
     ensure_install_checks_pass(&report)?;
     logging::append(state, "INFO", "install.upstream_started", &format!("tag={tag}"));
@@ -3463,7 +3470,7 @@ fn install_one_blocking(
 ) -> Result<online_update::UpdateResult> {
     let state = local_state_root(app)?;
     match component {
-        ComponentId::Upstream => install_upstream_blocking(app, root, &state),
+        ComponentId::Upstream => install_upstream_blocking(app, root, &state, allow_download),
         ComponentId::LaPlugins => install_la_blocking(app, root, &state, allow_download),
         ComponentId::InventorySimulator => install_inventory_blocking(app, root),
     }
@@ -3814,8 +3821,8 @@ fn cancel_update() {
 }
 
 #[tauri::command]
-fn upstream_release_info() -> Result<upstream_package::UpstreamReleaseInfo> {
-    upstream_package::release_info(false)
+fn upstream_release_info(force: bool) -> Result<upstream_package::UpstreamReleaseInfo> {
+    upstream_package::release_info(force)
 }
 
 #[tauri::command]

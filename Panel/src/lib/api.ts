@@ -541,6 +541,8 @@ export type UpdateBatchResult = {
 export type UpstreamRelease = {
   tag: string;
   asset_url: string;
+  /** Published archive size in bytes; 0 on the redirect fallback or a local import. */
+  size: number;
   /** "sha256:…" from the GitHub API; null on the redirect fallback and local imports. */
   digest: string | null;
   from_api: boolean;
@@ -552,6 +554,8 @@ export type UpstreamReleaseInfo = {
   /** The resolved latest tag already exists in the local download cache. */
   cached: boolean;
   checked_at: number | null;
+  /** True when the installed upstream tag is older than the resolved release. */
+  update_available: boolean;
 };
 
 /** Mirrors Rust `UpstreamCacheInfo` ({tag, size, modified_at} entries + total). */
@@ -874,7 +878,7 @@ export const api = {
     invoke<UpdateBatchResult>("install_all_updates", { csgo }),
   cancelUpdate: () => invoke<void>("cancel_update"),
   // Upstream package management (plan §6.7 / §7.3)
-  upstreamReleaseInfo: () => invoke<UpstreamReleaseInfo>("upstream_release_info"),
+  upstreamReleaseInfo: (force = false) => invoke<UpstreamReleaseInfo>("upstream_release_info", { force }),
   upstreamAria2Available: () => invoke<boolean>("upstream_aria2_available"),
   upstreamDownload: (tag: string) => invoke<void>("upstream_download", { tag }),
   upstreamCancel: () => invoke<void>("upstream_cancel"),
