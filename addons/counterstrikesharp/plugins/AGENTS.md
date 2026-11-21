@@ -19,7 +19,7 @@ Earned file: score 16 — three plugin domains sharing hosting conventions and v
 - BotHiderApi ProjectReference is also Private=false (assembly comes from the game-loaded BotHider plugin).
 - Data files reach build output via csproj <None Link> into ../../shared/MatchCore or ../../../overrides/{Low,Medium,High}/botprofile.db — source of truth lives outside the plugin dir; PMC's open-rating json and profiles/ are linked build artifacts, not sources.
 - OfflineMatchTelemetry + TeamLineupInjector define StageForGameDeploy (AfterTargets=Publish) copying output to stage/game/csgo/addons/counterstrikesharp/plugins/<Name>/.
-- csproj paths are Windows-style (..\..\shared\...); Linux builds go through scripts/linux/build.sh.
+- csproj paths are Windows-style (..\..\shared\...); Linux plugin builds go through `scripts/package.ps1 -Linux`.
 
 ## ANTI-PATTERNS (verify-gated regressions — do not reintroduce)
 - OfflineMatchTelemetry.cs:326 — never pre-arm _round to the next round number.
@@ -39,6 +39,7 @@ Earned file: score 16 — three plugin domains sharing hosting conventions and v
 
 ## COMMANDS
 ```bash
-scripts/linux/build.sh --only dotnet   # Linux gate: build all projects + run MatchCore.Tests
-pwsh scripts/build.ps1                 # Windows equivalent
+pwsh scripts/package.ps1              # Windows: build all projects + MatchCore.Tests + plugin ZIP
+pwsh scripts/package.ps1 -Linux       # Linux plugin bundle
+dotnet run --project addons/counterstrikesharp/shared/MatchCore.Tests -c Release
 ```

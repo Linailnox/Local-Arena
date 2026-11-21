@@ -27,7 +27,7 @@ Rust backend (`src-tauri/`, crate `cs2-bot-improver-plus-panel`). Frameless wind
 - `state/store.tsx` polls one `refreshAll(true)` snapshot every 2 s (paused when hidden) and mirrors `cs2bi.*` localStorage keys to the backend every 1 s on change; global error/unhandledrejection handlers route every failure into `ErrorModal`.
 - `bun run build` (`tsc && vite build`) is the type-check authority — TS LSP is unreliable in this repo's environments.
 - No `bun test` script. Frontend gates are only `test:stickers` and `test:install-gate`.
-- Dependencies come from bun: `Panel/bun.lock` is the only lockfile — do not reintroduce `package-lock.json` (build.ps1/CI install with `bun install --frozen-lockfile`).
+- Dependencies come from bun: `Panel/bun.lock` is the only lockfile — do not reintroduce `package-lock.json` (package.ps1/CI install with `bun install --frozen-lockfile`).
 
 ## COMMANDS
 ```bash
@@ -46,5 +46,5 @@ bun run test:install-gate  # node ../scripts/test-install-gate.mjs
 
 ## NOTES
 - `src-tauri/` has its own AGENTS.md (cargo gates, merge/restore invariants, Linux build traps).
-- Panel bun + dotnet steps are driven by the repo gate suite `scripts/linux/build.sh` (`--only <step>`) / `scripts/build.ps1`.
+- Panel bun + dotnet steps: frontend gates run in CI and locally; the Panel bundle is built by `tauri-action` in `release.yml` or `bun tauri build` locally. Plugin builds live in `scripts/package.ps1`.
 - Build outputs, never edit: `dist/`, `node_modules/`, `src-tauri/target/`, `src-tauri/gen/`.

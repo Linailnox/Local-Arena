@@ -22,14 +22,15 @@ Local Arena or compatibility with a current CS2 release, and preserve source att
 ```powershell
 bun install --frozen-lockfile --cwd Panel
 bun run --cwd Panel build
+cd Panel; bun tauri build --bundles nsis   # Windows host; CI uses tauri-action
 D:\dotnet-sdk-10\dotnet.exe build addons\counterstrikesharp\plugins\BotHiderImpl\BotHiderImpl.csproj -c Release
-.\scripts\build.ps1 -DotNet D:\dotnet-sdk-10\dotnet.exe
+.\scripts\package.ps1 -DotNet D:\dotnet-sdk-10\dotnet.exe
 .\scripts\verify-workspace.ps1
 ```
 
-The Panel native build uses the Rust MSVC target through `cargo-xwin` and portable LLVM/Clang. `build.ps1` accepts
-explicit `-Cargo`, `-Rustc`, `-LlvmBin`, and `-XwinCache` paths and keeps bun, NuGet, Cargo, xwin, and target caches
-under the repository's ignored `.cache` or `Panel/src-tauri/target-msvc` directories. Visual Studio is not required.
+The Panel bundle is produced by the Tauri CLI locally or by `tauri-action` in CI; `scripts/` no longer builds it.
+`package.ps1` only builds the Local Arena plugins with dotnet and writes the plugin ZIP. Caches live under the
+repository's ignored `.cache` directory.
 
-Before publishing, run `scripts/package.ps1`, inspect the ZIP file list, verify `SHA256SUMS.txt`, and smoke-test both
+Before publishing, run `scripts/package.ps1`, inspect the plugin ZIP file list, verify `SHA256SUMS.txt`, and smoke-test both
 Enhanced Bots and Online Mode on a disposable CS2 installation copy.

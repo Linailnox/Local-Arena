@@ -26,6 +26,6 @@ MatchCore: net8.0 classlib, 8 .cs / 553 LOC, zero package deps — roster select
 
 ## NOTES
 - Consumed via ProjectReference by PlusMatchCoordinator and the tests; OfflineMatchTelemetry and TeamLineupInjector do not reference it.
-- MatchCore.Tests runs inside the dotnet gate step of scripts/linux/build.sh and scripts/build.ps1 — a failing Check() blocks the whole gate.
+- MatchCore.Tests runs inside `scripts/package.ps1` — a failing Check() blocks plugin packaging.
 - net8.0 target is deliberate (CSSharp host runtime); do not bump it to match the net10.0 plugins.
 - ManagedMatchRuntimeStore.Write is how PMC persists `<csgo>/.csbip/match-active.json` and `.csbip/aim-runtime.json` — Panel reads the same files.

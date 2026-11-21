@@ -85,15 +85,14 @@ Local-Arena/
 
 ## COMMANDS
 ```bash
-# full pipeline (pwsh)
-pwsh scripts/build.ps1 [-Linux]
-pwsh scripts/package.ps1 [-Linux] [-ReleaseVersion x.y.z.w]
+# plugin bundle (pwsh)
+pwsh scripts/package.ps1 [-Linux] [-ReleaseVersion x.y.z]
 pwsh scripts/verify-workspace.ps1 [-Linux]
 pwsh scripts/verify-workspace.ps1 -PluginBundleRoot <dir> [-Linux]   # LA-only plugin bundle layout
-pwsh scripts/package.ps1 [-Linux] [-ReleaseVersion x.y.z]   # plugin bundle only
-# Linux gate suite / cross-build
-scripts/linux/build.sh [--only pwsh|bun|dotnet|cargo|verify]
-scripts/linux/release.sh --check | --version X   # env: LLVM_BIN PWSH XWIN_CACHE
+# Panel bundle locally (run in Panel/; CI uses tauri-action)
+bun install --frozen-lockfile
+bun tauri build --bundles nsis            # Windows host
+bun tauri build --bundles appimage,deb    # Linux host
 # Panel Rust backend
 cargo check --manifest-path Panel/src-tauri/Cargo.toml
 # Panel frontend (run in Panel/)
@@ -107,14 +106,14 @@ node scripts/generate-sticker-catalog.mjs
 ## NOTES
 - `.local-build.ps1` (gitignored, repo root) required for local builds/verify — minimal content: `$DotNet = "$HOME/.dotnet/dotnet"`.
 - MatchCore.Tests needs the net8 runtime installed alongside SDK 10.
-- Linux cargo baseline: ~7 Windows-semantic test failures are accepted; `scripts/linux/build.sh` owns the full suite.
-- Non-`tauri dev` Linux builds need `--features custom-protocol`.
+- Linux cargo baseline: ~7 Windows-semantic test failures are accepted; run `cargo test --manifest-path Panel/src-tauri/Cargo.toml` directly (no wrapper script).
+- Non-`tauri dev` Linux builds need `--features custom-protocol`; `tauri build` enables it.
 - `Panel/src/data` ships ~7.1 MB JSON in the Vite bundle — `stickerCatalog.json` (4.0 MB) + `skinNames.json` (2.0 MB) dominate; both single-line minified, read via `jq`/`head -c` only.
 - `stickerCatalog.json`/`stickerWeaponIds.json`/`agentCatalog.json` are `include_str!`-embedded in Rust (lib.rs :530/:541/:665) — schema changes break `cargo check`, not just tsc.
 - `Panel/src/styles/fonts.css` is imported by nothing; `modern` font preset silently falls back to Segoe UI (known dead wire).
 - Debug inspector: no devtools feature — debug builds have it by default (`cd Panel && bunx tauri build --debug --no-bundle`).
 - `Panel/src/panels/TeamsSection.tsx` is an orphan (no importer) — dead code kept in tree.
-- CI: `build.yml` (push to update/build; panel built by `tauri-action --no-bundle` on Windows+Linux, plugins packaged by `package.ps1`), `release.yml` (tags `v*.*.*`; panel matrix publishes signed NSIS/AppImage/deb bundles through `tauri-action`, the plugin matrix uploads `LocalArena-plugin-<tag>-<os>.zip`, a checksums job publishes `SHA256SUMS.txt`).
+- CI: `release.yml` is the only workflow. Tag push `v*.*.*` builds signed NSIS/AppImage/deb bundles through `tauri-action`, creates the GitHub Release, publishes `latest.json` and uploads `LocalArena-plugin-<tag>-<os>.zip` plus `SHA256SUMS.txt`; `workflow_dispatch` builds the same signed bundles and plugin zips as workflow artifacts, without a Release or `latest.json`.
 - OfflineMatchTelemetry (net8 + Microsoft.Data.Sqlite) ships its `libe_sqlite3.so` via `package.ps1 -Linux`; OMT settles at the winner panel (`_matchSettled`, OfflineMatchTelemetry.cs:545) — once settled nothing may append to the ledger.
 
 ## Agent skills

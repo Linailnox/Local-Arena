@@ -44,9 +44,9 @@ carry inline `mod tests` (287 `#[test]`s). No `tests/` dir — cross-crate tests
 - A merge must never consume its own output as the LA overlay source (`la_payload_source`, lib.rs:935).
 - `SUITE_OWNED_FILES` (installer.rs:68) = 6 vdf/ini + 5 `cfg/bot_*|my_bot_*` entries — NOT `cfg/gamemode_*`: restore must run against the merged payload root or upstream gamemode cfgs leak.
 - `backup/{Online,WithBots}/gameinfo.gi` is machine state — never distribute.
-- Linux `cargo build` needs `icons/icon.png`: `tauri-codegen` picks a PNG from `bundle.icon` and, on non-Windows targets, falls back to the hardcoded `icons/icon.png`, panicking if it is missing. The full desktop icon set (including `icon.png`) is committed, so a clean checkout builds; `scripts/linux/build.sh::ensure_icon` only regenerates a 16x16 stub if someone deletes it.
+- Linux `cargo build` needs `icons/icon.png`: `tauri-codegen` picks a PNG from `bundle.icon` and, on non-Windows targets, falls back to the hardcoded `icons/icon.png`, panicking if it is missing. The full desktop icon set (including `icon.png`) is committed, so a clean checkout builds.
 - `scripts/verify-workspace.ps1` greps `lib.rs` for literal markers (`aim_supported,`, `.csbip/aim-runtime.json`, `aim_override_count`, `"normal", "less", "off"`) — renaming those strings fails the gate even if behavior is unchanged.
-- Linux test failures are allowlisted by exact test name in `scripts/linux/build.sh` (`KNOWN_WINDOWS_ONLY`, 7 entries) — never widen that list.
+- Linux test failures are a known baseline (~7 Windows-semantic failures); run `cargo test --manifest-path Panel/src-tauri/Cargo.toml` and compare, there is no wrapper allowlist script.
 - InventorySimulator (`inventory_plugin.rs`) is third-party: never shipped in the package; the Panel only downloads/installs it (release resolution via the registry + `release_source.rs`, one transactional install of its whitelisted files; the installed version comes from `record.components["inventory_simulator"]`, not from a marker file).
 - The managed component set is compiled in `component_registry.rs` — adding a component is a compile-time change; never introduce a shipped `components.json` (second source of truth, editable after install).
 - Never read or derive state from `src-tauri/gen/` (generated Tauri schemas, untracked).
@@ -55,7 +55,7 @@ carry inline `mod tests` (287 `#[test]`s). No `tests/` dir — cross-crate tests
 ```bash
 cargo check --manifest-path Panel/src-tauri/Cargo.toml
 cargo test  --manifest-path Panel/src-tauri/Cargo.toml
-# Linux baseline: ~7 known Windows-semantic failures accepted (scripts/linux/build.sh owns this gate)
+# Linux baseline: ~7 known Windows-semantic failures accepted
 cargo test  --manifest-path Panel/src-tauri/core-tests/Cargo.toml   # cross-crate harness, separate manifest
 
 # Local debug build — the WebView inspector (right-click Inspect / Ctrl+Shift+I) is on by default in debug builds; there is no `devtools` feature:

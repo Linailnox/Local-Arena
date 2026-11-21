@@ -124,10 +124,10 @@ Tooling adaptations:
   tree; build outputs come from the submodule `csharp` trees; explicit copies carry the NadeSystem grenade catalog
   (`data/NadeSystem/grenades` → payload `plugins/NadeSystem/grenades`) and the behavior-tree overrides, both of
   which are absent or stale in the release zip; `bot_randomizer_options.json` staging is removed.
-- `build.ps1`: impl project paths point into the submodules, and the unused `RayTraceApiPath` MSBuild plumbing was
+- `package.ps1`: impl project paths point into the submodules, and the unused `RayTraceApiPath` MSBuild plumbing was
   removed together with the reverted `BotAimImprover`/`NadeSystem` csproj edits.
 - `installer.rs`: `disabled/CS2_ExecAfter` is dropped from `SUITE_OWNED_ROOTS`.
-- `.github/workflows/build.yml` and `release.yml` check out with `submodules: recursive`.
+- `.github/workflows/release.yml` checks out with `submodules: recursive`.
 
 ## Pinned Runtime Inputs
 

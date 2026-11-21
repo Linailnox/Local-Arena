@@ -1,28 +1,64 @@
-name: Release
+name: Build and release
 
 on:
   push:
     tags:
       - "v[0-9]+.[0-9]+.[0-9]+*"
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: release-${{ github.ref }}
-  cancel-in-progress: false
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # A tag run publishes a release; never cancel it halfway. Manual runs are
+  # validation/builds, so a newer run may replace an older one.
+  cancel-in-progress: ${{ github.event_name == 'workflow_dispatch' }}
 
 jobs:
+  version:
+    name: Resolve version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+      is_tag: ${{ steps.resolve.outputs.is_tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve version and trigger kind
+        id: resolve
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref_type }}" = "tag" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+            IS_TAG=true
+          else
+            TAG=$(git describe --tags --abbrev=0)
+            VERSION="${TAG#v}"
+            IS_TAG=false
+          fi
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$ ]]; then
+            echo "Resolved version is not SemVer: $VERSION" >&2
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "is_tag=$IS_TAG" >> "$GITHUB_OUTPUT"
+
   panel:
     name: Panel bundle (${{ matrix.os }})
+    needs: version
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: windows-latest
             bundles: nsis
+            artifact: windows
           - os: ubuntu-latest
             bundles: appimage,deb
+            artifact: linux
     runs-on: ${{ matrix.os }}
     env:
       CARGO_TERM_COLOR: always
@@ -57,10 +93,17 @@ jobs:
         working-directory: Panel
         run: bun install --frozen-lockfile
 
-      # tauri-action creates the release on the first matrix leg and updates it
-      # on the next; uploadUpdaterJson merges the existing latest.json platforms
-      # map before adding this leg's entry.
-      - uses: tauri-apps/tauri-action@v1
+      - name: Frontend gates
+        working-directory: Panel
+        run: |
+          bun run test:stickers
+          bun run test:install-gate
+
+      # Tag runs create/update the GitHub Release, sign the bundles and publish
+      # latest.json plus the per-platform updater signatures.
+      - name: Build, sign and publish
+        if: needs.version.outputs.is_tag == 'true'
+        uses: tauri-apps/tauri-action@v1
         with:
           projectPath: Panel
           tauriScript: bun tauri
@@ -75,17 +118,42 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
+      # Manual runs build and sign the same bundles but publish nothing.
+      - name: Build and sign
+        if: needs.version.outputs.is_tag != 'true'
+        uses: tauri-apps/tauri-action@v1
+        with:
+          projectPath: Panel
+          tauriScript: bun tauri
+          uploadUpdaterJson: false
+          args: --bundles ${{ matrix.bundles }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+      - name: Upload Panel artifacts
+        if: needs.version.outputs.is_tag != 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: LocalArena-panel-${{ needs.version.outputs.version }}-${{ matrix.artifact }}
+          path: Panel/src-tauri/target/release/bundle/**/*
+          archive: false
+          if-no-files-found: error
+
   plugins:
     name: Plugin bundle (${{ matrix.os }})
-    needs: panel
+    needs: [version, panel]
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: windows-latest
             linux: false
+            artifact: windows
           - os: ubuntu-latest
             linux: true
+            artifact: linux
     runs-on: ${{ matrix.os }}
     env:
       CARGO_TERM_COLOR: always
@@ -101,19 +169,15 @@ jobs:
             10.0.x
             8.0.x
 
-      - name: Prepare build hooks
-        shell: pwsh
-        run: 'Set-Content -Path .local-build.ps1 -Value ''$DotNet = (Get-Command dotnet).Source'''
-
       - name: Build and package plugin bundle
         shell: pwsh
         run: |
-          $version = "${{ github.ref_name }}".TrimStart("v")
-          $arguments = @{ ReleaseVersion = $version }
+          $arguments = @{ ReleaseVersion = "${{ needs.version.outputs.version }}" }
           if ("${{ matrix.linux }}" -eq "true") { $arguments.Linux = $true }
           ./scripts/package.ps1 @arguments
 
       - name: Upload plugin bundle to the release
+        if: needs.version.outputs.is_tag == 'true'
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -122,12 +186,22 @@ jobs:
           if (-not $pluginZip) { throw "Plugin bundle was not produced." }
           gh release upload "${{ github.ref_name }}" $pluginZip.FullName --clobber
 
+      - name: Upload plugin artifact
+        if: needs.version.outputs.is_tag != 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: LocalArena-plugin-${{ needs.version.outputs.version }}-${{ matrix.artifact }}
+          path: artifacts/LocalArena-plugin-*.zip
+          archive: false
+          if-no-files-found: error
+
   checksums:
     name: Checksums
-    needs: [panel, plugins]
+    needs: [version, panel, plugins]
     runs-on: ubuntu-latest
     steps:
-      - name: Collect release assets
+      - name: Checksums (release)
+        if: needs.version.outputs.is_tag == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -135,5 +209,25 @@ jobs:
           gh release download "${{ github.ref_name }}" --dir release --clobber
           cd release
           rm -f SHA256SUMS.txt
-          sha256sum * > SHA256SUMS.txt
+          find . -type f ! -name SHA256SUMS.txt -printf '%P\n' | sort | xargs sha256sum > SHA256SUMS.txt
           gh release upload "${{ github.ref_name }}" SHA256SUMS.txt --clobber
+
+      - name: Checksums (workflow artifacts)
+        if: needs.version.outputs.is_tag != 'true'
+        uses: actions/download-artifact@v8
+        with:
+          path: release
+
+      - name: Write checksums for workflow artifacts
+        if: needs.version.outputs.is_tag != 'true'
+        run: |
+          cd release
+          find . -type f ! -name SHA256SUMS.txt -printf '%P\n' | sort | xargs sha256sum > SHA256SUMS.txt
+
+      - name: Upload checksums
+        if: needs.version.outputs.is_tag != 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: SHA256SUMS-${{ needs.version.outputs.version }}
+          path: release/SHA256SUMS.txt
+          archive: false

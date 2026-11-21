@@ -61,9 +61,9 @@ $localBuildConfig = Join-Path $repo ".local-build.ps1"
 if ($env:GITHUB_ACTIONS -ne "true" -and -not (Test-Path -LiteralPath $localBuildConfig -PathType Leaf)) {
     Add-Failure "Local build configuration is missing; run the workspace setup before building."
 }
-$buildScript = Get-Content -LiteralPath (Join-Path $repo "scripts/build.ps1") -Raw
+$packageScript = Get-Content -LiteralPath (Join-Path $repo "scripts/package.ps1") -Raw
 $privateToolLabel = "portable" + "-toolchain"
-if ($buildScript.Contains($privateToolLabel, [StringComparison]::OrdinalIgnoreCase)) {
+if ($packageScript.Contains($privateToolLabel, [StringComparison]::OrdinalIgnoreCase)) {
     Add-Failure "Build scripts must not expose the local tool directory name."
 }
 

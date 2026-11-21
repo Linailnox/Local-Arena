@@ -13,17 +13,66 @@ if ($displayVersion -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*
     throw "ReleaseVersion must use SemVer (MAJOR.MINOR.PATCH) with an optional pre-release suffix."
 }
 $releaseTag = "v$displayVersion"
-$cache = Join-Path $repo ".cache\package"
-$stage = Join-Path $cache "plugin-stage"
+$cache = Join-Path $repo ".cache"
+$packageCache = Join-Path $cache "package"
+$stage = Join-Path $packageCache "plugin-stage"
 $outputDirectory = Join-Path $repo "artifacts"
 
-# Panel and plugin artifacts are built separately: tauri-action (or a local
-# `bun tauri build`) owns the Panel, this script owns the LA plugin bundle.
+$localBuildConfig = Join-Path $repo ".local-build.ps1"
+if (Test-Path -LiteralPath $localBuildConfig -PathType Leaf) {
+    . $localBuildConfig
+}
+
+function Resolve-ToolExecutable {
+    param([string]$Value, [string]$Label)
+    if (Test-Path -LiteralPath $Value -PathType Leaf) {
+        return (Resolve-Path -LiteralPath $Value).Path
+    }
+    $command = Get-Command $Value -ErrorAction SilentlyContinue
+    if ($command) { return $command.Source }
+    throw "Build tool $Label was not found: $Value"
+}
+
+function Invoke-Checked {
+    param([string]$FilePath, [string[]]$ArgumentList, [string]$WorkingDirectory = $repo)
+    Push-Location $WorkingDirectory
+    try {
+        & $FilePath @ArgumentList
+        if ($LASTEXITCODE -ne 0) {
+            throw "Command failed with exit code ${LASTEXITCODE}: $FilePath $($ArgumentList -join ' ')"
+        }
+    }
+    finally {
+        Pop-Location
+    }
+}
+
+# The Panel is built by tauri-action (CI) or `bun tauri build` (local). This
+# script owns the LA plugin bundle and its dotnet builds.
 if (-not $SkipBuild) {
-    $buildArguments = @{ PluginsOnly = $true; Linux = $Linux }
-    if ($DotNet) { $buildArguments.DotNet = $DotNet }
-    & (Join-Path $PSScriptRoot "build.ps1") @buildArguments
-    if ($LASTEXITCODE -ne 0) { throw "Plugin build failed." }
+    if (-not $DotNet) { $DotNet = "dotnet" }
+    $DotNet = Resolve-ToolExecutable $DotNet "dotnet"
+    New-Item -ItemType Directory -Path $cache -Force | Out-Null
+    $env:DOTNET_CLI_HOME = Join-Path $cache "dotnet-home"
+    $env:DOTNET_ROLL_FORWARD = "Major"
+    $env:NUGET_HTTP_CACHE_PATH = Join-Path $cache "nuget\http"
+    $env:NUGET_PACKAGES = Join-Path $cache "nuget\packages"
+
+    $pluginProjects = @(
+        @{ Path = "addons\counterstrikesharp\plugins\TeamLineupInjector\TeamLineupInjector.csproj"; Properties = @() },
+        @{ Path = "addons\counterstrikesharp\plugins\PlusMatchCoordinator\PlusMatchCoordinator.csproj"; Properties = @() }
+    )
+    foreach ($project in $pluginProjects) {
+        Invoke-Checked $DotNet (@("build", $project.Path, "-c", "Release", "--nologo") + $project.Properties)
+    }
+    Invoke-Checked $DotNet @("publish", "addons\counterstrikesharp\plugins\OfflineMatchTelemetry\OfflineMatchTelemetry.csproj", "-c", "Release", "--nologo", "--self-contained", "false", "-o", (Join-Path $repo "addons\counterstrikesharp\plugins\OfflineMatchTelemetry\bin\Release\net8.0"))
+    $omtBuild = Join-Path $repo "addons\counterstrikesharp\plugins\OfflineMatchTelemetry\bin\Release\net8.0"
+    $sqliteNative = Join-Path $omtBuild "runtimes\win-x64\native\e_sqlite3.dll"
+    if (Test-Path -LiteralPath $sqliteNative) { Copy-Item -LiteralPath $sqliteNative -Destination $omtBuild -Force }
+    Invoke-Checked $DotNet @(
+        "run", "--project", "addons\counterstrikesharp\shared\MatchCore.Tests\MatchCore.Tests.csproj",
+        "-c", "Release", "--nologo"
+    )
 }
 
 if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force }
