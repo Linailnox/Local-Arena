@@ -44,7 +44,7 @@
       "endpoints": [
         "https://github.com/Linailnox/Local-Arena/releases/latest/download/latest.json"
       ],
-      "pubkey": "REPLACE_WITH_TAURI_SIGNER_PUBLIC_KEY"
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDg0NzNGMUNBNjk0OUYzMUEKUldRYTgwbHB5dkZ6aEhteElOaVNlSnlsSVM1RENWNzgyRWZHQjhzQUFEbVlMdGxmbWRlTkJDVHMK"
     }
   }
 }
