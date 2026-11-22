@@ -5,6 +5,11 @@ on:
     tags:
       - "v[0-9]+.[0-9]+.[0-9]+*"
   workflow_dispatch:
+    inputs:
+      upload_release:
+        description: "Upload this manual build to the v<latest tag> GitHub Release"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -21,7 +26,9 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.resolve.outputs.version }}
+      tag: ${{ steps.resolve.outputs.tag }}
       is_tag: ${{ steps.resolve.outputs.is_tag }}
+      prerelease: ${{ steps.resolve.outputs.prerelease }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -44,7 +51,13 @@ jobs:
             exit 1
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
           echo "is_tag=$IS_TAG" >> "$GITHUB_OUTPUT"
+          if [[ "$VERSION" == *-* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
 
   panel:
     name: Panel bundle (${{ matrix.os }})
@@ -99,18 +112,18 @@ jobs:
           bun run test:stickers
           bun run test:install-gate
 
-      # Tag runs create/update the GitHub Release, sign the bundles and publish
-      # latest.json plus the per-platform updater signatures.
+      # One step for every trigger: tag pushes always publish, manual runs
+      # publish only when upload_release is checked. An empty tagName makes
+      # tauri-action build and sign without touching a Release.
       - name: Build, sign and publish
-        if: needs.version.outputs.is_tag == 'true'
         uses: tauri-apps/tauri-action@v1
         with:
           projectPath: Panel
           tauriScript: bun tauri
-          tagName: ${{ github.ref_name }}
-          releaseName: Local Arena ${{ github.ref_name }}
-          prerelease: ${{ contains(github.ref_name, '-') }}
-          uploadUpdaterJson: true
+          tagName: ${{ (needs.version.outputs.is_tag == 'true' || inputs.upload_release) && needs.version.outputs.tag || '' }}
+          releaseName: ${{ (needs.version.outputs.is_tag == 'true' || inputs.upload_release) && format('Local Arena {0}', needs.version.outputs.tag) || '' }}
+          prerelease: ${{ needs.version.outputs.prerelease }}
+          uploadUpdaterJson: ${{ needs.version.outputs.is_tag == 'true' || inputs.upload_release }}
           updaterJsonPreferNsis: true
           args: --bundles ${{ matrix.bundles }}
         env:
@@ -118,22 +131,8 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
-      # Manual runs build and sign the same bundles but publish nothing.
-      - name: Build and sign
-        if: needs.version.outputs.is_tag != 'true'
-        uses: tauri-apps/tauri-action@v1
-        with:
-          projectPath: Panel
-          tauriScript: bun tauri
-          uploadUpdaterJson: false
-          args: --bundles ${{ matrix.bundles }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-
       - name: Upload Panel artifacts
-        if: needs.version.outputs.is_tag != 'true'
+        if: needs.version.outputs.is_tag != 'true' && inputs.upload_release != true
         uses: actions/upload-artifact@v7
         with:
           name: LocalArena-panel-${{ needs.version.outputs.version }}-${{ matrix.artifact }}
@@ -177,17 +176,17 @@ jobs:
           ./scripts/package.ps1 @arguments
 
       - name: Upload plugin bundle to the release
-        if: needs.version.outputs.is_tag == 'true'
+        if: needs.version.outputs.is_tag == 'true' || inputs.upload_release == true
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $pluginZip = Get-ChildItem artifacts/LocalArena-plugin-*.zip | Select-Object -First 1
           if (-not $pluginZip) { throw "Plugin bundle was not produced." }
-          gh release upload "${{ github.ref_name }}" $pluginZip.FullName --clobber
+          gh release upload "${{ needs.version.outputs.tag }}" $pluginZip.FullName --clobber
 
       - name: Upload plugin artifact
-        if: needs.version.outputs.is_tag != 'true'
+        if: needs.version.outputs.is_tag != 'true' && inputs.upload_release != true
         uses: actions/upload-artifact@v7
         with:
           name: LocalArena-plugin-${{ needs.version.outputs.version }}-${{ matrix.artifact }}
@@ -201,31 +200,31 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checksums (release)
-        if: needs.version.outputs.is_tag == 'true'
+        if: needs.version.outputs.is_tag == 'true' || inputs.upload_release == true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir release
-          gh release download "${{ github.ref_name }}" --dir release --clobber
+          gh release download "${{ needs.version.outputs.tag }}" --dir release --clobber
           cd release
           rm -f SHA256SUMS.txt
           find . -type f ! -name SHA256SUMS.txt -printf '%P\n' | sort | xargs sha256sum > SHA256SUMS.txt
-          gh release upload "${{ github.ref_name }}" SHA256SUMS.txt --clobber
+          gh release upload "${{ needs.version.outputs.tag }}" SHA256SUMS.txt --clobber
 
       - name: Checksums (workflow artifacts)
-        if: needs.version.outputs.is_tag != 'true'
+        if: needs.version.outputs.is_tag != 'true' && inputs.upload_release != true
         uses: actions/download-artifact@v8
         with:
           path: release
 
       - name: Write checksums for workflow artifacts
-        if: needs.version.outputs.is_tag != 'true'
+        if: needs.version.outputs.is_tag != 'true' && inputs.upload_release != true
         run: |
           cd release
           find . -type f ! -name SHA256SUMS.txt -printf '%P\n' | sort | xargs sha256sum > SHA256SUMS.txt
 
       - name: Upload checksums
-        if: needs.version.outputs.is_tag != 'true'
+        if: needs.version.outputs.is_tag != 'true' && inputs.upload_release != true
         uses: actions/upload-artifact@v7
         with:
           name: SHA256SUMS-${{ needs.version.outputs.version }}

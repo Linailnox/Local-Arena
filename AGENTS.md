@@ -113,7 +113,7 @@ node scripts/generate-sticker-catalog.mjs
 - `Panel/src/styles/fonts.css` is imported by nothing; `modern` font preset silently falls back to Segoe UI (known dead wire).
 - Debug inspector: no devtools feature — debug builds have it by default (`cd Panel && bunx tauri build --debug --no-bundle`).
 - `Panel/src/panels/TeamsSection.tsx` is an orphan (no importer) — dead code kept in tree.
-- CI: `release.yml` is the only workflow. Tag push `v*.*.*` builds signed NSIS/AppImage/deb bundles through `tauri-action`, creates the GitHub Release, publishes `latest.json` and uploads `LocalArena-plugin-<tag>-<os>.zip` plus `SHA256SUMS.txt`; `workflow_dispatch` builds the same signed bundles and plugin zips as workflow artifacts, without a Release or `latest.json`.
+- CI: `release.yml` is the only workflow. Tag push `v*.*.*` builds signed NSIS/AppImage/deb bundles through `tauri-action`, creates the GitHub Release, publishes `latest.json` and uploads `LocalArena-plugin-<tag>-<os>.zip` plus `SHA256SUMS.txt`; `workflow_dispatch` builds the same signed bundles and plugin zips as workflow artifacts by default, or publishes them to the `v<latest tag>` release when `upload_release` is checked.
 - OfflineMatchTelemetry (net8 + Microsoft.Data.Sqlite) ships its `libe_sqlite3.so` via `package.ps1 -Linux`; OMT settles at the winner panel (`_matchSettled`, OfflineMatchTelemetry.cs:545) — once settled nothing may append to the ledger.
 
 ## Agent skills
