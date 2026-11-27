@@ -24,7 +24,7 @@ bun install --frozen-lockfile --cwd Panel
 bun run --cwd Panel build
 cd Panel; bun tauri build --bundles nsis   # Windows host; CI uses tauri-action
 D:\dotnet-sdk-10\dotnet.exe build addons\counterstrikesharp\plugins\BotHiderImpl\BotHiderImpl.csproj -c Release
-.\scripts\package.ps1 -DotNet D:\dotnet-sdk-10\dotnet.exe
+.\scripts\package.ps1
 ```
 
 The Panel bundle is produced by the Tauri CLI locally or by `tauri-action` in CI; `scripts/` no longer builds it.

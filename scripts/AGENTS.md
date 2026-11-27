@@ -21,7 +21,7 @@ Pipeline map — which script does what:
 ## CONVENTIONS
 - `package.ps1` throws on the first failure; it has no workspace-gate step anymore.
 - Version duplication — bump together: `package.ps1:5` `$ReleaseVersion` and the `release.yml` tag filter; format is SemVer `^\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?$`. The workflow does not rewrite versions; update the files before tagging.
-- `package.ps1` resolves `dotnet` from `-DotNet` or PATH; there is no local build config file.
+- `package.ps1` uses the system `dotnet` from PATH and fails clearly when it is missing; there is no local build config file or `-DotNet` override.
 - Generators pin upstream commits as literals (ByMykel `342d496`, SteamTracking `88d5684`, cosmetic API `c3953df`) and emit sha256 into `stickerCatalog.source.json`; no script gate verifies them anymore.
 
 ## ANTI-PATTERNS

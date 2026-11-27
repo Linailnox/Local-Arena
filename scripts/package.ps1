@@ -1,6 +1,5 @@
 [CmdletBinding()]
 param(
-    [string]$DotNet,
     [string]$ReleaseVersion = "1.5.0",
     [switch]$Linux,
     [switch]$SkipBuild
@@ -17,16 +16,6 @@ $cache = Join-Path $repo ".cache"
 $packageCache = Join-Path $cache "package"
 $stage = Join-Path $packageCache "plugin-stage"
 $outputDirectory = Join-Path $repo "artifacts"
-
-function Resolve-ToolExecutable {
-    param([string]$Value, [string]$Label)
-    if (Test-Path -LiteralPath $Value -PathType Leaf) {
-        return (Resolve-Path -LiteralPath $Value).Path
-    }
-    $command = Get-Command $Value -ErrorAction SilentlyContinue
-    if ($command) { return $command.Source }
-    throw "Build tool $Label was not found: $Value"
-}
 
 function Invoke-Checked {
     param([string]$FilePath, [string[]]$ArgumentList, [string]$WorkingDirectory = $repo)
@@ -45,8 +34,9 @@ function Invoke-Checked {
 # The Panel is built by tauri-action (CI) or `bun tauri build` (local). This
 # script owns the LA plugin bundle and its dotnet builds.
 if (-not $SkipBuild) {
-    if (-not $DotNet) { $DotNet = "dotnet" }
-    $DotNet = Resolve-ToolExecutable $DotNet "dotnet"
+    $dotnetCommand = Get-Command dotnet -ErrorAction SilentlyContinue
+    if (-not $dotnetCommand) { throw "dotnet was not found on PATH" }
+    $dotnet = $dotnetCommand.Source
     New-Item -ItemType Directory -Path $cache -Force | Out-Null
     $env:DOTNET_CLI_HOME = Join-Path $cache "dotnet-home"
     $env:DOTNET_ROLL_FORWARD = "Major"
@@ -58,13 +48,13 @@ if (-not $SkipBuild) {
         @{ Path = "addons/counterstrikesharp/plugins/PlusMatchCoordinator/PlusMatchCoordinator.csproj"; Properties = @() }
     )
     foreach ($project in $pluginProjects) {
-        Invoke-Checked $DotNet (@("build", $project.Path, "-c", "Release", "--nologo") + $project.Properties)
+        Invoke-Checked $dotnet (@("build", $project.Path, "-c", "Release", "--nologo") + $project.Properties)
     }
-    Invoke-Checked $DotNet @("publish", "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/OfflineMatchTelemetry.csproj", "-c", "Release", "--nologo", "--self-contained", "false", "-o", (Join-Path $repo "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/bin/Release/net8.0"))
+    Invoke-Checked $dotnet @("publish", "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/OfflineMatchTelemetry.csproj", "-c", "Release", "--nologo", "--self-contained", "false", "-o", (Join-Path $repo "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/bin/Release/net8.0"))
     $omtBuild = Join-Path $repo "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/bin/Release/net8.0"
     $sqliteNative = Join-Path $omtBuild "runtimes/win-x64/native/e_sqlite3.dll"
     if (Test-Path -LiteralPath $sqliteNative) { Copy-Item -LiteralPath $sqliteNative -Destination $omtBuild -Force }
-    Invoke-Checked $DotNet @(
+    Invoke-Checked $dotnet @(
         "run", "--project", "addons/counterstrikesharp/shared/MatchCore.Tests/MatchCore.Tests.csproj",
         "-c", "Release", "--nologo"
     )
