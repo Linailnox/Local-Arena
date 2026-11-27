@@ -55,22 +55,22 @@ if (-not $SkipBuild) {
     New-Item -ItemType Directory -Path $cache -Force | Out-Null
     $env:DOTNET_CLI_HOME = Join-Path $cache "dotnet-home"
     $env:DOTNET_ROLL_FORWARD = "Major"
-    $env:NUGET_HTTP_CACHE_PATH = Join-Path $cache "nuget\http"
-    $env:NUGET_PACKAGES = Join-Path $cache "nuget\packages"
+    $env:NUGET_HTTP_CACHE_PATH = Join-Path $cache "nuget/http"
+    $env:NUGET_PACKAGES = Join-Path $cache "nuget/packages"
 
     $pluginProjects = @(
-        @{ Path = "addons\counterstrikesharp\plugins\TeamLineupInjector\TeamLineupInjector.csproj"; Properties = @() },
-        @{ Path = "addons\counterstrikesharp\plugins\PlusMatchCoordinator\PlusMatchCoordinator.csproj"; Properties = @() }
+        @{ Path = "addons/counterstrikesharp/plugins/TeamLineupInjector/TeamLineupInjector.csproj"; Properties = @() },
+        @{ Path = "addons/counterstrikesharp/plugins/PlusMatchCoordinator/PlusMatchCoordinator.csproj"; Properties = @() }
     )
     foreach ($project in $pluginProjects) {
         Invoke-Checked $DotNet (@("build", $project.Path, "-c", "Release", "--nologo") + $project.Properties)
     }
-    Invoke-Checked $DotNet @("publish", "addons\counterstrikesharp\plugins\OfflineMatchTelemetry\OfflineMatchTelemetry.csproj", "-c", "Release", "--nologo", "--self-contained", "false", "-o", (Join-Path $repo "addons\counterstrikesharp\plugins\OfflineMatchTelemetry\bin\Release\net8.0"))
-    $omtBuild = Join-Path $repo "addons\counterstrikesharp\plugins\OfflineMatchTelemetry\bin\Release\net8.0"
-    $sqliteNative = Join-Path $omtBuild "runtimes\win-x64\native\e_sqlite3.dll"
+    Invoke-Checked $DotNet @("publish", "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/OfflineMatchTelemetry.csproj", "-c", "Release", "--nologo", "--self-contained", "false", "-o", (Join-Path $repo "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/bin/Release/net8.0"))
+    $omtBuild = Join-Path $repo "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/bin/Release/net8.0"
+    $sqliteNative = Join-Path $omtBuild "runtimes/win-x64/native/e_sqlite3.dll"
     if (Test-Path -LiteralPath $sqliteNative) { Copy-Item -LiteralPath $sqliteNative -Destination $omtBuild -Force }
     Invoke-Checked $DotNet @(
-        "run", "--project", "addons\counterstrikesharp\shared\MatchCore.Tests\MatchCore.Tests.csproj",
+        "run", "--project", "addons/counterstrikesharp/shared/MatchCore.Tests/MatchCore.Tests.csproj",
         "-c", "Release", "--nologo"
     )
 }
@@ -95,14 +95,14 @@ $pluginBuilds = @(
     @{ Name = "TeamLineupInjector"; Framework = "net10.0" }
 )
 foreach ($plugin in $pluginBuilds) {
-    $build = Join-Path $repo "addons\counterstrikesharp\plugins\$($plugin.Name)\bin\Release\$($plugin.Framework)"
+    $build = Join-Path $repo "addons/counterstrikesharp/plugins/$($plugin.Name)/bin/Release/$($plugin.Framework)"
     if (-not (Test-Path -LiteralPath (Join-Path $build "$($plugin.Name).dll"))) {
         throw "Expected plugin build output was not produced: $build"
     }
-    Copy-Tree $build (Join-Path $pluginPayload "addons\counterstrikesharp\plugins\$($plugin.Name)")
+    Copy-Tree $build (Join-Path $pluginPayload "addons/counterstrikesharp/plugins/$($plugin.Name)")
 }
 
-$telemetryStage = Join-Path $repo "addons\counterstrikesharp\plugins\OfflineMatchTelemetry\stage\game\csgo\addons\counterstrikesharp\plugins\OfflineMatchTelemetry"
+$telemetryStage = Join-Path $repo "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/stage/game/csgo/addons/counterstrikesharp/plugins/OfflineMatchTelemetry"
 if (-not (Test-Path -LiteralPath $telemetryStage)) {
     throw "OfflineMatchTelemetry staged deployment was not produced: $telemetryStage"
 }
@@ -136,16 +136,16 @@ $telemetryDifference = @(Compare-Object ($telemetryExpectedFiles | Sort-Object) 
 if ($telemetryDifference.Count -gt 0) {
     throw "OfflineMatchTelemetry staged deployment does not match the release allowlist."
 }
-$omtPayloadDir = Join-Path $pluginPayload "addons\counterstrikesharp\plugins\OfflineMatchTelemetry"
+$omtPayloadDir = Join-Path $pluginPayload "addons/counterstrikesharp/plugins/OfflineMatchTelemetry"
 Copy-Tree $telemetryStage $omtPayloadDir
 if ($Linux) {
     Remove-Item -LiteralPath (Join-Path $omtPayloadDir "e_sqlite3.dll") -Force -ErrorAction SilentlyContinue
     $linuxSqliteCandidates = @(
-        (Join-Path $repo "addons\counterstrikesharp\plugins\OfflineMatchTelemetry\bin\Release\net8.0\runtimes\linux-x64\native\libe_sqlite3.so")
-    ) + @(Get-ChildItem -Path (Join-Path $cache "nuget\packages") -Directory -Filter "sqlitepclraw.bundle_e_sqlite3*" -ErrorAction SilentlyContinue |
-        ForEach-Object { Join-Path $_.FullName "runtimes\linux-x64\native\libe_sqlite3.so" }) +
-    @(Get-ChildItem -Path (Join-Path $HOME ".nuget\packages") -Directory -Filter "sqlitepclraw.bundle_e_sqlite3*" -ErrorAction SilentlyContinue |
-        ForEach-Object { Join-Path $_.FullName "runtimes\linux-x64\native\libe_sqlite3.so" })
+        (Join-Path $repo "addons/counterstrikesharp/plugins/OfflineMatchTelemetry/bin/Release/net8.0/runtimes/linux-x64/native/libe_sqlite3.so")
+    ) + @(Get-ChildItem -Path (Join-Path $cache "nuget/packages") -Directory -Filter "sqlitepclraw.bundle_e_sqlite3*" -ErrorAction SilentlyContinue |
+        ForEach-Object { Join-Path $_.FullName "runtimes/linux-x64/native/libe_sqlite3.so" }) +
+    @(Get-ChildItem -Path (Join-Path $HOME ".nuget/packages") -Directory -Filter "sqlitepclraw.bundle_e_sqlite3*" -ErrorAction SilentlyContinue |
+        ForEach-Object { Join-Path $_.FullName "runtimes/linux-x64/native/libe_sqlite3.so" })
     $linuxSqlite = $linuxSqliteCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
     if (-not $linuxSqlite) {
         throw "linux-x64 libe_sqlite3.so was not found in any SQLitePCLRaw bundle package cache."
@@ -154,7 +154,7 @@ if ($Linux) {
 }
 
 # OpenRating release gate: the calibrated model ships inside PlusMatchCoordinator.
-$openRatingModelPath = Join-Path $repo "addons\counterstrikesharp\shared\MatchCore\open-rating-3.0-proxy-v1.json"
+$openRatingModelPath = Join-Path $repo "addons/counterstrikesharp/shared/MatchCore/open-rating-3.0-proxy-v1.json"
 $openRatingModel = Get-Content -LiteralPath $openRatingModelPath -Raw | ConvertFrom-Json
 if (-not $openRatingModel.release_gate.passed) {
     throw "OpenRating calibration release gate has not passed; packaging an uncalibrated model is prohibited."
@@ -185,15 +185,15 @@ foreach ($weightName in $openRatingWeightNames) {
 if (-not [double]::IsFinite([double]$openRatingModel.weights.intercept)) {
     throw "OpenRating intercept must be finite."
 }
-Copy-Item -LiteralPath $openRatingModelPath -Destination (Join-Path $pluginPayload "addons\counterstrikesharp\plugins\PlusMatchCoordinator\open-rating-3.0-proxy-v1.json") -Force
-$legacyRatingModel = Join-Path $pluginPayload "addons\counterstrikesharp\plugins\PlusMatchCoordinator\rating-plus-3.0-proxy-v1.json"
+Copy-Item -LiteralPath $openRatingModelPath -Destination (Join-Path $pluginPayload "addons/counterstrikesharp/plugins/PlusMatchCoordinator/open-rating-3.0-proxy-v1.json") -Force
+$legacyRatingModel = Join-Path $pluginPayload "addons/counterstrikesharp/plugins/PlusMatchCoordinator/rating-plus-3.0-proxy-v1.json"
 if (Test-Path -LiteralPath $legacyRatingModel) {
     Remove-Item -LiteralPath $legacyRatingModel -Force
 }
 
 # Bot cfg overlays and the old Panel-side botprofile.db copies are no longer part
 # of the plugin bundle; drop stale build-output directories from earlier builds.
-$staleProfiles = Join-Path $pluginPayload "addons\counterstrikesharp\plugins\PlusMatchCoordinator\profiles"
+$staleProfiles = Join-Path $pluginPayload "addons/counterstrikesharp/plugins/PlusMatchCoordinator/profiles"
 if (Test-Path -LiteralPath $staleProfiles) { Remove-Item -LiteralPath $staleProfiles -Recurse -Force }
 
 $manifestEntries = foreach ($file in Get-ChildItem -LiteralPath $pluginPayload -File -Recurse) {
