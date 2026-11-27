@@ -57,8 +57,8 @@ Local-Arena/
 | `component_registry` | mod | `Panel/src-tauri/src/component_registry.rs` | 3 descriptors | compiled-in component set (upstream / la_plugins / inventory_simulator); `check_requirements` preflight — LA bundle requires the upstream `BotHiderApi.dll` |
 | `release_source` | mod | `Panel/src-tauri/src/release_source.rs` | `inventory_plugin.rs` | digest-required GitHub release resolution; trusted hosts only; `AssetSelector` |
 | `download` | mod | `Panel/src-tauri/src/download.rs` | update pipeline | shared streaming downloader: cache reuse, `.part` resume, progress + cancel, size/sha256 verify, atomic move |
-| `package.ps1` | script | `scripts/` | release | plugin-only packager: builds the LA bundle (3 plugins + 2 bot cfg overlays + plus-only manifest), runs the OpenRating gate and `-PluginBundleRoot` verification, writes `LocalArena-plugin-<tag>-<os>.zip` |
-| LA plugin bundle | artifact | `artifacts/LocalArena-plugin-<tag>-{windows,linux}.zip` | plugin channel, `-PluginBundleRoot` gate | same plus-only shape on both platforms (3 plugins + 2 bot cfg overlays + plus-only manifest); no upstream runtime, no Panel executable |
+| `package.ps1` | script | `scripts/` | release | plugin-only packager: builds the LA bundle (3 plugins + plus-only manifest), runs the OpenRating gate and `-PluginBundleRoot` verification, writes `LocalArena-plugin-<tag>-<os>.zip` |
+| LA plugin bundle | artifact | `artifacts/LocalArena-plugin-<tag>-{windows,linux}.zip` | plugin channel, `-PluginBundleRoot` gate | same plus-only shape on both platforms (3 plugins + plus-only manifest); no upstream runtime, no Panel executable |
 | `LaPluginBundleCard` | tsx | `Panel/src/components/LaPluginBundleCard.tsx` | `InstallationPage` | third of the three peer cards (upstream cache section / `InventoryPluginCard` / this one); `la_plugins` progress events, `install_la_plugin_bundle` command, `laBundle.*` i18n keys |
 
 ## CONVENTIONS

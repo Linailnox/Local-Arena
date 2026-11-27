@@ -136,9 +136,9 @@ Three components are published and installed separately, and each has its own ca
 | Local Arena plugin archive | This repository's releases, per platform | `LocalArena-plugin-<version>-windows.zip` and `LocalArena-plugin-<version>-linux.zip`, resolved from the release assets through the GitHub API and verified against the published SHA-256 digest |
 | InventorySimulator | [its own releases](https://github.com/ianlucas/cs2-css-inventory-simulator) | Third-party; never bundled, downloaded and installed on request from the Panel |
 
-The Linux archive is a Local Arena-only bundle: PlusMatchCoordinator, TeamLineupInjector and OfflineMatchTelemetry, the two bot cfg overlays (`cfg/my_bot_ffa_config.cfg`, `cfg/my_bot_normal_config.cfg`), and a `plus-payload-manifest.json` that lists only Local Arena-owned entries. It contains no upstream runtime, no `gameinfo.gi`, no `backup/` tree and no InventorySimulator, so it can be extracted over an existing manual install to update just Local Arena's plugins
+The Linux archive is a Local Arena-only bundle: PlusMatchCoordinator, TeamLineupInjector and OfflineMatchTelemetry, plus a `plus-payload-manifest.json` that lists only Local Arena-owned entries. It contains no upstream runtime, no `gameinfo.gi`, no `backup/` tree and no InventorySimulator, so it can be extracted over an existing manual install to update just Local Arena's plugins
 
-The Windows archive keeps the complete Local Arena payload — the three plugins, the two bot cfg overlays and the full `plus-payload-manifest.json` — but no upstream runtime: the upstream suite is downloaded separately by the Panel and merged with the Local Arena payload at install time
+The Windows archive keeps the complete Local Arena payload — the three plugins and the full `plus-payload-manifest.json` — but no upstream runtime: the upstream suite is downloaded separately by the Panel and merged with the Local Arena payload at install time
 
 Installing the plugin archive on its own requires the upstream suite: the Local Arena plugins link against `BotHiderApi.dll`, which only the upstream payload ships, and the Panel refuses the install with a preflight error when that file is missing
 
@@ -163,7 +163,7 @@ Download the AppImage (self-updating) or the deb package (manual updates) from t
 
 The three Local Arena plugins (PlusMatchCoordinator, TeamLineupInjector, OfflineMatchTelemetry) and their configuration are installed by the Panel; the upstream runtime and the plugin bundle are downloaded and verified separately
 
-To update only Local Arena's plugins, use the plugin card in the Panel; the bundle holds just the three plugins, the two bot cfg overlays, and a plus-only manifest, so it never overwrites the upstream runtime
+To update only Local Arena's plugins, use the plugin card in the Panel; the bundle holds just the three plugins and a plus-only manifest, so it never overwrites the upstream runtime
 
 Player cosmetics use [InventorySimulator](https://github.com/ianlucas/cs2-css-inventory-simulator), which is **not** bundled. Download `InventorySimulator-v<latest>.zip` from its releases page and extract it into `game/csgo` (it adds `addons/counterstrikesharp/plugins/InventorySimulator/` and `addons/counterstrikesharp/gamedata/inventory-simulator.json`). The Panel keeps the inventory in `.csbip/cosmetics/inventories.json` and points `invsim_file` at it from a managed block in `cfg/autoexec.cfg`: a valid file at the plugin's default path aborts plugin load at startup
 

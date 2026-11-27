@@ -334,8 +334,6 @@ $plusPayloadFiles = @(
     "addons/counterstrikesharp/plugins/PlusMatchCoordinator/match_catalog.json",
     "addons/counterstrikesharp/plugins/PlusMatchCoordinator/open-rating-3.0-proxy-v1.json",
     "addons/counterstrikesharp/plugins/TeamLineupInjector/TeamLineupInjector.dll",
-    "cfg/my_bot_ffa_config.cfg",
-    "cfg/my_bot_normal_config.cfg",
     "plus-payload-manifest.json"
 )
 # OfflineMatchTelemetry ships a fixed file set; the Linux build swaps the Windows

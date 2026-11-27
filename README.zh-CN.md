@@ -136,9 +136,9 @@ Local Arena 自身的包只有几 MB，约 73 MB 的上游运行时会在安装�
 | Local Arena 插件压缩包 | 本仓库的 release，按平台发布 | `LocalArena-plugin-<版本>-windows.zip` 与 `LocalArena-plugin-<版本>-linux.zip`，通过 GitHub API 从 release 资产解析，并用公布的 SHA-256 摘要校验 |
 | InventorySimulator | [它自己的 release](https://github.com/ianlucas/cs2-css-inventory-simulator) | 第三方插件，从不随包发布，由面板按需下载并安装 |
 
-Linux 压缩包是仅含 Local Arena 内容的插件包：PlusMatchCoordinator、TeamLineupInjector、OfflineMatchTelemetry 三个插件，两份人机 cfg 覆盖文件（`cfg/my_bot_ffa_config.cfg`、`cfg/my_bot_normal_config.cfg`），以及一份只列出 Local Arena 自有条目的 `plus-payload-manifest.json`。它不含上游运行时、不含 `gameinfo.gi`、不含 `backup/` 目录、也不含 InventorySimulator，因此可以直接解压覆盖到已有的手动安装上，只更新 Local Arena 自己的插件
+Linux 压缩包是仅含 Local Arena 内容的插件包：PlusMatchCoordinator、TeamLineupInjector、OfflineMatchTelemetry 三个插件，以及一份只列出 Local Arena 自有条目的 `plus-payload-manifest.json`。它不含上游运行时、不含 `gameinfo.gi`、不含 `backup/` 目录、也不含 InventorySimulator，因此可以直接解压覆盖到已有的手动安装上，只更新 Local Arena 自己的插件
 
-Windows 压缩包保留 Local Arena 的全部负载——三个插件、两份人机 cfg 覆盖文件与完整的 `plus-payload-manifest.json`——但不含上游运行时：上游套件由面板单独下载，并在安装时与 Local Arena 负载合并
+Windows 压缩包保留 Local Arena 的全部负载——三个插件与完整的 `plus-payload-manifest.json`——但不含上游运行时：上游套件由面板单独下载，并在安装时与 Local Arena 负载合并
 
 单独安装插件压缩包需要先有上游套件：Local Arena 插件链接的是 `BotHiderApi.dll`，该文件只由上游负载提供，缺失时面板会在预检阶段拒绝安装
 
@@ -163,7 +163,7 @@ Windows 压缩包保留 Local Arena 的全部负载——三个插件、两份�
 
 三个 Local Arena 独占插件（PlusMatchCoordinator、TeamLineupInjector、OfflineMatchTelemetry）及其配置由面板安装；上游运行时与插件包分别下载并校验
 
-只想更新 Local Arena 自己的插件时，使用面板中的插件卡片；该包只含三个插件、两份人机 cfg 覆盖文件和一份仅含 plus 条目的清单，不会覆盖上游运行时
+只想更新 Local Arena 自己的插件时，使用面板中的插件卡片；该包只含三个插件和一份仅含 plus 条目的清单，不会覆盖上游运行时
 
 玩家饰品使用 [InventorySimulator](https://github.com/ianlucas/cs2-css-inventory-simulator)，它**不随包发布**。请从其 Releases 下载 `InventorySimulator-v<版本>.zip` 并解压到 `game/csgo`（会得到 `addons/counterstrikesharp/plugins/InventorySimulator/` 与 `addons/counterstrikesharp/gamedata/inventory-simulator.json`）。面板把清单保存在 `.csbip/cosmetics/inventories.json`，并通过 `cfg/autoexec.cfg` 中的托管块把 `invsim_file` 指过去——启动时若默认路径存在合法文件，插件会加载失败
 

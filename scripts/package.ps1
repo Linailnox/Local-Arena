@@ -191,19 +191,10 @@ if (Test-Path -LiteralPath $legacyRatingModel) {
     Remove-Item -LiteralPath $legacyRatingModel -Force
 }
 
-# Bot cfg overlays are plus-owned and always restored unless the user edited them.
-$cfgDir = Join-Path $pluginPayload "cfg"
-New-Item -ItemType Directory -Path $cfgDir -Force | Out-Null
-foreach ($cfgName in @("my_bot_ffa_config.cfg", "my_bot_normal_config.cfg")) {
-    Copy-Item -LiteralPath (Join-Path $repo "cfg\$cfgName") -Destination (Join-Path $cfgDir $cfgName) -Force
-}
+# Bot cfg overlays are no longer part of the plugin bundle.
 
 $manifestEntries = foreach ($file in Get-ChildItem -LiteralPath $pluginPayload -File -Recurse) {
     $relative = [IO.Path]::GetRelativePath($pluginPayload, $file.FullName).Replace("\", "/")
-    $preserveConfig = $relative -in @(
-            "cfg/my_bot_ffa_config.cfg",
-            "cfg/my_bot_normal_config.cfg"
-        )
     [ordered]@{
         path = $relative
         size = $file.Length
@@ -211,10 +202,9 @@ $manifestEntries = foreach ($file in Get-ChildItem -LiteralPath $pluginPayload -
         component = if ($relative -like "addons/counterstrikesharp/plugins/*") {
             ($relative -split "/")[3]
         }
-        elseif ($relative -like "cfg/*") { "configuration" }
         else { "runtime" }
         ownership = "plus"
-        restore_policy = if ($preserveConfig) { "preserve-config" } else { "restore" }
+        restore_policy = "restore"
     }
 }
 $payloadManifest = [ordered]@{

@@ -12,9 +12,9 @@ Gate matrix — which script proves what:
 |------|--------|-------|
 | Plugin DLLs compile; MatchCore tests pass | `package.ps1` | dotnet build for TLI/PMC, `dotnet publish` for OMT, then `MatchCore.Tests` |
 | Repo layout / pins / source invariants | `verify-workspace.ps1` | no args = workspace gate |
-| Release shape, OpenRating gate | `package.ps1` | plugin-only bundle `LocalArena-plugin-<tag>-{windows,linux}.zip` (3 plugins + 2 bot cfg overlays + plus-only manifest), OpenRating gate, `-PluginBundleRoot` verification |
+| Release shape, OpenRating gate | `package.ps1` | plugin-only bundle `LocalArena-plugin-<tag>-{windows,linux}.zip` (3 plugins + plus-only manifest), OpenRating gate, `-PluginBundleRoot` verification |
 | Panel updater bundle + `latest.json` | `tauri-action` in `release.yml` | tauri-action builds/signs NSIS/AppImage/deb; tag runs create the release and merge the `latest.json` platform map |
-| LA-only plugin bundle shape | `verify-workspace.ps1 -PluginBundleRoot <dir> [-Linux]` | three plugins + two bot cfg overlays + plus-only manifest; forbids upstream paths, `gameinfo.gi`, `backup/`, InventorySimulator. `package.ps1` runs it on the staged tree before zipping |
+| LA-only plugin bundle shape | `verify-workspace.ps1 -PluginBundleRoot <dir> [-Linux]` | three plugins + plus-only manifest; forbids upstream paths, `gameinfo.gi`, `backup/`, InventorySimulator. `package.ps1` runs it on the staged tree before zipping |
 | Panel TS logic invariants | `test-sticker-editor.mjs`, `test-install-gate.mjs` | wired from `Panel/package.json`; also run by the release workflow |
 | Update-payload authenticity | Tauri updater key + `release_source.rs` | Panel bundles are signed by `tauri-action` and verified by `tauri-plugin-updater`; plugin archives use the GitHub asset digest |
 | Upstream pin | `dependencies.json` | single source; `upstream_package.rs` re-validates downloads |
