@@ -57,6 +57,8 @@ export const DICTS: Record<string, Partial18n> = {
     "stats.records": "{count} 条记录", "stats.died": "阵亡", "stats.winPercent": "胜率", "stats.you": "你", "stats.averageRating": "平均 Rating", "stats.performanceRadar": "表现雷达图",
     "match.team": "战队", "match.randomNote": "将从已安装的人机档案中抽取五名不重复的对手",
     "match.side": "起始阵营", "match.difficulty": "难度", "match.low": "低", "match.medium": "中", "match.high": "高",
+    "match.identityMode": "隐藏 BOT 标记", "match.identityModeDesc": "BotHider 以玩家身份显示 bot（Player 身份模式）",
+    "match.nameSource": "使用 bot_info 名字", "match.nameSourceDesc": "新 bot 的名字取自 addons/BotHider/bot_info.json，而不是 botprofile.db",
     "match.demo": "录制 Demo", "match.demoDesc": "默认关闭 GOTV，优先保证游戏流畅", "match.demoWarning": "GOTV 会在比赛期间增加 CPU 和内存开销，可能降低帧数或造成卡顿。仅在确实需要 Demo 时开启。", "match.rules": "规则", "match.overtime": "半场换边，平局进入 MR3 加时",
     "match.reasonDirectory": "请先选择并安装有效的 CS2 game/csgo 目录", "match.reasonRunning": "准备新比赛前请完整关闭 CS2",
     "match.reasonCatalog": "正在加载本地比赛目录", "match.reasonTeam": "请选择一支精选对手战队", "match.reasonLineup": "请先在“预设-开局阵容配置”中关闭“自动开局阵容”，再开始匹配", "match.openLineup": "前往开局阵容设置", "match.openInstallation": "打开安装页面",

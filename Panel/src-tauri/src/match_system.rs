@@ -59,7 +59,9 @@ pub enum MatchState { Prepared, Launching, Loading, Warmup, Live, Finished, Inte
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum PlayerKind { Human, Bot }
+pub enum PlayerKind { Human, Bot, RandomBot }
+
+fn default_true() -> bool { true }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MatchPlayer {
@@ -82,6 +84,10 @@ pub struct MatchRequest {
     pub opponent_team_id: Option<String>,
     pub opponent_name: String,
     pub record_demo: bool,
+    #[serde(default = "default_true")]
+    pub identity_mode_player: bool,
+    #[serde(default = "default_true")]
+    pub use_bot_info_names: bool,
     pub player_team: Vec<MatchPlayer>,
     pub opponent_team: Vec<MatchPlayer>,
     pub result_path: String,
@@ -105,6 +111,10 @@ pub struct PrepareMatchInput {
     pub opponent_kind: String,
     pub opponent_team_id: Option<String>,
     pub record_demo: bool,
+    #[serde(default = "default_true")]
+    pub identity_mode_player: bool,
+    #[serde(default = "default_true")]
+    pub use_bot_info_names: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -215,6 +225,7 @@ fn validate_segment(value: &str, label: &str) -> Result<()> {
     Ok(())
 }
 
+#[allow(dead_code)]
 fn profile_names(csgo: &Path, difficulty: &str) -> Result<Vec<String>> {
     let path = [
         csgo.join("addons/counterstrikesharp/plugins/PlusMatchCoordinator/profiles").join(difficulty).join("botprofile.db"),
@@ -235,6 +246,7 @@ fn profile_names(csgo: &Path, difficulty: &str) -> Result<Vec<String>> {
     Ok(names)
 }
 
+#[allow(dead_code)]
 fn identity_names(csgo: &Path) -> Result<HashSet<String>> {
     let path = csgo.join("addons/BotHider/bot_info.json");
     let source = fs::read_to_string(&path)
@@ -258,12 +270,14 @@ fn identity_names(csgo: &Path) -> Result<HashSet<String>> {
     Ok(names)
 }
 
+#[allow(dead_code)]
 fn profiles_with_identities(profiles: Vec<String>, identities: &HashSet<String>) -> Vec<String> {
     profiles.into_iter()
         .filter(|name| identities.contains(&name.to_ascii_lowercase()))
         .collect()
 }
 
+#[allow(dead_code)]
 fn validate_identities(identities: &HashSet<String>, names: impl IntoIterator<Item = String>) -> Result<()> {
     let missing = names.into_iter()
         .filter(|name| !identities.contains(&name.to_ascii_lowercase()))
@@ -272,6 +286,7 @@ fn validate_identities(identities: &HashSet<String>, names: impl IntoIterator<It
     Ok(())
 }
 
+#[allow(dead_code)]
 fn shuffled_unique(pool: &[String], count: usize, excluded: &HashSet<String>, seed: u64) -> Result<Vec<String>> {
     let mut seen = HashSet::new();
     let mut values = pool.iter().filter(|name| {
@@ -304,20 +319,11 @@ pub fn prepare(csgo: &Path, payload_root: &Path, input: PrepareMatchInput) -> Re
 
     let id = session_id();
     let seed = now() ^ id.bytes().fold(0u64, |value, byte| value.wrapping_mul(131).wrapping_add(byte as u64));
-    let identities = identity_names(csgo)?;
-    let profiles = profiles_with_identities(
-        profile_names(csgo, &title_case(&input.difficulty))?,
-        &identities,
-    );
     let selected_team = if input.opponent_kind == "featured_team" {
         let team_id = input.opponent_team_id.as_deref().ok_or_else(|| AppError::invalid("Select a featured opponent team"))?;
         Some(catalog.teams.iter().find(|team| team.id == team_id).cloned()
             .ok_or_else(|| AppError::invalid("The selected opponent team is not in the frozen catalog"))?)
     } else { None };
-    let opponent_names = if let Some(team) = &selected_team { team.players.clone() } else { shuffled_unique(&profiles, 5, &HashSet::new(), seed)? };
-    let excluded = opponent_names.iter().map(|name| name.to_ascii_lowercase()).collect::<HashSet<_>>();
-    let teammate_names = shuffled_unique(&profiles, 4, &excluded, seed.rotate_left(17))?;
-    validate_identities(&identities, opponent_names.iter().chain(teammate_names.iter()).cloned())?;
     let resolved_side = match input.player_side.as_str() { "random" => if seed & 1 == 0 { "ct" } else { "t" }, side => side };
     let directory = match_root(csgo).join(&id);
     let result_path = directory.join("result.json");
@@ -325,15 +331,36 @@ pub fn prepare(csgo: &Path, payload_root: &Path, input: PrepareMatchInput) -> Re
     fs::create_dir_all(&directory).map_err(AppError::transaction_io)?;
     fs::create_dir_all(demo_path.parent().unwrap()).map_err(AppError::transaction_io)?;
 
+    // Random slots are filled by the engine with bare `bot_add_ct/t`; the
+    // Panel only supplies the count. Featured opponents keep their catalog
+    // names; teammates are always random.
+    let random_bot = |prefix: &str, index: usize| MatchPlayer {
+        id: format!("{prefix}-{index}"),
+        name: String::new(),
+        kind: PlayerKind::RandomBot,
+        is_local_player: false,
+    };
     let mut player_team = vec![MatchPlayer { id: "player-local".into(), name: "Player".into(), kind: PlayerKind::Human, is_local_player: true }];
-    player_team.extend(teammate_names.into_iter().map(|name| MatchPlayer { id: format!("bot-{name}"), name, kind: PlayerKind::Bot, is_local_player: false }));
-    let opponent_team = opponent_names.into_iter().map(|name| MatchPlayer { id: format!("bot-{name}"), name, kind: PlayerKind::Bot, is_local_player: false }).collect();
+    player_team.extend((1..=4).map(|index| random_bot("random-player", index)));
+    let opponent_team = if let Some(team) = &selected_team {
+        team.players.iter().map(|name| MatchPlayer {
+            id: format!("bot-{name}"),
+            name: name.clone(),
+            kind: PlayerKind::Bot,
+            is_local_player: false,
+        }).collect()
+    } else {
+        (1..=5).map(|index| random_bot("random-opponent", index)).collect()
+    };
     let request = MatchRequest {
         schema_version: SCHEMA_VERSION, session_id: id, created_at_unix: now(), map_id: input.map_id,
         player_side: resolved_side.into(), difficulty: input.difficulty,
         opponent_kind: input.opponent_kind, opponent_team_id: selected_team.as_ref().map(|team| team.id.clone()),
         opponent_name: selected_team.map(|team| team.name).unwrap_or_else(|| "Random Opponents".into()),
-        record_demo: input.record_demo, player_team, opponent_team,
+        record_demo: input.record_demo,
+        identity_mode_player: input.identity_mode_player,
+        use_bot_info_names: input.use_bot_info_names,
+        player_team, opponent_team,
         result_path: result_path.to_string_lossy().into_owned(), demo_path: demo_path.to_string_lossy().into_owned(),
     };
     write_json(&directory.join("request.json"), &request)?;
@@ -341,6 +368,7 @@ pub fn prepare(csgo: &Path, payload_root: &Path, input: PrepareMatchInput) -> Re
     Ok(request)
 }
 
+#[allow(dead_code)]
 fn title_case(value: &str) -> String {
     let mut chars = value.chars();
     chars.next().map(|first| first.to_uppercase().collect::<String>() + chars.as_str()).unwrap_or_default()
@@ -724,6 +752,8 @@ mod tests {
             opponent_team_id: Some("falcons".into()),
             opponent_name: "Falcons".into(),
             record_demo: true,
+            identity_mode_player: true,
+            use_bot_info_names: true,
             player_team: vec![],
             opponent_team: vec![],
             result_path: session_root.join("result.json").to_string_lossy().into_owned(),
@@ -747,7 +777,7 @@ mod tests {
         let csgo = root("demo-lookup");
         let directory = match_root(&csgo).join("session-1");
         fs::create_dir_all(&directory).unwrap();
-        let request = MatchRequest { schema_version: 1, session_id: "session-1".into(), created_at_unix: 1_000, map_id: "de_mirage".into(), player_side: "ct".into(), difficulty: "medium".into(), opponent_kind: "random".into(), opponent_team_id: None, opponent_name: "Random Opponents".into(), record_demo: true, player_team: vec![], opponent_team: vec![], result_path: directory.join("result.json").to_string_lossy().into_owned(), demo_path: csgo.join("demos/csbip/session-1.dem").to_string_lossy().into_owned() };
+        let request = MatchRequest { schema_version: 1, session_id: "session-1".into(), created_at_unix: 1_000, map_id: "de_mirage".into(), player_side: "ct".into(), difficulty: "medium".into(), opponent_kind: "random".into(), opponent_team_id: None, opponent_name: "Random Opponents".into(), record_demo: true, identity_mode_player: true, use_bot_info_names: true, player_team: vec![], opponent_team: vec![], result_path: directory.join("result.json").to_string_lossy().into_owned(), demo_path: csgo.join("demos/csbip/session-1.dem").to_string_lossy().into_owned() };
         write_json(&directory.join("request.json"), &request).unwrap();
 
         assert!(session_demo_for(&csgo, "de_mirage", 1_010, 900).unwrap().is_some());
@@ -803,7 +833,7 @@ mod tests {
         let csgo = root("recover-result");
         let directory = match_root(&csgo).join("session-1");
         fs::create_dir_all(&directory).unwrap();
-        let request = MatchRequest { schema_version: 1, session_id: "session-1".into(), created_at_unix: 1, map_id: "de_mirage".into(), player_side: "ct".into(), difficulty: "medium".into(), opponent_kind: "random".into(), opponent_team_id: None, opponent_name: "Random Opponents".into(), record_demo: false, player_team: vec![], opponent_team: vec![], result_path: directory.join("result.json").to_string_lossy().into_owned(), demo_path: csgo.join("demos/csbip/session-1.dem").to_string_lossy().into_owned() };
+        let request = MatchRequest { schema_version: 1, session_id: "session-1".into(), created_at_unix: 1, map_id: "de_mirage".into(), player_side: "ct".into(), difficulty: "medium".into(), opponent_kind: "random".into(), opponent_team_id: None, opponent_name: "Random Opponents".into(), record_demo: false, identity_mode_player: true, use_bot_info_names: true, player_team: vec![], opponent_team: vec![], result_path: directory.join("result.json").to_string_lossy().into_owned(), demo_path: csgo.join("demos/csbip/session-1.dem").to_string_lossy().into_owned() };
         write_json(&directory.join("request.json"), &request).unwrap();
         write_json(&active_path(&csgo), &request).unwrap();
         let result = MatchResult { schema_version: 1, session_id: "session-1".into(), state: MatchState::Finished, map_id: "de_mirage".into(), started_at_unix: 1, finished_at_unix: 2, opponent_name: "Random Opponents".into(), demo: DemoStatus { state: "disabled".into(), path: None, size_bytes: 0, error_code: None, detail: None }, interruption_reason: None };
@@ -875,6 +905,8 @@ mod tests {
             opponent_team_id: None,
             opponent_name: "Random Opponents".into(),
             record_demo: true,
+            identity_mode_player: true,
+            use_bot_info_names: true,
             player_team: vec![],
             opponent_team: vec![],
             result_path: outside.with_extension("json").to_string_lossy().into_owned(),

@@ -633,7 +633,7 @@ export type MatchCatalog = {
 export type MatchPlayer = {
   id: string;
   name: string;
-  kind: "human" | "bot";
+  kind: "human" | "bot" | "random_bot";
   is_local_player: boolean;
 };
 
@@ -648,6 +648,8 @@ export type MatchRequest = {
   opponent_team_id: string | null;
   opponent_name: string;
   record_demo: boolean;
+  identity_mode_player: boolean;
+  use_bot_info_names: boolean;
   player_team: MatchPlayer[];
   opponent_team: MatchPlayer[];
   result_path: string;
@@ -662,6 +664,8 @@ export type PrepareMatchInput = {
   opponent_kind: "featured_team" | "random";
   opponent_team_id: string | null;
   record_demo: boolean;
+  identity_mode_player: boolean;
+  use_bot_info_names: boolean;
 };
 
 export type DemoStatus = {

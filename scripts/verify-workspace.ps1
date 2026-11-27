@@ -317,11 +317,6 @@ if ($botHiderGameData -notmatch '"CServerSideClient::SetName"' -or
     $botHiderGameData -notmatch '"CNetworkGameServer::PackEntities"') {
     Add-Failure "BotHider gamedata no longer contains the v0.3.3 name and identity targets."
 }
-foreach ($difficulty in @("Low", "Medium", "High")) {
-    $profilePath = Join-Path $repo "overrides/$difficulty/botprofile.db"
-    $profile = Get-Content -LiteralPath $profilePath -Raw
-    Assert-BotProfileContent $profile "$difficulty botprofile.db"
-}
 
 $trackedGenerated = @(& git -C $repo ls-files | Where-Object {
     $_ -match '(^|/)(bin|obj|node_modules|dist|target|artifacts|\.cache)/'
@@ -338,9 +333,6 @@ $plusPayloadFiles = @(
     "addons/counterstrikesharp/plugins/PlusMatchCoordinator/MatchCore.dll",
     "addons/counterstrikesharp/plugins/PlusMatchCoordinator/match_catalog.json",
     "addons/counterstrikesharp/plugins/PlusMatchCoordinator/open-rating-3.0-proxy-v1.json",
-    "addons/counterstrikesharp/plugins/PlusMatchCoordinator/profiles/Low/botprofile.db",
-    "addons/counterstrikesharp/plugins/PlusMatchCoordinator/profiles/Medium/botprofile.db",
-    "addons/counterstrikesharp/plugins/PlusMatchCoordinator/profiles/High/botprofile.db",
     "addons/counterstrikesharp/plugins/TeamLineupInjector/TeamLineupInjector.dll",
     "cfg/my_bot_ffa_config.cfg",
     "cfg/my_bot_normal_config.cfg",

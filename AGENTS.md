@@ -104,6 +104,7 @@ node scripts/generate-sticker-catalog.mjs
 ```
 
 ## NOTES
+- Match rosters: `PlayerKind.RandomBot` entries have an empty name; PMC adds them with bare `bot_add_ct/t`, while featured opponents keep catalog names. Panel no longer reads `botprofile.db`/`bot_info.json` for rosters; two per-match BotHider toggles (`identity_mode_player`, `use_bot_info_names`, default true) are applied at match start.
 - `.local-build.ps1` (gitignored, repo root) required for local builds/verify — minimal content: `$DotNet = "$HOME/.dotnet/dotnet"`.
 - MatchCore.Tests needs the net8 runtime installed alongside SDK 10.
 - Linux cargo baseline: ~7 Windows-semantic test failures are accepted; run `cargo test --manifest-path Panel/src-tauri/Cargo.toml` directly (no wrapper script).

@@ -26,9 +26,6 @@ const TITLE_KEYS: Partial<Record<string, I18nKey>> = {
 const COMPONENT_KEYS: Partial<Record<string, I18nKey>> = {
   MATCH_CATALOG: "install.checkComponent.catalog",
   OPEN_RATING_MODEL: "install.checkComponent.rating",
-  MATCH_PROFILE_LOW: "install.checkComponent.profileLow",
-  MATCH_PROFILE_MEDIUM: "install.checkComponent.profileMedium",
-  MATCH_PROFILE_HIGH: "install.checkComponent.profileHigh",
 };
 
 const COMPONENT_NAMES: Partial<Record<string, string>> = {

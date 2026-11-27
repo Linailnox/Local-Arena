@@ -22,7 +22,7 @@ public enum MatchDifficulty { Low, Medium, High }
 public enum MatchOpponentKind { FeaturedTeam, Random }
 public enum MatchState { Prepared, Launching, Loading, Warmup, Live, Finished, Interrupted }
 public enum DemoState { Disabled, Pending, Recording, Validating, Ready, Failed, Interrupted }
-public enum PlayerKind { Human, Bot }
+public enum PlayerKind { Human, Bot, RandomBot }
 public enum TeamSide { Ct, T }
 
 public sealed record MatchPlayer(
@@ -45,7 +45,9 @@ public sealed record MatchRequest(
     IReadOnlyList<MatchPlayer> PlayerTeam,
     IReadOnlyList<MatchPlayer> OpponentTeam,
     string ResultPath,
-    string DemoPath);
+    string DemoPath,
+    bool? IdentityModePlayer = null,
+    bool? UseBotInfoNames = null);
 
 public sealed record MatchControlRequest(
     int SchemaVersion,

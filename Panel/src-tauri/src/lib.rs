@@ -1898,7 +1898,6 @@ fn ensure_match_components_pass(report: &InstallCheckReport) -> Result<()> {
         "TARGET_MATCH_CATALOG",
         "TARGET_OPEN_RATING_MODEL",
         "TARGET_BOTHIDER_IDENTITIES",
-        "TARGET_MATCH_PROFILE_",
         "MATCH_MAP",
     ];
     let unavailable = report.checks.iter()

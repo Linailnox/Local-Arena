@@ -22,7 +22,6 @@ public sealed class PlusMatchCoordinatorPlugin : BasePlugin
     private readonly object _gate = new();
     private readonly Dictionary<int, string> _playerIdsBySlot = new();
     private string? _csgoRoot;
-    private BotIdentityCatalog? _identityCatalog;
     private IBotHiderApi? _botHider;
     private MatchRequest? _request;
     private DateTimeOffset _startedAt;
@@ -54,14 +53,12 @@ public sealed class PlusMatchCoordinatorPlugin : BasePlugin
             Logger.LogInformation(
                 "[PlusMatchCoordinator] Resolved CS2 content root: reported={ReportedDirectory}; resolved={CsgoRoot}",
                 Server.GameDirectory, _csgoRoot);
-            _identityCatalog = BotIdentityCatalog.Load(
-                Path.Combine(_csgoRoot, "addons", "BotHider", "bot_info.json"));
         }
         catch (Exception error)
         {
             Logger.LogCritical(
                 error,
-                "[PlusMatchCoordinator] Cannot initialize managed CS2 paths or load the bot identity catalog; candidates={Candidates}",
+                "[PlusMatchCoordinator] Cannot initialize managed CS2 paths; candidates={Candidates}",
                 string.Join(", ", PlusManagedPaths.CandidateCsgoRoots(Server.GameDirectory)));
         }
         RegisterListener<Listeners.OnMapStart>(OnMapStart);
@@ -143,11 +140,8 @@ public sealed class PlusMatchCoordinatorPlugin : BasePlugin
         if (_botHider != null) return true;
         try
         {
-            var api = BotHiderCapability.Get()
+            _botHider = BotHiderCapability.Get()
                 ?? throw new InvalidOperationException("BotHider capability returned no API instance");
-            if (!api.SetIdentityMode(BotIdentityMode.Player) || !api.SetNameSource(true))
-                throw new InvalidOperationException("BotHider shared-memory commands were rejected");
-            _botHider = api;
             _botHiderFailureLogged = false;
             Logger.LogInformation("[PlusMatchCoordinator] BotHider API connected");
             return true;
@@ -158,6 +152,25 @@ public sealed class PlusMatchCoordinatorPlugin : BasePlugin
                 Logger.LogError(error, "[PlusMatchCoordinator] BotHider API is unavailable");
             _botHiderFailureLogged = true;
             return false;
+        }
+    }
+
+    private void ApplyBotHiderOptions(MatchRequest request)
+    {
+        if (!ResolveBotHiderApi()) return;
+        var identityMode = (request.IdentityModePlayer ?? true) ? BotIdentityMode.Player : BotIdentityMode.Bot;
+        var useBotInfoNames = request.UseBotInfoNames ?? true;
+        try
+        {
+            if (!_botHider!.SetIdentityMode(identityMode) || !_botHider.SetNameSource(useBotInfoNames))
+                throw new InvalidOperationException("BotHider shared-memory commands were rejected");
+            Logger.LogInformation(
+                "[PlusMatchCoordinator] BotHider options: identity={Identity}, nameSource={NameSource}",
+                identityMode, useBotInfoNames ? "bot_info" : "botprofile");
+        }
+        catch (Exception error)
+        {
+            Logger.LogWarning(error, "[PlusMatchCoordinator] Could not apply BotHider options for this match");
         }
     }
 
@@ -204,8 +217,9 @@ public sealed class PlusMatchCoordinatorPlugin : BasePlugin
 
     private static void ValidateTeam(IEnumerable<MatchPlayer> team)
     {
-        RosterSelector.ValidateTeam(team.Select(player => player.Name));
-        foreach (var player in team)
+        var players = team.ToArray();
+        RosterSelector.ValidateTeam(players);
+        foreach (var player in players.Where(player => player.Kind != PlayerKind.RandomBot))
         {
             if (player.Name.Length > 64 || player.Name.Any(char.IsControl) || player.Name.Contains('"') || player.Name.Contains(';'))
                 throw new InvalidDataException($"Unsafe bot name: {player.Name}");
@@ -245,6 +259,7 @@ public sealed class PlusMatchCoordinatorPlugin : BasePlugin
 
     private void StartSession(MatchRequest request)
     {
+        ApplyBotHiderOptions(request);
         lock (_gate)
         {
             _request = request;
@@ -287,10 +302,16 @@ public sealed class PlusMatchCoordinatorPlugin : BasePlugin
         StartSession(request);
     }
 
-    private static void AddBot(string name, TeamSide side)
+    private static void AddBot(MatchPlayer player, TeamSide side)
     {
-        var safeName = name.Replace("\"", string.Empty, StringComparison.Ordinal);
-        Server.ExecuteCommand($"bot_add_{(side == TeamSide.Ct ? "ct" : "t")} \"{safeName}\"");
+        var command = side == TeamSide.Ct ? "bot_add_ct" : "bot_add_t";
+        if (player.Kind == PlayerKind.RandomBot)
+        {
+            Server.ExecuteCommand(command);
+            return;
+        }
+        var safeName = player.Name.Replace("\"", string.Empty, StringComparison.Ordinal);
+        Server.ExecuteCommand($"{command} \"{safeName}\"");
     }
 
     private void EnsureInitialHumanSide()
@@ -378,7 +399,7 @@ public sealed class PlusMatchCoordinatorPlugin : BasePlugin
 
         EnsureInitialHumanSide();
         RegisterPlayers();
-        if (!TryBindRequestedRoster(out var detail))
+        if (!TryVerifyRequestedRoster(out var detail))
         {
             _boundRosterStableTicks = 0;
             if (_rosterSyncRemaining % 20 == 0)
@@ -408,12 +429,20 @@ public sealed class PlusMatchCoordinatorPlugin : BasePlugin
         if (request == null || _finalizing) return false;
         var playerSide = request.PlayerSide == MatchSide.T ? CsTeam.Terrorist : CsTeam.CounterTerrorist;
         var opponentSide = playerSide == CsTeam.CounterTerrorist ? CsTeam.Terrorist : CsTeam.CounterTerrorist;
-        var playerRoster = request.PlayerTeam.Where(player => player.Kind == PlayerKind.Bot).ToArray();
+        var playerRoster = request.PlayerTeam.Where(player => player.Kind != PlayerKind.Human).ToArray();
         var opponentRoster = request.OpponentTeam.ToArray();
         var bots = CurrentBots();
         var playerBots = bots.Where(player => player.Team == playerSide).ToArray();
         var opponentBots = bots.Where(player => player.Team == opponentSide).ToArray();
-        var action = RosterReconciler.Next(playerBots.Length, opponentBots.Length, playerRoster.Length, opponentRoster.Length);
+        var pendingPlayerNamed = Math.Max(0, playerRoster.Count(player => player.Kind != PlayerKind.RandomBot) - playerBots.Length);
+        var pendingOpponentNamed = Math.Max(0, opponentRoster.Count(player => player.Kind != PlayerKind.RandomBot) - opponentBots.Length);
+        var action = RosterReconciler.Next(
+            playerBots.Length,
+            opponentBots.Length,
+            playerRoster.Length,
+            opponentRoster.Length,
+            pendingPlayerNamed,
+            pendingOpponentNamed);
         switch (action)
         {
             case RosterAction.RemovePlayerBot:
@@ -423,10 +452,10 @@ public sealed class PlusMatchCoordinatorPlugin : BasePlugin
                 RemoveBot(opponentBots[^1]);
                 return false;
             case RosterAction.AddPlayerBot:
-                AddBot(playerRoster[playerBots.Length].Name, playerSide == CsTeam.Terrorist ? TeamSide.T : TeamSide.Ct);
+                AddBot(playerRoster[playerBots.Length], playerSide == CsTeam.Terrorist ? TeamSide.T : TeamSide.Ct);
                 return false;
             case RosterAction.AddOpponentBot:
-                AddBot(opponentRoster[opponentBots.Length].Name, opponentSide == CsTeam.Terrorist ? TeamSide.T : TeamSide.Ct);
+                AddBot(opponentRoster[opponentBots.Length], opponentSide == CsTeam.Terrorist ? TeamSide.T : TeamSide.Ct);
                 return false;
             default:
                 return true;
@@ -516,21 +545,18 @@ public sealed class PlusMatchCoordinatorPlugin : BasePlugin
         _controlWatcherTask = null;
     }
 
-    private bool TryBindRequestedRoster(out string detail)
+    private bool TryVerifyRequestedRoster(out string detail)
     {
         detail = string.Empty;
         var request = _request;
         if (request == null) { detail = "no active request"; return false; }
-        if (_identityCatalog == null) { detail = "bot_info.json was not loaded"; return false; }
-        if (!ResolveBotHiderApi()) { detail = "BotHider API unavailable"; return false; }
 
         var playerSide = request.PlayerSide == MatchSide.T ? CsTeam.Terrorist : CsTeam.CounterTerrorist;
         var opponentSide = playerSide == CsTeam.CounterTerrorist ? CsTeam.Terrorist : CsTeam.CounterTerrorist;
-        var playerRoster = request.PlayerTeam.Where(player => player.Kind == PlayerKind.Bot).ToArray();
+        var playerRoster = request.PlayerTeam.Where(player => player.Kind != PlayerKind.Human).ToArray();
         var opponentRoster = request.OpponentTeam.ToArray();
         var bots = Utilities.GetPlayers()
             .Where(player => player is { IsValid: true, IsBot: true })
-            .OrderBy(player => player.Slot)
             .ToArray();
         var playerBots = bots.Where(player => player.Team == playerSide).ToArray();
         var opponentBots = bots.Where(player => player.Team == opponentSide).ToArray();
@@ -540,54 +566,29 @@ public sealed class PlusMatchCoordinatorPlugin : BasePlugin
             return false;
         }
 
-        return BindSide(playerBots, playerRoster, out detail)
-            && BindSide(opponentBots, opponentRoster, out detail);
+        return VerifySide(playerBots, playerRoster, out detail)
+            && VerifySide(opponentBots, opponentRoster, out detail);
     }
 
-    private bool BindSide(IReadOnlyList<CCSPlayerController> slots, IReadOnlyList<MatchPlayer> roster, out string detail)
+    private static bool VerifySide(IReadOnlyList<CCSPlayerController> slots, IReadOnlyList<MatchPlayer> roster, out string detail)
     {
         detail = string.Empty;
-        for (var index = 0; index < roster.Count; index++)
+        var remaining = slots.Select(player => player.PlayerName).ToList();
+        foreach (var requested in roster.Where(player => player.Kind != PlayerKind.RandomBot))
         {
-            var slot = slots[index].Slot;
-            var requested = roster[index];
-            if (_botHider == null || !_botHider.IsManagedBot(slot))
+            var index = remaining.FindIndex(name => name.Equals(requested.Name, StringComparison.OrdinalIgnoreCase));
+            if (index < 0)
             {
-                detail = $"BotHider has not claimed slot {slot}";
+                detail = $"missing requested bot {requested.Name}";
                 return false;
             }
-            if (_identityCatalog == null || !_identityCatalog.TryGet(requested.Name, out var identity))
-            {
-                detail = $"missing bot_info identity for {requested.Name}";
-                return false;
-            }
-            try
-            {
-                var crosshair = identity.CrosshairCode is null or "0" ? string.Empty : identity.CrosshairCode;
-                var applied = (_botHider.GetPersonaName(slot).Equals(requested.Name, StringComparison.Ordinal)
-                        || _botHider.SetPersonaName(slot, requested.Name))
-                    && (_botHider.GetBotSteamId(slot) == identity.SteamId64
-                        || _botHider.SetBotSteamId(slot, identity.SteamId64))
-                    && (_botHider.GetCrosshairCode(slot).Equals(crosshair, StringComparison.Ordinal)
-                        || _botHider.SetCrosshairCode(slot, crosshair))
-                    && (_botHider.GetScoreboardFlair(slot) == identity.ScoreboardFlair
-                        || _botHider.SetScoreboardFlair(slot, identity.ScoreboardFlair));
-                var verified = _botHider.GetPersonaName(slot).Equals(requested.Name, StringComparison.Ordinal)
-                    && _botHider.GetBotSteamId(slot) == identity.SteamId64
-                    && _botHider.GetCrosshairCode(slot).Equals(crosshair, StringComparison.Ordinal)
-                    && _botHider.GetScoreboardFlair(slot) == identity.ScoreboardFlair;
-                if (!applied || !verified)
-                {
-                    detail = $"BotHider has not finished applying identity {requested.Name} for slot {slot}";
-                    return false;
-                }
-                _playerIdsBySlot[slot] = requested.Id;
-            }
-            catch (Exception error)
-            {
-                detail = $"identity binding failed for {requested.Name} on slot {slot}: {error.Message}";
-                return false;
-            }
+            remaining.RemoveAt(index);
+        }
+        var randomCount = roster.Count(player => player.Kind == PlayerKind.RandomBot);
+        if (remaining.Count != randomCount)
+        {
+            detail = $"expected {randomCount} random bots, found {remaining.Count} extra names";
+            return false;
         }
         return true;
     }

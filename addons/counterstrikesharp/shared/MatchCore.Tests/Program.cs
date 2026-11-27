@@ -67,6 +67,30 @@ Check(RosterReconciler.Next(4, 4, 4, 5) == RosterAction.AddOpponentBot,
     "roster reconciliation must add one missing opponent at a time");
 Check(RosterReconciler.Next(4, 5, 4, 5) == RosterAction.None,
     "an exact roster must not be changed");
+Check(RosterReconciler.Next(3, 4, 4, 5, pendingPlayerNamed: 0, pendingOpponentNamed: 1) == RosterAction.AddOpponentBot,
+    "named/featured bots must be added before RandomBot slots");
+Check(RosterReconciler.Next(3, 4, 4, 5, pendingPlayerNamed: 1, pendingOpponentNamed: 0) == RosterAction.AddPlayerBot,
+    "player-side named bots keep priority over RandomBot slots");
+
+var mixedRoster = new MatchPlayer[]
+{
+    new("p1", "", PlayerKind.RandomBot),
+    new("p2", "", PlayerKind.RandomBot),
+    new("p3", "", PlayerKind.RandomBot),
+    new("p4", "", PlayerKind.RandomBot),
+    new("p5", "ZywOo", PlayerKind.Bot),
+};
+RosterSelector.ValidateTeam(mixedRoster);
+var duplicateNamed = mixedRoster.ToArray();
+duplicateNamed[3] = new MatchPlayer("p4", "zywoo", PlayerKind.Bot);
+try
+{
+    RosterSelector.ValidateTeam(duplicateNamed);
+    throw new InvalidOperationException("duplicate named players must fail validation");
+}
+catch (InvalidOperationException error) when (error.Message.Contains("unique named players", StringComparison.Ordinal))
+{
+}
 
 var gameInstall = Path.Combine(Path.GetTempPath(), $"csbip-game-root-{Environment.ProcessId}");
 var reportedGameRoot = Path.Combine(gameInstall, "game");

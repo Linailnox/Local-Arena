@@ -44,6 +44,8 @@ export default function MatchPanel({ onOpenInstallation, onOpenLineup }: Props) 
   const [side, setSide] = useState<PrepareMatchInput["player_side"]>("random");
   const [difficulty, setDifficulty] = useState<PrepareMatchInput["difficulty"]>(() => (localStorage.getItem("cs2bi.matchDifficulty") as PrepareMatchInput["difficulty"]) || "medium");
   const [recordDemo, setRecordDemo] = useState(localStorage.getItem("cs2bi.matchDemoV2") === "1");
+  const [identityModePlayer, setIdentityModePlayer] = useState(localStorage.getItem("cs2bi.matchIdentityMode") !== "0");
+  const [useBotInfoNames, setUseBotInfoNames] = useState(localStorage.getItem("cs2bi.matchNameSource") !== "0");
   const [busy, setBusy] = useState(false);
   const [finishConfirmOpen, setFinishConfirmOpen] = useState(false);
 
@@ -114,8 +116,10 @@ export default function MatchPanel({ onOpenInstallation, onOpenLineup }: Props) 
     setBusy(true);
     localStorage.setItem("cs2bi.matchDifficulty", difficulty);
     localStorage.setItem("cs2bi.matchDemoV2", recordDemo ? "1" : "0");
+    localStorage.setItem("cs2bi.matchIdentityMode", identityModePlayer ? "1" : "0");
+    localStorage.setItem("cs2bi.matchNameSource", useBotInfoNames ? "1" : "0");
     try {
-      const request = await api.prepareAndLaunchMatch(csgo, { schema_version: 1, map_id: selectedMap, player_side: side, difficulty, opponent_kind: opponentKind, opponent_team_id: opponentKind === "featured_team" ? teamId : null, record_demo: recordDemo });
+      const request = await api.prepareAndLaunchMatch(csgo, { schema_version: 1, map_id: selectedMap, player_side: side, difficulty, opponent_kind: opponentKind, opponent_team_id: opponentKind === "featured_team" ? teamId : null, record_demo: recordDemo, identity_mode_player: identityModePlayer, use_bot_info_names: useBotInfoNames });
       setActiveMatch({
         schema_version: request.schema_version,
         session_id: request.session_id,
@@ -285,6 +289,14 @@ export default function MatchPanel({ onOpenInstallation, onOpenLineup }: Props) 
             <Toggle checked={recordDemo} onChange={setRecordDemo} ariaLabel={t("match.demo")} />
           </div>
           {recordDemo && <div className="match-demo-warning" role="alert"><AlertTriangle size={15} /><span>{t("match.demoWarning")}</span></div>}
+          <div className="match-demo-row">
+            <div><span className="match-label">{t("match.identityMode")}</span><small>{t("match.identityModeDesc")}</small></div>
+            <Toggle checked={identityModePlayer} onChange={setIdentityModePlayer} ariaLabel={t("match.identityMode")} />
+          </div>
+          <div className="match-demo-row">
+            <div><span className="match-label">{t("match.nameSource")}</span><small>{t("match.nameSourceDesc")}</small></div>
+            <Toggle checked={useBotInfoNames} onChange={setUseBotInfoNames} ariaLabel={t("match.nameSource")} />
+          </div>
           {disabledReason && (
             <div className="match-disabled">
               <AlertTriangle size={15} />

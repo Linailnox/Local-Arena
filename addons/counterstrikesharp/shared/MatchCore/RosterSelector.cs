@@ -37,10 +37,15 @@ public static class RosterSelector
         return roster;
     }
 
-    public static void ValidateTeam(IEnumerable<string> roster, int teamSize = 5)
+    public static void ValidateTeam(IEnumerable<MatchPlayer> roster, int teamSize = 5)
     {
         var players = roster.ToArray();
-        if (players.Length != teamSize || players.Distinct(StringComparer.OrdinalIgnoreCase).Count() != teamSize)
-            throw new InvalidOperationException($"A team must contain exactly {teamSize} unique players");
+        if (players.Length != teamSize)
+            throw new InvalidOperationException($"A team must contain exactly {teamSize} players");
+        var named = players.Where(player => player.Kind != PlayerKind.RandomBot).ToArray();
+        if (named.Any(player => string.IsNullOrWhiteSpace(player.Name)))
+            throw new InvalidOperationException("Named players must have a non-empty display name");
+        if (named.Select(player => player.Name).Distinct(StringComparer.OrdinalIgnoreCase).Count() != named.Length)
+            throw new InvalidOperationException($"A team must contain exactly {teamSize} unique named players");
     }
 }

@@ -292,11 +292,6 @@ pub fn run(payload_root: &Path, state_root: &Path, target: &Path, cs2_running: b
     ] {
         checks.push(target_file_check(&format!("TARGET_{code}"), &format!("Installed {title}"), target, relative, installed));
     }
-    for difficulty in ["Low", "Medium", "High"] {
-        let relative = format!("addons/counterstrikesharp/plugins/PlusMatchCoordinator/profiles/{difficulty}/botprofile.db");
-        let suffix = difficulty.to_ascii_uppercase();
-        checks.push(target_file_check(&format!("TARGET_MATCH_PROFILE_{suffix}"), &format!("Installed {difficulty} match Bot profiles"), target, &relative, installed));
-    }
 
     let pass_count = checks.iter().filter(|check| check.status == CheckStatus::Pass).count();
     let warn_count = checks.iter().filter(|check| check.status == CheckStatus::Warn).count();
