@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "tauri:build": "tauri build",
     "build": "tsc && vite build",
     "test:stickers": "node ../scripts/test-sticker-editor.mjs",
     "test:install-gate": "node ../scripts/test-install-gate.mjs"
