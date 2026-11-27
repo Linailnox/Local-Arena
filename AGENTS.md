@@ -70,7 +70,7 @@ Local-Arena/
 - NEVER edit `cfg/` or `overrides/` — upstream-identical trees are deletable only.
 - NEVER let an upstream path into the plugin bundle — the released `LocalArena-plugin-*.zip` must stay LA-only.
 - NEVER add new UI libs in `Panel/src/components/` — compose existing primitives.
-- NEVER delete the committed desktop icon set in `Panel/src-tauri/icons/` — `tauri-codegen` needs `icons/icon.png` for any non-Windows target and panics without it; `.local-build.ps1` stays local-only.
+- NEVER delete the committed desktop icon set in `Panel/src-tauri/icons/` — `tauri-codegen` needs `icons/icon.png` for any non-Windows target and panics without it.
 - NEVER hand-edit generated catalogs (`stickerCatalog.json`, `stickerWeaponIds.json`, `cosmeticPlacements.json`) — regenerate via `scripts/generate-*.mjs`.
 - Moving/renaming anything under `addons/` is a cross-repo change — paths hardcoded in ~10 files (`installer/lib/match_system/mode_layout/install_checks.rs`, `installCheckLocalization.ts`, `scripts/*`).
 
@@ -100,7 +100,7 @@ node scripts/generate-sticker-catalog.mjs
 
 ## NOTES
 - Match rosters: `PlayerKind.RandomBot` entries have an empty name; PMC adds them with bare `bot_add_ct/t`, while featured opponents keep catalog names. Panel no longer reads `botprofile.db`/`bot_info.json` for rosters; two per-match BotHider toggles (`identity_mode_player`, `use_bot_info_names`, default true) are applied at match start.
-- `.local-build.ps1` (gitignored, repo root) required for local builds/verify — minimal content: `$DotNet = "$HOME/.dotnet/dotnet"`.
+- Local plugin builds need `dotnet` on PATH; `package.ps1` resolves it from `-DotNet` or PATH.
 - MatchCore.Tests needs the net8 runtime installed alongside SDK 10.
 - Linux cargo baseline: ~7 Windows-semantic test failures are accepted; run `cargo test --manifest-path Panel/src-tauri/Cargo.toml` directly (no wrapper script).
 - Non-`tauri dev` Linux builds need `--features custom-protocol`; `tauri build` enables it.

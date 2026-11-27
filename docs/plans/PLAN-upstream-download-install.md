@@ -672,8 +672,7 @@ launchUpstreamPanel: (path: string) => invoke<void>("launch_upstream_panel", { p
 dotnet build -c Release   # 3 个插件 + MatchCore.Tests + PlayerKnifeCustomizer.Tests
 dotnet run --project addons/counterstrikesharp/shared/MatchCore.Tests -c Release
 
-# 阶段 3 后（本地无 GITHUB_ACTIONS 时需 .local-build.ps1 存在）
-/tmp/opencode/pwsh/pwsh -NoProfile -File scripts/verify-workspace.ps1   # 期望 exit 0
+# 阶段 3 后（历史记录：本地只需 dotnet 在 PATH）
 
 # 阶段 4-5 后（Linux cargo 注意：需临时 icons/icon.png，历史已知问题）
 cargo check --manifest-path Panel/src-tauri/Cargo.toml

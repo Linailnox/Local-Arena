@@ -18,11 +18,6 @@ $packageCache = Join-Path $cache "package"
 $stage = Join-Path $packageCache "plugin-stage"
 $outputDirectory = Join-Path $repo "artifacts"
 
-$localBuildConfig = Join-Path $repo ".local-build.ps1"
-if (Test-Path -LiteralPath $localBuildConfig -PathType Leaf) {
-    . $localBuildConfig
-}
-
 function Resolve-ToolExecutable {
     param([string]$Value, [string]$Label)
     if (Test-Path -LiteralPath $Value -PathType Leaf) {
