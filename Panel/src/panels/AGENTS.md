@@ -31,7 +31,7 @@ Every user-facing feature view; navigation is App.tsx state, not a router.
 - Panels with zero `api.` calls (PresetsPanel, SettingsView, stats leaves, about pages) read `useStore()` only.
 
 ## ANTI-PATTERNS
-- `pwsh scripts/verify-workspace.ps1` fails if: MatchPanel loses the GOTV opt-in (`cs2bi.matchDemoV2` check + `match.demoWarning`); any of the 5 cosmetics sources (`KnifePresetModal`/`GlovePresetModal`/`WeaponPresetModal`/`MusicKitPresetModal`/`StickersPanel` + its css) is deleted/renamed; PresetsPanel drops `value: "less"`.
+- No automated gate guards the GOTV opt-in (`cs2bi.matchDemoV2` + `match.demoWarning`), the five cosmetics sources, or the NadeSystem `less` option — keep them intact by review.
 - `TeamsSection.tsx` is an orphan — no importer anywhere in `src/`; don't extend it.
 - `settings.css` (1930 LOC, 6 pages) and `StatsPanel.css` (857, 5 panels) have no automated gate — a rule added for one page silently restyles the others.
 - Large catalogs import eagerly (`weaponSkins.json` 323 KB + `skinImages.json` 414 KB in the preset modals; no lazy `import()` anywhere) — import changes move main-bundle size.

@@ -28,9 +28,7 @@ Local-Arena/
 | Match rosters | `addons/.../PlusMatchCoordinator/match_catalog.json` | parsed by `Panel/src-tauri/src/match_system.rs`; one edit fans out to install_checks.rs, mode_layout.rs, installer.rs |
 | Generated data catalogs | `Panel/src/data/`, `scripts/generate-*.mjs` | generator output pinned by verify — regenerate, never hand-edit |
 | Plugin↔Panel runtime contracts | `<csgo>/.csbip/` (`cs2ss/last-completed.json`, `team-lineup.json`, `cs2ss/telemetry.db`) | written by plugins (atomic tmp+move), read by Panel Rust (`match_system.rs`, `cs2ss_bridge.rs`) |
-| Build/package/release | `scripts/*.ps1`, `scripts/linux/*.sh` | every gate routes through scripts/ |
-| Repo layout change | `scripts/verify-workspace.ps1` | must update allowlists or the gate fails |
-| Upstream pin | `scripts/dependencies.json` | v1.4.5 @ d991445 + linuxAsset sha256 |
+| Build/package/release | `scripts/package.ps1`, `.github/workflows/release.yml` | plugin bundle via pwsh; Panel bundle via tauri-action |
 | Downloadable components / update sources | `Panel/src-tauri/src/component_registry.rs`, `scripts/package.ps1` | three peers: upstream suite, LA plugin archive, InventorySimulator; the Panel comes from the Tauri updater, the LA archive from GitHub release assets (`LocalArena-plugin-<tag>-<os>.zip`) |
 | i18n key | `Panel/src/i18n/` | EN source of truth + partial overrides |
 | Plugin tests | `addons/counterstrikesharp/{plugins,shared}/` | console runners, no xunit |
@@ -52,7 +50,6 @@ Local-Arena/
 | `BotHiderApi` | C# api | `addons/BotHider` (submodule) | PMC/TLI ProjectReference | never edit inside; gitlink pin is the version signal |
 | `MatchCore` | C# lib | `addons/counterstrikesharp/shared/` | MatchCore.Tests only | `MatchRules` is tests-only now; production MR12 lives in PMC convars (PlusMatchCoordinator.cs:267) |
 | `match_catalog.json` | data | `PlusMatchCoordinator/` | schema_version 1 | plugin↔Panel contract, frozen HLTV top-20 |
-| `verify-workspace.ps1` | gate | `scripts/` (781 LOC) | CI | LA-only whitelist (3 allowlists :176/:374/:406 move together); `-PluginBundleRoot` verifies the LA-only plugin bundle and is invoked by `package.ps1` before the bundle is zipped; collects ALL failures, exits 1 at end |
 | `last-completed.json` | data | `<csgo>/.csbip/cs2ss/` | `match_system.rs` | completed-match marker, atomic write, watched → event `cs2ss-match-completed` |
 | `component_registry` | mod | `Panel/src-tauri/src/component_registry.rs` | 3 descriptors | compiled-in component set (upstream / la_plugins / inventory_simulator); `check_requirements` preflight — LA bundle requires the upstream `BotHiderApi.dll` |
 | `release_source` | mod | `Panel/src-tauri/src/release_source.rs` | `inventory_plugin.rs` | digest-required GitHub release resolution; trusted hosts only; `AssetSelector` |
@@ -71,15 +68,15 @@ Local-Arena/
 ## ANTI-PATTERNS (THIS PROJECT)
 - NEVER edit inside `addons/BotHider` — pinned submodule; the gitlink is the version signal.
 - NEVER edit `cfg/` or `overrides/` — upstream-identical trees are deletable only.
-- NEVER let an upstream path into the package — whitelist inversion; any layout change must update `verify-workspace.ps1` allowlists.
+- NEVER let an upstream path into the plugin bundle — the released `LocalArena-plugin-*.zip` must stay LA-only.
 - NEVER add new UI libs in `Panel/src/components/` — compose existing primitives.
 - NEVER delete the committed desktop icon set in `Panel/src-tauri/icons/` — `tauri-codegen` needs `icons/icon.png` for any non-Windows target and panics without it; `.local-build.ps1` stays local-only.
-- NEVER hand-edit generated catalogs (`stickerCatalog.json`, `stickerWeaponIds.json`, `cosmeticPlacements.json`) — regenerate via `scripts/generate-*.mjs`; verify pins sha256/counts.
+- NEVER hand-edit generated catalogs (`stickerCatalog.json`, `stickerWeaponIds.json`, `cosmeticPlacements.json`) — regenerate via `scripts/generate-*.mjs`.
 - Moving/renaming anything under `addons/` is a cross-repo change — paths hardcoded in ~10 files (`installer/lib/match_system/mode_layout/install_checks.rs`, `installCheckLocalization.ts`, `scripts/*`).
 
 ## UNIQUE STYLES
-- Version default triplicated: `package.ps1:5`, `verify-workspace.ps1:4`, `.github/workflows/release.yml:6` (SemVer `^\d+\.\d+\.\d+(?:-...)?$`); plus the same version in `Panel/package.json`, `Panel/src-tauri/Cargo.toml`, `tauri.conf.json` and PMC `ModuleVersion` — all bump together.
-- Upstream pinning via GitHub `assets[].digest` sha256 in `dependencies.json`.
+- Version default duplicated: `package.ps1:5`, `.github/workflows/release.yml:6` (SemVer `^\d+\.\d+\.\d+(?:-...)?$`); plus the same version in `Panel/package.json`, `Panel/src-tauri/Cargo.toml`, `tauri.conf.json` and PMC `ModuleVersion` — all bump together.
+- Upstream pinning via GitHub `assets[].digest` sha256 at download time.
 - Release assets: Tauri bundles (Windows NSIS `.exe`, Linux `.AppImage`/`.deb`) + `.sig`, `LocalArena-plugin-<tag>-{windows,linux}.zip`, `latest.json` (Tauri updater schema), `SHA256SUMS.txt`; `tauri-action` creates/updates the release on each matrix leg and merges the `latest.json` platform map.
 - Install payload defined by `plus-payload-manifest.json` (walks `addons|cfg|overrides` only).
 
@@ -87,8 +84,6 @@ Local-Arena/
 ```bash
 # plugin bundle (pwsh)
 pwsh scripts/package.ps1 [-Linux] [-ReleaseVersion x.y.z]
-pwsh scripts/verify-workspace.ps1 [-Linux]
-pwsh scripts/verify-workspace.ps1 -PluginBundleRoot <dir> [-Linux]   # LA-only plugin bundle layout
 # Panel bundle locally (run in Panel/; CI uses tauri-action)
 bun install --frozen-lockfile
 bun tauri build --bundles nsis            # Windows host

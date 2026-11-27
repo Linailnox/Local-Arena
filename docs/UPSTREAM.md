@@ -5,11 +5,11 @@
 - Project: `ed0ard/CS2-Bot-Improver`
 - Synced upstream source commit: `d9914454d8691b509bae4cd671a7a8bd9dcb174f` (upstream `main` = tag `v1.4.5`, 2026-10-02)
 - Last synced upstream release: `d9914454d8691b509bae4cd671a7a8bd9dcb174f` (`v1.4.5`), the newest upstream tag
-- Pinned Windows runtime asset: `CS2BotImprover.zip` (`v1.4.5`, see `scripts/dependencies.json`)
+- Pinned Windows runtime asset: `CS2BotImprover.zip` (`v1.4.5`)
 - Plus release line: `1.5.x` test line; the merged payload tracks the upstream `v1.4.5` enhanced-bot submodules
-- `scripts/dependencies.json`: `upstream.baseCommit` stays on the pinned release commit, `upstream.sourceCommit`
-  follows the upstream revision whose sources are merged. Packaging verification asserts every submodule gitlink and
-  upstream-owned tree against `sourceCommit`, so bump it whenever a sync merge lands.
+- The old `scripts/dependencies.json` pin file and `scripts/verify-workspace.ps1` gate were removed. The commit
+  pointers in this document are documentation only; keep the `addons/BotHider` gitlink aligned with the upstream
+  revision by review when syncing.
 
 The repository stores source and configuration deltas. Upstream has published the `v1.4.5` release archive, and the
 Windows package script obtains that official layout, then overlays the pinned submodule builds, BotHider v0.4.0 data,
@@ -49,7 +49,7 @@ upstream's `BotRandomizer` `1.3.2` revision rather than the older Local Arena co
   `HasVisibleFeatures` early-outs, and the per-feature guards. Intro publication is gated on `agents`, so the
   option semantics are unchanged from the previous Local Arena build.
 - Deliberate deviation: `BotRandomizer.csproj` compiles against `CounterStrikeSharp.API` `1.0.373`, not upstream's
-  `1.0.375`, because the packaged runtime is pinned to CounterStrikeSharp `v1.0.373` in `scripts/dependencies.json`.
+  `1.0.375`, because the packaged runtime was pinned to CounterStrikeSharp `v1.0.373`.
 - Roster: upstream's `JBOEN` (FaZe) and `max` (9z) botprofile entries are adopted in all three difficulty mirrors;
   `Commands.txt` already referenced both players.
 - Files upstream still owns stay dropped in Local Arena: `.github/ISSUE_TEMPLATE/*`, `docs/README.ru.md`,
@@ -57,22 +57,22 @@ upstream's `BotRandomizer` `1.3.2` revision rather than the older Local Arena co
   `README.zh-CN.md`.
 - Known data gap, inherited from upstream: seven `Commands.txt` players still have no botprofile entry anywhere
   (`HObbit`, `MATYS`, `S1ren`, `b1t`, `dav1deus`, `doc`, `flayy`). Upstream's own database lacks them too, so no
-  profile values were invented; they fall back to the game's default profile. `verify-workspace.ps1` exempts exactly
-  this list from the featured-player assertion through `$inheritedProfileGap`.
+  profile values were invented; they fall back to the game's default profile. The removed workspace gate used to
+  exempt exactly this list from its featured-player assertion.
 
 ### 2026-10 upstream `v1.4.5` merge notes (historical)
 
 > Superseded on 2026-10-06 by the download-and-merge rework (see `docs/plans/PLAN-upstream-download-install.md` and the
 > sections below): eight of the nine submodules and the duplicated upstream trees were removed from this
-> repository (only `addons/BotHider` remains), `package.ps1` no longer packages any upstream archive, and
-> `verify-workspace.ps1` now asserts the LA-only package whitelist. The pin table below is retained as the
-> historical record of the merge-time pointers.
+> repository (only `addons/BotHider` remains), `package.ps1` no longer packages any upstream archive, and the
+> since-removed `verify-workspace.ps1` then asserted the LA-only package whitelist. The pin table below is retained
+> as the historical record of the merge-time pointers.
 
 Merge base was the previous sync commit (`abb2c0f`, post-`v1.4.4`); the merge adopts upstream `main` at `d991445`
 (tag `v1.4.5`, 2026-10-02). Upstream converted its enhanced-bot sources into git submodules and Local Arena adopts
-that structure verbatim. Every pointer must stay byte-identical to the pinned commit: `verify-workspace.ps1`
-compares all nine gitlinks plus the upstream-owned trees (`RoundDamageRecap`, `plugins/disabled`,
-`counterstrikesharp/data`) against `sourceCommit` and fails on any divergence.
+that structure verbatim. Every pointer had to stay byte-identical to the pinned commit: the removed
+`verify-workspace.ps1` compared all nine gitlinks plus the upstream-owned trees (`RoundDamageRecap`,
+`plugins/disabled`, `counterstrikesharp/data`) against `sourceCommit` and failed on any divergence.
 
 | Submodule path | Upstream repository | Pinned commit |
 |---|---|---|
@@ -114,11 +114,11 @@ Local modifications dismantled by the submodule conversion (functional losses ve
 
 Tooling adaptations:
 
-- `verify-workspace.ps1`: the module diff is replaced by gitlink/upstream-tree/removed-path assertions; upstream
-  content checks and the dropped-mod gates are gone; the repo grenade catalog is read from
-  `addons/counterstrikesharp/data/NadeSystem/grenades`; the built-plugin list follows the measured TFMs
+- The removed `verify-workspace.ps1` replaced the module diff with gitlink/upstream-tree/removed-path assertions; upstream
+  content checks and the dropped-mod gates were gone; the repo grenade catalog was read from
+  `addons/counterstrikesharp/data/NadeSystem/grenades`; the built-plugin list followed the measured TFMs
   (`RoundDamageRecap` net8.0, `PlusMatchCoordinator` and `TeamLineupInjector` net10.0, `BotControllerImpl` built
-  from `addons/BotController/csharp/BotControllerImpl`); the documented profile gap is exempted through
+  from `addons/BotController/csharp/BotControllerImpl`); the documented profile gap was exempted through
   `$inheritedProfileGap`.
 - `package.ps1`: the payload base bumps to the `v1.4.5` zip; BotHider data is sourced from the submodule `configs`
   tree; build outputs come from the submodule `csharp` trees; explicit copies carry the NadeSystem grenade catalog
@@ -131,7 +131,7 @@ Tooling adaptations:
 
 ## Pinned Runtime Inputs
 
-The machine-readable source of truth is `scripts/dependencies.json`.
+The commit pointers in this document are documentation only; there is no machine-readable pin file anymore.
 
 - The upstream runtime is no longer pinned into the package. The Panel resolves the latest
   `ed0ard/CS2-Bot-Improver` release through the GitHub API at install time and verifies `CS2BotImprover.zip`
@@ -140,11 +140,10 @@ The machine-readable source of truth is `scripts/dependencies.json`.
 - MetaMod, CounterStrikeSharp, RayTrace, and the BotHider Windows archive are no longer downloaded or
   verified by the build pipeline; they all ship inside the upstream release zip that the Panel downloads.
 - The Local Arena plugin bundle contains only Local Arena's own content: PlusMatchCoordinator,
-  TeamLineupInjector, OfflineMatchTelemetry and the plus-only payload manifest. `verify-workspace.ps1`
-  enforces this whitelist and rejects upstream files in the bundle.
+  TeamLineupInjector, OfflineMatchTelemetry and the plus-only payload manifest.
 - `PlusMatchCoordinator`, `TeamLineupInjector`, `PlayerKnifeCustomizer`, `MatchCore`, and
   `OfflineMatchTelemetry` still build from source and overlay the merged payload at install time; the
-  `addons/BotHider` submodule stays pinned at the commit recorded in `scripts/dependencies.json` and supplies
+  `addons/BotHider` submodule stays pinned at the commit listed above and supplies
   `BotHiderApi` for the two dependent plugins.
 - The Panel merges the downloaded upstream zip with its own payload into a staging directory and installs
   from the generated merged manifest, so upstream files are installed, backed up, and restored like any

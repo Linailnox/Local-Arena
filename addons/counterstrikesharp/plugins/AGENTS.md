@@ -27,7 +27,7 @@ Earned file: score 16 — three plugin domains sharing hosting conventions and v
 - OfflineMatchTelemetry.cs:1251 FixedTeamForSide — a decided round winner must never map to null.
 - TeamLineupInjector.cs:312 — never issue mp_restartgame from cleanup; a disabled lineup must not reset a live match.
 - MatchCore/BotIdentityCatalog.cs:48 — duplicate catalog entries: first entry wins, never abort the coordinator.
-- scripts/verify-workspace.ps1 asserts these mechanically (plus halftime-side and lineup-latch invariants); failures block the build gate.
+- These invariants (plus halftime-side and lineup-latch) are enforced by review only; no workspace gate script exists.
 
 ## NOTES
 - match_catalog.json (schema_version 1, frozen HLTV top-20) is parsed by Panel Rust: Panel/src-tauri/src/match_system.rs CATALOG_RELATIVE; schema changes also touch installer/verify scripts.

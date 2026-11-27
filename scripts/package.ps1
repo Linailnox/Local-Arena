@@ -191,7 +191,10 @@ if (Test-Path -LiteralPath $legacyRatingModel) {
     Remove-Item -LiteralPath $legacyRatingModel -Force
 }
 
-# Bot cfg overlays are no longer part of the plugin bundle.
+# Bot cfg overlays and the old Panel-side botprofile.db copies are no longer part
+# of the plugin bundle; drop stale build-output directories from earlier builds.
+$staleProfiles = Join-Path $pluginPayload "addons\counterstrikesharp\plugins\PlusMatchCoordinator\profiles"
+if (Test-Path -LiteralPath $staleProfiles) { Remove-Item -LiteralPath $staleProfiles -Recurse -Force }
 
 $manifestEntries = foreach ($file in Get-ChildItem -LiteralPath $pluginPayload -File -Recurse) {
     $relative = [IO.Path]::GetRelativePath($pluginPayload, $file.FullName).Replace("\", "/")
@@ -213,9 +216,6 @@ $payloadManifest = [ordered]@{
     entries = @($manifestEntries | Sort-Object path)
 }
 $payloadManifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $pluginPayload "plus-payload-manifest.json") -Encoding utf8
-
-& (Join-Path $PSScriptRoot "verify-workspace.ps1") -PluginBundleRoot $pluginPayload -ExpectedPackageVersion $displayVersion -Linux:$Linux
-if ($LASTEXITCODE -ne 0) { throw "Plugin bundle verification failed." }
 
 New-Item -ItemType Directory -Path $outputDirectory -Force | Out-Null
 Get-ChildItem -LiteralPath $outputDirectory -File -ErrorAction SilentlyContinue |

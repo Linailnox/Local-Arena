@@ -27,7 +27,7 @@ imports are exact-path (`../data/<name>`).
 | `cosmeticPlacements.json` | 21,300 B / 35 weapons | `node scripts/generate-player-cosmetic-placements.mjs` (reads `agentCatalog.json`) |
 | `stickerCatalog.source.json` | 883 B | provenance record: upstream commit + input/output sha256 |
 
-`scripts/verify-workspace.ps1` recomputes JSON counts + sha256 against `stickerCatalog.source.json` and greps the generator's pinned commit constants — drift fails the gate.
+`stickerCatalog.source.json` records the upstream commit and input/output hashes; there is no automated gate, so regenerate rather than hand-edit.
 
 ## CONVENTIONS
 - Companion pattern: heavy `<name>.json` + thin same-basename `<name>.ts` re-exporting a typed array via `as` cast (`musicKits`, `stickers`, `gloveSkins`); JSON without a wrapper is imported raw by panels.
@@ -36,7 +36,7 @@ imports are exact-path (`../data/<name>`).
 - Catalog images are remote CDN URLs (steamstatic, Nereziel/cs2-WeaponPaints raw), never vendored; only player avatars/team logos are local `/public` paths.
 
 ## ANTI-PATTERNS
-- NEVER hand-edit the four generated files above — regenerate; `verify-workspace.ps1` fails on any drift.
+- NEVER hand-edit the four generated files above — regenerate.
 - NEVER open `stickerCatalog.json` (4.0 MB) or `skinNames.json` (2.0 MB) whole — one minified line each; inspect with `jq`/`head -c`. Together they dominate the Vite bundle (~6.3 MB of ~7.1 MB).
 - Hard count gates: 35 sticker weapons, 35 ct / 44 t agents, 81 charms (78 with images), 35 placement entries, 10,555 stickers — `test:stickers` and verify assert them.
 - Image-host allowlist: every agent/charm image must start `https://community.akamai.steamstatic.com/economy/image/` (`scripts/test-sticker-editor.mjs`).
