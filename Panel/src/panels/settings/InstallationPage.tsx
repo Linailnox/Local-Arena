@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ArchiveRestore, CheckCircle2, CircleAlert, CircleX, ClipboardCheck, Copy, Download, FileCheck2, FolderOpen, PackageCheck, PlayCircle, RefreshCw, Stethoscope, Trash2 } from "lucide-react";
 import { useStore } from "../../state/store";
 import { useT, type I18nKey } from "../../i18n";
@@ -57,6 +57,10 @@ export default function InstallationPage() {
   const [upstreamWorking, setUpstreamWorking] = useState<string | null>(null);
   const [upstreamError, setUpstreamError] = useState<string | null>(null);
   const [aria2Available, setAria2Available] = useState(false);
+  const [checkAllToken, setCheckAllToken] = useState(0);
+  const [checkingAll, setCheckingAll] = useState(false);
+  const [inventoryUpdateAvailable, setInventoryUpdateAvailable] = useState(false);
+  const pendingChecks = useRef<Set<string>>(new Set());
   const damaged = (installation?.missing.length ?? 0) + (installation?.corrupt.length ?? 0);
   const blocked = !!process?.running && (process.matches_selected || !process.path_accessible);
   const progressPct = progress && progress.total_bytes
@@ -114,7 +118,7 @@ export default function InstallationPage() {
   };
 
   useEffect(() => {
-    void refreshUpstream();
+    void api.upstreamInstalledState().then(setUpstreamState).catch(() => setUpstreamState(null));
     void api.upstreamAria2Available().then(setAria2Available).catch(() => setAria2Available(false));
     const unlisten = listenAppEvent<UpstreamProgress>("upstream://progress", (event) => {
       setProgress(event.payload);
@@ -128,13 +132,38 @@ export default function InstallationPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const checkUpstream = async () => {
+  const completeCheck = useCallback((key: string) => {
+    pendingChecks.current.delete(key);
+    if (pendingChecks.current.size === 0) setCheckingAll(false);
+  }, []);
+
+  const checkUpstream = async (onDone?: () => void) => {
     setUpstreamWorking("check");
     setUpstreamError(null);
-    try { setReleaseInfo(await api.upstreamReleaseInfo(true)); }
+    try {
+      setReleaseInfo(await api.upstreamReleaseInfo(true));
+      setUpstreamState(await api.upstreamInstalledState());
+    }
     catch (error) { setUpstreamError(toAppError(error).detail); }
-    finally { setUpstreamWorking(null); }
+    finally { setUpstreamWorking(null); onDone?.(); }
   };
+
+  const checkAll = useCallback(() => {
+    if (checkingAll) return;
+    const pending = new Set(["panel", "upstream"]);
+    if (csgoPath) { pending.add("la"); pending.add("inventory"); }
+    pendingChecks.current = pending;
+    setCheckingAll(true);
+    setCheckAllToken((value) => value + 1);
+    void checkUpstream(() => completeCheck("upstream"));
+  }, [checkingAll, completeCheck, csgoPath]);
+
+  const initialCheck = useRef(false);
+  useEffect(() => {
+    if (initialCheck.current) return;
+    initialCheck.current = true;
+    checkAll();
+  }, [checkAll]);
 
   const cancelUpstream = async () => {
     try { await api.upstreamCancel(); }
@@ -317,6 +346,11 @@ export default function InstallationPage() {
             />
           </label>
         }
+        checkAllToken={checkAllToken}
+        checkingAll={checkingAll}
+        onCheckAll={checkAll}
+        onPanelCheckDone={() => completeCheck("panel")}
+        extraUpdatesAvailable={upstreamOutdated || inventoryUpdateAvailable}
       >
         <UpdateCard
           tone="upstream"
@@ -325,7 +359,7 @@ export default function InstallationPage() {
           description={t("upstream.titleDesc")}
           status={upstreamStatus}
           actions={{
-            onCheck: checkUpstream,
+            onCheck: () => void checkUpstream(),
             onInstall: installUpstream,
             installed: !!upstreamState,
             checkBusy: upstreamWorking === "check",
@@ -364,8 +398,19 @@ export default function InstallationPage() {
           footnote={upstreamError ? <div className="update-error">{upstreamError}</div> : null}
         />
 
-        <InventoryPluginCard csgoPath={csgoPath} onError={reportError} />
-        <LaPluginBundleCard csgoPath={csgoPath} onError={reportError} />
+        <InventoryPluginCard
+          csgoPath={csgoPath}
+          onError={reportError}
+          checkToken={csgoPath ? checkAllToken : 0}
+          onCheckDone={() => completeCheck("inventory")}
+          onUpdateAvailableChange={setInventoryUpdateAvailable}
+        />
+        <LaPluginBundleCard
+          csgoPath={csgoPath}
+          onError={reportError}
+          checkToken={csgoPath ? checkAllToken : 0}
+          onCheckDone={() => completeCheck("la")}
+        />
       </OnlineUpdateSection>
 
       <div className="inst-groups">

@@ -355,11 +355,7 @@ async fn panel_update(app: &AppHandle) -> Result<Option<tauri_plugin_updater::Up
         .map_err(|error| AppError::update(format!("Cannot check the Panel update feed: {error}")))
 }
 
-pub async fn check(
-    app: &AppHandle,
-    force: bool,
-    plugin_version: Option<&str>,
-) -> Result<OnlineUpdateSnapshot> {
+pub async fn check_panel(app: &AppHandle, force: bool) -> Result<()> {
     let panel_cache = read_panel_cache()?;
     let panel_needs_check = force
         || panel_cache
@@ -373,7 +369,10 @@ pub async fn check(
         };
         write_panel_cache(Some(latest), checked_at)?;
     }
+    Ok(())
+}
 
+pub async fn check_plugin(force: bool) -> Result<()> {
     let plugin_cache = read_plugin_cache()?;
     let plugin_needs_check = force
         || plugin_cache
@@ -387,6 +386,16 @@ pub async fn check(
             write_plugin_cache(&asset, unix_time())?;
         }
     }
+    Ok(())
+}
+
+pub async fn check(
+    app: &AppHandle,
+    force: bool,
+    plugin_version: Option<&str>,
+) -> Result<OnlineUpdateSnapshot> {
+    check_panel(app, force).await?;
+    check_plugin(force).await?;
 
     if let Ok(mut state) = runtime().lock() {
         state.last_error = None;

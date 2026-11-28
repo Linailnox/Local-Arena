@@ -10,7 +10,23 @@ function formatTime(value: number | null) {
   return value ? new Date(value * 1000).toLocaleString() : "--";
 }
 
-export function OnlineUpdateSection({ children, toolbarExtra }: { children?: ReactNode; toolbarExtra?: ReactNode }) {
+export function OnlineUpdateSection({
+  children,
+  toolbarExtra,
+  checkAllToken = 0,
+  checkingAll = false,
+  onCheckAll,
+  onPanelCheckDone,
+  extraUpdatesAvailable = false,
+}: {
+  children?: ReactNode;
+  toolbarExtra?: ReactNode;
+  checkAllToken?: number;
+  checkingAll?: boolean;
+  onCheckAll?: () => void;
+  onPanelCheckDone?: () => void;
+  extraUpdatesAvailable?: boolean;
+}) {
   const { csgoPath, process } = useStore();
   const t = useT();
   const [snapshot, setSnapshot] = useState<OnlineUpdateSnapshot | null>(null);
@@ -27,13 +43,22 @@ export function OnlineUpdateSection({ children, toolbarExtra }: { children?: Rea
     return () => { void unlisten.then((dispose) => dispose()); };
   }, [refreshSnapshot]);
 
-  const check = async () => {
-    setWorking("check");
+  const checkPanel = useCallback(async () => {
+    setWorking("check-panel");
     setLocalError(null);
-    try { setSnapshot(await api.checkOnlineUpdates(true)); }
+    try { setSnapshot(await api.checkPanelUpdate(true)); }
     catch (error) { setLocalError(toAppError(error).detail); await refreshSnapshot(); }
-    finally { setWorking(null); }
-  };
+    finally { setWorking(null); onPanelCheckDone?.(); }
+  }, [onPanelCheckDone, refreshSnapshot]);
+
+  const checkAll = useCallback(() => {
+    if (onCheckAll) onCheckAll();
+    else void checkPanel();
+  }, [checkPanel, onCheckAll]);
+
+  useEffect(() => {
+    if (checkAllToken > 0) void checkPanel();
+  }, [checkAllToken, checkPanel]);
 
   const installAll = async () => {
     setWorking("all");
@@ -55,7 +80,7 @@ export function OnlineUpdateSection({ children, toolbarExtra }: { children?: Rea
   const blocked = !!process?.running && (process.matches_selected || !process.path_accessible);
   const panelAvailable = !!snapshot?.panel.update_available;
   const pluginAvailable = !!snapshot?.la_plugins.update_available;
-  const hasUpdates = panelAvailable || pluginAvailable;
+  const hasUpdates = panelAvailable || pluginAvailable || extraUpdatesAvailable;
   // install_all_updates always installs the components too, so every update path
   // (panel-only included) needs the CS2 directory.
   const needsDirectory = hasUpdates && !csgoPath;
@@ -96,10 +121,10 @@ export function OnlineUpdateSection({ children, toolbarExtra }: { children?: Rea
       description={t("update.panelDesc")}
       status={panelAvailable ? "available" : "current"}
       actions={{
-        onCheck: check,
+        onCheck: () => void checkPanel(),
         onInstall: installPanel,
         installed: true,
-        checkBusy: working === "check",
+        checkBusy: working === "check-panel",
         installBusy: panelInstalling,
         checkDisabled: !!snapshot?.busy,
         installDisabled: !panelAvailable,
@@ -148,27 +173,23 @@ export function OnlineUpdateSection({ children, toolbarExtra }: { children?: Rea
               <ExternalLink size={16} />{t("update.releaseNotes")}
             </button>
           )}
-          <button disabled={working === "check" || snapshot?.busy} onClick={check}>
-            <RefreshCw size={16} />{working === "check" ? t("update.checking") : t("update.check")}
+          <button
+            disabled={checkingAll || working === "check-panel" || snapshot?.busy}
+            onClick={checkAll}
+          >
+            <RefreshCw size={16} />{checkingAll || working === "check-panel" ? t("update.checking") : t("update.check")}
           </button>
-          </div>
-        </div>
-      </div>
-      {(localError || snapshot?.error) && <div className="update-error">{localError ?? snapshot?.error}</div>}
-      <section className="update-primary-action">
-        <span>
-          <strong>{t("update.allTitle")}</strong>
-          <small>{t("update.allDesc")}</small>
-        </span>
-        <div>
           <button className="is-primary" disabled={!canInstallAll} onClick={installAll}>
             <Download size={16} />
             {working === "all" ? t("update.updatingAll") : hasUpdates ? t("update.installAll") : t("update.current")}
           </button>
-          {working === "all" && <button onClick={cancel}><X size={16} />{t("update.cancel")}</button>}
-          {(working === "panel") && <button onClick={cancel}><X size={16} />{t("update.cancel")}</button>}
+          {(working === "all" || working === "panel") && (
+            <button onClick={cancel}><X size={16} />{t("update.cancel")}</button>
+          )}
+          </div>
         </div>
-      </section>
+      </div>
+      {(localError || snapshot?.error) && <div className="update-error">{localError ?? snapshot?.error}</div>}
       {blockingNote && <p className="upd-note update-primary-note"><AlertTriangle size={14} aria-hidden="true" />{blockingNote}</p>}
       <div className="upd-grid">
         {panelCard()}

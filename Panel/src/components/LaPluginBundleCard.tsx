@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Boxes } from "lucide-react";
-import { api, type UpdateComponentState, type UpdateProgress } from "../lib/api";
+import { api, toAppError, type UpdateComponentState, type UpdateProgress } from "../lib/api";
 import { useT } from "../i18n";
 import { listenAppEvent } from "../lib/platform";
 import UpdateCard, { formatBytes } from "./UpdateCard";
@@ -9,9 +9,11 @@ import "./LaPluginBundleCard.css";
 type Props = {
   csgoPath: string | null | undefined;
   onError?: (error: unknown) => void;
+  checkToken?: number;
+  onCheckDone?: () => void;
 };
 
-export default function LaPluginBundleCard({ csgoPath, onError }: Props) {
+export default function LaPluginBundleCard({ csgoPath, onError, checkToken = 0, onCheckDone }: Props) {
   const t = useT();
   const [state, setState] = useState<UpdateComponentState | null>(null);
   const [busy, setBusy] = useState<"check" | "install" | null>(null);
@@ -19,6 +21,7 @@ export default function LaPluginBundleCard({ csgoPath, onError }: Props) {
   // which would leave the progress bar on screen and the cancel button visible but inert. The
   // tracker is cleared locally once the attempt ends and re-armed by the next live progress event.
   const [progressCleared, setProgressCleared] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
     api
@@ -47,17 +50,24 @@ export default function LaPluginBundleCard({ csgoPath, onError }: Props) {
   const installing = !progressCleared && !!state && ["downloading", "extracting"].includes(state.status);
 
   const check = async () => {
-    if (busy) return;
+    if (!csgoPath || busy) { onCheckDone?.(); return; }
     setBusy("check");
+    setError(null);
     try {
-      const snap = await api.checkOnlineUpdates(true);
+      const snap = await api.checkLaPluginUpdate(true);
       setState(snap.la_plugins);
     } catch (error) {
-      onError?.(error);
+      setError(toAppError(error).detail);
     } finally {
       setBusy(null);
+      onCheckDone?.();
     }
   };
+
+  useEffect(() => {
+    if (checkToken > 0) void check();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [checkToken]);
 
   const installComponent = async () => {
     if (!csgoPath || busy) return;
@@ -68,7 +78,7 @@ export default function LaPluginBundleCard({ csgoPath, onError }: Props) {
       const snap = await api.getUpdateSnapshot();
       setState(snap.la_plugins);
     } catch (error) {
-      onError?.(error);
+      setError(toAppError(error).detail);
     } finally {
       setBusy(null);
       setProgressCleared(true);
@@ -125,7 +135,10 @@ export default function LaPluginBundleCard({ csgoPath, onError }: Props) {
             }
           : null
       }
-      footnote={<p className="inst-diagnostics-scope">{t("laBundle.hint")}</p>}
+      footnote={<>
+        {error && <div className="update-error">{error}</div>}
+        <p className="inst-diagnostics-scope">{t("laBundle.hint")}</p>
+      </>}
     />
   );
 }

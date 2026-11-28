@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Boxes } from "lucide-react";
 import {
   api,
+  toAppError,
   type InventoryPluginRelease,
   type InventoryPluginSnapshot,
   type UpdateProgress,
@@ -15,15 +16,19 @@ import "./InventoryPluginCard.css";
 type Props = {
   csgoPath: string | null;
   onError: (error: unknown) => void;
+  checkToken?: number;
+  onCheckDone?: () => void;
+  onUpdateAvailableChange?: (value: boolean) => void;
 };
 
-export default function InventoryPluginCard({ csgoPath, onError }: Props) {
+export default function InventoryPluginCard({ csgoPath, onError, checkToken = 0, onCheckDone, onUpdateAvailableChange }: Props) {
   const t = useT();
   const toast = useToast();
   const [snapshot, setSnapshot] = useState<InventoryPluginSnapshot | null>(null);
   const [release, setRelease] = useState<InventoryPluginRelease | null>(null);
   const [busy, setBusy] = useState<"check" | "install" | null>(null);
   const [progress, setProgress] = useState<UpdateProgress | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
     if (!csgoPath) { setSnapshot(null); return; }
@@ -46,13 +51,20 @@ export default function InventoryPluginCard({ csgoPath, onError }: Props) {
   }, []);
 
   const check = async () => {
-    if (busy) return;
+    if (!csgoPath || busy) { onCheckDone?.(); return; }
     setBusy("check");
+    setError(null);
     try {
       setRelease(await api.inventoryPluginCheck());
-    } catch (error) { onError(error); }
-    finally { setBusy(null); }
+      setSnapshot(await api.inventoryPluginStatus(csgoPath));
+    } catch (error) { setError(toAppError(error).detail); }
+    finally { setBusy(null); onCheckDone?.(); }
   };
+
+  useEffect(() => {
+    if (checkToken > 0) void check();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [checkToken]);
 
   const installComponent = async () => {
     if (!csgoPath || busy) return;
@@ -62,7 +74,7 @@ export default function InventoryPluginCard({ csgoPath, onError }: Props) {
       await api.installComponent(csgoPath, "inventory_simulator");
       setSnapshot(await api.inventoryPluginStatus(csgoPath));
       toast.show(t("inventoryPlugin.installed"), "green");
-    } catch (error) { onError(error); }
+    } catch (error) { setError(toAppError(error).detail); }
     finally { setBusy(null); setProgress(null); }
   };
 
@@ -84,6 +96,9 @@ export default function InventoryPluginCard({ csgoPath, onError }: Props) {
     : 0;
 
   const updateAvailable = !!release && release.tag !== installed;
+  useEffect(() => {
+    onUpdateAvailableChange?.(updateAvailable);
+  }, [onUpdateAvailableChange, updateAvailable]);
 
   return (
     <UpdateCard
@@ -113,7 +128,10 @@ export default function InventoryPluginCard({ csgoPath, onError }: Props) {
       }}
       size={{ label: t("update.size"), value: formatBytes(release?.size ?? 0) }}
       progress={installing ? { percent, label: t("update.downloading", { n: percent }) } : null}
-      footnote={<p className="inst-diagnostics-scope">{t("inventoryPlugin.hint")}</p>}
+      footnote={<>
+        {error && <div className="update-error">{error}</div>}
+        <p className="inst-diagnostics-scope">{t("inventoryPlugin.hint")}</p>
+      </>}
     />
   );
 }

@@ -875,6 +875,10 @@ export const api = {
   getUpdateSnapshot: () => invoke<OnlineUpdateSnapshot>("get_update_snapshot"),
   checkOnlineUpdates: (force: boolean) =>
     invoke<OnlineUpdateSnapshot>("check_online_updates", { force }),
+  checkPanelUpdate: (force: boolean) =>
+    invoke<OnlineUpdateSnapshot>("check_panel_update", { force }),
+  checkLaPluginUpdate: (force: boolean) =>
+    invoke<OnlineUpdateSnapshot>("check_la_plugin_update", { force }),
   installPanelUpdate: () => invoke<UpdateResult>("install_panel_update"),
   installLaPluginBundle: (csgo: string) =>
     invoke<UpdateResult>("install_la_plugin_bundle", { csgo }),

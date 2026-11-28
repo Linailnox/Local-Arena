@@ -3693,6 +3693,32 @@ async fn check_online_updates(
     result
 }
 
+#[tauri::command]
+async fn check_panel_update(
+    app: AppHandle,
+    force: bool,
+) -> Result<online_update::OnlineUpdateSnapshot> {
+    let plugin_version = installed_plugin_version(&app);
+    if let Err(error) = online_update::check_panel(&app, force).await {
+        online_update::record_check_error(&error);
+        return Err(error);
+    }
+    online_update::snapshot(plugin_version.as_deref())
+}
+
+#[tauri::command]
+async fn check_la_plugin_update(
+    app: AppHandle,
+    force: bool,
+) -> Result<online_update::OnlineUpdateSnapshot> {
+    let plugin_version = installed_plugin_version(&app);
+    if let Err(error) = online_update::check_plugin(force).await {
+        online_update::record_check_error(&error);
+        return Err(error);
+    }
+    online_update::snapshot(plugin_version.as_deref())
+}
+
 /// Which payload [`install_la_plugin_bundle`] installs from (F2 review, major 1).
 /// The branch is decided from the update snapshot — before the local payload
 /// root is resolved — because that root is stale whenever an update is
@@ -5245,7 +5271,7 @@ pub fn run() {
             restore_payload, restore_pristine_cs2, export_diagnostics, get_panel_memory, save_panel_memory,
             appearance::get_appearance, appearance::save_appearance,
             appearance::export_appearance, appearance::import_appearance,
-            record_panel_error, get_update_snapshot, check_online_updates,
+            record_panel_error, get_update_snapshot, check_online_updates, check_panel_update, check_la_plugin_update,
             install_panel_update,
             install_la_plugin_bundle,
             install_all_updates,
