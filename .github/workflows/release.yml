@@ -199,6 +199,10 @@ jobs:
     needs: [version, panel, plugins]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
       - name: Checksums (release)
         if: needs.version.outputs.is_tag == 'true' || inputs.upload_release == true
         env:
