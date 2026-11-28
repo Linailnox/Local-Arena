@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { AlertTriangle, Download, ExternalLink, RefreshCw, X } from "lucide-react";
 import { api, toAppError, type OnlineUpdateSnapshot, type UpdateProgress } from "../../lib/api";
 import { useStore } from "../../state/store";
@@ -56,8 +56,13 @@ export function OnlineUpdateSection({
     else void checkPanel();
   }, [checkPanel, onCheckAll]);
 
+  // Only run when the token actually advances. Depending on `checkPanel` would
+  // re-fire on every render because the parent passes a fresh callback.
+  const handledToken = useRef(0);
   useEffect(() => {
-    if (checkAllToken > 0) void checkPanel();
+    if (checkAllToken <= handledToken.current) return;
+    handledToken.current = checkAllToken;
+    void checkPanel();
   }, [checkAllToken, checkPanel]);
 
   const installAll = async () => {

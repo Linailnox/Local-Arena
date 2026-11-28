@@ -137,6 +137,12 @@ export default function InstallationPage() {
     if (pendingChecks.current.size === 0) setCheckingAll(false);
   }, []);
 
+  // Stable per-key handlers: inline arrows would change identity every render and
+  // restart the child cards' effects.
+  const panelCheckDone = useCallback(() => completeCheck("panel"), [completeCheck]);
+  const inventoryCheckDone = useCallback(() => completeCheck("inventory"), [completeCheck]);
+  const laCheckDone = useCallback(() => completeCheck("la"), [completeCheck]);
+
   const checkUpstream = async (onDone?: () => void) => {
     setUpstreamWorking("check");
     setUpstreamError(null);
@@ -349,7 +355,7 @@ export default function InstallationPage() {
         checkAllToken={checkAllToken}
         checkingAll={checkingAll}
         onCheckAll={checkAll}
-        onPanelCheckDone={() => completeCheck("panel")}
+        onPanelCheckDone={panelCheckDone}
         extraUpdatesAvailable={upstreamOutdated || inventoryUpdateAvailable}
       >
         <UpdateCard
@@ -402,14 +408,14 @@ export default function InstallationPage() {
           csgoPath={csgoPath}
           onError={reportError}
           checkToken={csgoPath ? checkAllToken : 0}
-          onCheckDone={() => completeCheck("inventory")}
+          onCheckDone={inventoryCheckDone}
           onUpdateAvailableChange={setInventoryUpdateAvailable}
         />
         <LaPluginBundleCard
           csgoPath={csgoPath}
           onError={reportError}
           checkToken={csgoPath ? checkAllToken : 0}
-          onCheckDone={() => completeCheck("la")}
+          onCheckDone={laCheckDone}
         />
       </OnlineUpdateSection>
 
